@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HOI4 Autosave Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./app.css" />
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">HOI4 save telemetry</div>
+          <h1>Autosave Dashboard</h1>
+          <p>
+            Interactive analysis of save timing, system load and campaign growth
+            from autosave_intervals.json.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button id="reloadBtn" class="button button-primary">
+            Reload Data
+          </button>
+          <button id="exportBtn" class="button button-secondary">
+            Export PNG
+          </button>
+        </div>
+      </header>
+
+      <section class="summary-grid" id="summaryGrid"></section>
+
+      <section class="panel panel-controls">
+        <div class="panel-head">
+          <h2>Controls</h2>
+          <div id="statusPill" class="status-pill">Loading</div>
+        </div>
+
+        <div class="controls-grid">
+          <label class="field">
+            <span>X-axis</span>
+            <select id="xModeSelect"></select>
+          </label>
+
+          <label class="field">
+            <span>Moving average</span>
+            <input
+              id="maInput"
+              type="range"
+              min="1"
+              max="12"
+              step="1"
+              value="1"
+            />
+            <strong id="maValue">1</strong>
+          </label>
+
+          <label class="toggle">
+            <input id="normalizeToggle" type="checkbox" />
+            <span>Normalize metrics 0..1</span>
+          </label>
+
+          <label class="toggle">
+            <input id="uniqueDateToggle" type="checkbox" />
+            <span>Only last record per game date</span>
+          </label>
+
+          <label class="toggle">
+            <input id="separateScaleToggle" type="checkbox" />
+            <span>Separate Y scale per metric</span>
+          </label>
+
+          <label class="toggle">
+            <input id="autoScaleToggle" type="checkbox" />
+            <span>Auto-enable separate scales on big range mismatch</span>
+          </label>
+        </div>
+      </section>
+
+      <div class="tab-bar" id="mainTabs">
+        <button class="tab-btn active" data-tab="chart">Chart</button>
+        <button class="tab-btn" data-tab="soldiers">Soldiers by Country</button>
+        <button class="tab-btn" data-tab="analyzer">Save Analyzer</button>
+      </div>
+
+      <section class="layout-grid" id="tabChart">
+        <aside class="side-column">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Presets</h2>
+              <div class="micro-copy">One click scenarios</div>
+            </div>
+            <div id="presetList" class="preset-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Metrics</h2>
+              <div class="micro-copy">Choose what to render</div>
+            </div>
+            <div id="metricList" class="metric-list"></div>
+          </section>
+        </aside>
+
+        <main class="main-column">
+          <section class="panel chart-panel">
+            <div class="panel-head">
+              <h2>Chart</h2>
+              <div id="chartMeta" class="micro-copy"></div>
+            </div>
+            <div id="chart" class="chart-surface"></div>
+          </section>
+
+          <section class="detail-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Focused Record</h2>
+                <div class="micro-copy">Hover or click a point</div>
+              </div>
+              <div id="recordDetails" class="record-details"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Recent Saves</h2>
+                <div class="micro-copy">Latest telemetry slice</div>
+              </div>
+              <div class="table-wrap">
+                <table class="recent-table">
+                  <thead>
+                    <tr>
+                      <th>Game date</th>
+                      <th>Write s</th>
+                      <th>CPU avg</th>
+                      <th>RAM avg</th>
+                      <th>Divisions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recentTableBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        </main>
+      </section>
+
+      <!-- ─── Soldiers tab ─────────────────────────────────── -->
+      <section class="soldiers-layout" id="tabSoldiers" style="display: none">
+        <div class="soldiers-top">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Ranking (latest save)</h2>
+              <div class="micro-copy">Sorted by total manpower on field</div>
+            </div>
+            <div class="table-wrap">
+              <table class="recent-table" id="soldiersRankTable">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Country</th>
+                    <th>Divisions</th>
+                    <th>Total manpower</th>
+                    <th>Avg / div</th>
+                  </tr>
+                </thead>
+                <tbody id="soldiersRankBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Top-N over time</h2>
+              <div class="soldiers-controls">
+                <label
+                  class="field"
+                  style="
+                    flex-direction: row;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 8px 12px;
+                  "
+                >
+                  <span>Show top</span>
+                  <input
+                    id="soldiersTopN"
+                    type="number"
+                    min="1"
+                    max="50"
+                    value="10"
+                    style="
+                      width: 56px;
+                      border: 1px solid var(--line);
+                      border-radius: 8px;
+                      padding: 6px 8px;
+                      font: inherit;
+                    "
+                  />
+                  <span>countries</span>
+                </label>
+                <label class="toggle" style="padding: 8px 12px">
+                  <input
+                    id="soldiersUniqueDateToggle"
+                    type="checkbox"
+                    checked
+                  />
+                  <span>Only last record per game date</span>
+                </label>
+              </div>
+            </div>
+            <div id="soldiersChart" style="min-height: 460px"></div>
+          </section>
+        </div>
+
+        <section class="panel" style="margin-top: 18px">
+          <div class="panel-head">
+            <h2>Single country detail</h2>
+            <div class="micro-copy">
+              Click a row in the ranking to trace that country over time
+            </div>
+          </div>
+          <div id="soldiersDetailChart" style="min-height: 320px"></div>
+        </section>
+      </section>
+    </div>
+
+    <!-- ─── Analyzer tab ───────────────────────────────── -->
+    <section id="tabAnalyzer" style="display: none" class="analyzer-shell">
+      <section class="panel analyzer-input-panel">
+        <div class="panel-head">
+          <h2>Save File</h2>
+          <div class="micro-copy">
+            Full path to a .hoi4 save on this machine
+          </div>
+        </div>
+        <div class="analyzer-input-row">
+          <input
+            id="analyzerPath"
+            type="text"
+            class="analyzer-path-input"
+            placeholder="C:\Users\...\save games\autosave_temp.hoi4"
+            spellcheck="false"
+          />
+          <button id="analyzerBtn" class="button button-primary">
+            Analyze
+          </button>
+        </div>
+        <div id="analyzerStatus" class="analyzer-status"></div>
+      </section>
+
+      <div id="analyzerResults" style="display: none">
+        <section class="summary-grid" id="analyzerSummary"></section>
+
+        <div class="analyzer-charts-row">
+          <section class="panel" style="flex: 2">
+            <div class="panel-head">
+              <h2>Manpower by Country</h2>
+              <div id="analyzerMpMeta" class="micro-copy"></div>
+            </div>
+            <div id="analyzerMpChart" style="min-height: 520px"></div>
+          </section>
+          <section class="panel" style="flex: 1">
+            <div class="panel-head">
+              <h2>Navy &amp; Air Force</h2>
+              <div class="micro-copy">Ships and planes</div>
+            </div>
+            <div id="analyzerNavyChart" style="min-height: 520px"></div>
+          </section>
+        </div>
+
+        <section class="panel" style="margin-top: 18px">
+          <div class="panel-head">
+            <h2>All Countries</h2>
+            <div class="analyzer-table-controls">
+              <input
+                id="analyzerFilter"
+                type="text"
+                placeholder="Filter by tag…"
+                style="
+                  border: 1px solid var(--line);
+                  border-radius: 12px;
+                  padding: 8px 14px;
+                  font: inherit;
+                  width: 180px;
+                "
+              />
+              <span id="analyzerTableMeta" class="micro-copy"></span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="recent-table analyzer-table" id="analyzerTable">
+              <thead>
+                <tr>
+                  <th data-col="tag" class="sortable">#&nbsp; Tag</th>
+                  <th data-col="manpower" class="sortable sort-desc">
+                    Manpower ▾
+                  </th>
+                  <th data-col="divisions" class="sortable">Divisions</th>
+                  <th data-col="avg_manpower" class="sortable">Avg / div</th>
+                  <th data-col="ships" class="sortable">Ships</th>
+                  <th data-col="planes" class="sortable">Planes</th>
+                </tr>
+              </thead>
+              <tbody id="analyzerTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Equipment section (optional) -->
+        <section
+          class="panel"
+          id="analyzerEquipmentSection"
+          style="display: none"
+        >
+          <div class="panel-head">
+            <h2>Equipment by Country</h2>
+            <div class="analyzer-eq-controls">
+              <label
+                class="field"
+                style="
+                  flex-direction: row;
+                  align-items: center;
+                  gap: 8px;
+                  padding: 8px 14px;
+                "
+              >
+                <span>Country</span>
+                <select
+                  id="analyzerEqCountry"
+                  style="
+                    border: 1px solid var(--line);
+                    border-radius: 12px;
+                    padding: 8px 14px;
+                    font: inherit;
+                  "
+                ></select>
+              </label>
+              <span id="analyzerEqMeta" class="micro-copy"></span>
+            </div>
+          </div>
+          <div class="analyzer-charts-row">
+            <div id="analyzerEqChart" style="min-height: 440px; flex: 2"></div>
+            <section class="panel" style="flex: 1; margin: 0">
+              <div class="panel-head">
+                <h2>World totals</h2>
+                <div class="micro-copy">Top 20 equipment types</div>
+              </div>
+              <div id="analyzerWorldEqChart" style="min-height: 400px"></div>
+            </section>
+          </div>
+        </section>
+      </div>
+    </section>
+    <script src="./soldiers.js"></script>
+    <script src="./analyzer.js"></script>
+  </body>
+</html>
