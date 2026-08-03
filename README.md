@@ -1,133 +1,201 @@
-# HOI4 Save Tracker
+Review the current repository and turn the existing root `README.md` into a professional portfolio-quality project README.
 
-Интерактивный анализатор автосейвов Hearts of Iron IV с веб-интерфейсом, анализом стран и военной инфраструктуры.
+Do not modify application logic, parser behavior, API contracts, or UI code.
 
-## Что это
+## Project context
 
-Проект объединяет:
+The repository is a Hearts of Iron IV save-analysis and telemetry project.
 
-- `server/` — NestJS backend, анализатор HOI4-сейвов и API для фронтенда.
-- `client/` — Vite + React SPA, отображает дашборд, сохранения и аналитику страны.
-- `data/` — исторические телеметрические данные автосейвов.
-- `saves/` — каталог примеров `.hoi4` файлов.
-- Корневые Python-скрипты для старых диагностик и утилит.
+Main parts:
 
-## Плюсы
+- React + TypeScript + Vite frontend;
+- NestJS backend;
+- HOI4 save parser;
+- Python autosave watcher and telemetry tools;
+- charts and country statistics;
+- per-country military data;
+- war casualties extracted from `war_relation`;
+- detailed casualty breakdown by opponent and war;
+- tests for parser behavior;
+- frontend lint and build are passing;
+- backend tests and build are passing.
 
-- Веб-интерфейс с браузером сохранений, графиками и таблицами.
-- Парсер HOI4-сейвов со статистикой по странам и военной индустрии.
-- Поддержка zip/сжатых `.hoi4` файлов.
-- Отдельные API для анализа, списка сохранений, телеметрии и состояния сервера.
+## Task
 
-## Структура
+Rewrite the root `README.md` so that a developer, recruiter, or HOI4 player can understand the project quickly.
 
-```
-server/       # NestJS backend
-client/       # Vite + React frontend
-data/         # JSON с автосейв-телеметрией
-saves/        # тестовые save-файлы
-*.py          # Python-утилиты и диагностические скрипты
-```
+Use clear English.
 
-## Требования
+## Required sections
 
-- Node.js 18+ / 20+
-- npm
-- Для Python-утилит: Python 3.11+ (опционально)
+### 1. Title and short description
 
-## Установка
+Use:
 
-### Сервер
-
-```bash
-cd server
-npm install
+```text
+HOI4 Save Tracker
 ```
 
-### Клиент
+Describe it as a local analytics tool for Hearts of Iron IV save files and autosave performance telemetry.
 
-```bash
-cd client
-npm install
+### 2. Key features
+
+Include:
+
+- autosave tracking;
+- save duration and performance telemetry;
+- CPU and RAM measurements;
+- interactive charts;
+- country military statistics;
+- divisions, manpower, aircraft, ships and industry;
+- save-file analyzer;
+- war casualties by country;
+- per-opponent casualty breakdown;
+- responsive React interface;
+- tested NestJS parser.
+
+### 3. Screenshots
+
+Add a section with placeholder Markdown entries:
+
+```markdown
+![Performance dashboard](docs/screenshots/performance-dashboard.png)
+![Country statistics](docs/screenshots/country-statistics.png)
+![War casualties](docs/screenshots/war-casualties.png)
 ```
 
-## Запуск в режиме разработки
+Do not create fake screenshot files.
 
-### Фронтенд
+### 4. Architecture
 
-```bash
-cd client
-npm run dev
+Explain this flow:
+
+```text
+HOI4 save / autosave
+    ↓
+Python watcher and telemetry collection
+    ↓
+JSON records and save files
+    ↓
+NestJS parser and API
+    ↓
+React analytics dashboard
 ```
 
-### Бэкенд
+Also briefly describe:
 
-```bash
-cd server
-npm run start:dev
+- `client/`;
+- `server/`;
+- Python utilities;
+- `diagnostics/`.
+
+### 5. Technology stack
+
+Include:
+
+- React;
+- TypeScript;
+- Vite;
+- NestJS;
+- Plotly;
+- Python;
+- Jest.
+
+### 6. Installation and running
+
+Inspect the actual `package.json` files and available scripts.
+
+Document only commands that really exist.
+
+Include separate instructions for:
+
+- backend;
+- frontend;
+- Python watcher, if its usage can be determined from the code or existing documentation.
+
+Do not invent commands or configuration.
+
+### 7. Tests and verification
+
+Document the real commands for:
+
+- server tests;
+- server build;
+- client lint;
+- client build.
+
+### 8. Data and privacy
+
+Explain that `.hoi4` save files are intentionally excluded from Git because they may be large and contain local campaign data.
+
+Mention that users should provide their own save files locally.
+
+### 9. Current limitations
+
+Include:
+
+- parser depends on HOI4 save-file structure;
+- game updates may require parser updates;
+- exact per-equipment historical losses are not currently available;
+- casualty total is a calculated sum of bilateral `war_relation` entries;
+- some diagnostic tools are developer-oriented.
+
+### 10. Roadmap
+
+Use a checklist:
+
+```markdown
+- [x] Autosave telemetry
+- [x] Country military statistics
+- [x] War casualties by country
+- [x] Per-war casualty details
+- [ ] Naval loss events
+- [ ] Air loss analysis
+- [ ] Equipment-loss analysis
+- [ ] Campaign comparison
+- [ ] Export reports
 ```
 
-> При таком запуске клиент работает отдельно от бэкенда. В продакшен-сборке фронтенд компилируется в `client/dist`, и NestJS обслуживает статические файлы.
+### 11. Repository structure
 
-## Продакшен-сборка
+Add a compact tree showing the important folders and files.
 
-```bash
-cd client
-npm run build
-cd ../server
-npm run build
-npm run start:prod
+Do not include generated folders or save files.
+
+### 12. Portfolio summary
+
+Add a short section explaining the engineering challenges demonstrated by the project:
+
+- parsing a large semi-structured save format;
+- backend/frontend type synchronization;
+- data aggregation;
+- performance-conscious UI;
+- testing and regression protection.
+
+## Cleanup review
+
+Inspect these folders:
+
+```text
+server/scripts/
+diagnostics/
 ```
 
-## Основные API
+Report which files appear to be:
 
-- `GET /api/saves` — список доступных `.hoi4` файлов в директории HOI4.
-- `POST /api/analyze` — анализ конкретного файла.
-- `GET /api/records` — телеметрические записи автосейвов.
-- `GET /api/soldiers` — историческая статистика войск по странам.
-- `GET /api/health` — проверка здоровья сервера.
+- reusable developer tools;
+- one-off investigation scripts;
+- safe to keep;
+- candidates for deletion or relocation.
 
-## Как работает анализатор
+Do not delete anything yet.
 
-Ядро анализа находится в `server/src/hoi4/hoi4-parser.ts`.
+## Verification
 
-- Парсит данные `countries={}` и `states={}`.
-- Собирает статистику по:
-  - бойцам в полях (`army_manpower_value`)
-  - кораблям и авиации
-  - государственным фабрикам, гражданским фабрикам и докам
-- Возвращает структурированный JSON в формате `AnalyzeResult`.
+After editing the README:
 
-## Использование UI
-
-1. Откройте вкладку `Analyzer`.
-2. Нажмите на save-файл из списка.
-3. Дождитесь анализа.
-4. Просмотрите графики мощности, флота, авиации и индустрии.
-
-## Конфигурация путей
-
-`server/src/saves/saves.controller.ts` автоматически ищет HOI4-сейвы в стандартных директориях Windows:
-
-- `~/OneDrive/Документы/Paradox Interactive/Hearts of Iron IV/save games`
-- `~/OneDrive/Documents/Paradox Interactive/Hearts of Iron IV/save games`
-- `~/Документы/Paradox Interactive/Hearts of Iron IV/save games`
-- `~/Documents/Paradox Interactive/Hearts of Iron IV/save games`
-
-Если требуемая папка не найдена, UI позволяет ввести директорию вручную.
-
-## Дополнительно
-
-- `client/src/types/index.ts` содержит типы для фронтенда.
-- `server/src/records/records.controller.ts` обслуживает данные из `data/autosave_intervals.json`.
-- `server/src/app.module.ts` настраивает статическое обслуживание `client/dist`.
-
-## Рекомендации для развития
-
-- Вынести общие типы `CountryStats`/`AnalyzeResult` в shared-пакет.
-- Перевести backend на асинхронное файловое API (`fs/promises`).
-- Добавить валидацию DTO для запроса `/api/analyze`.
-
-## Лицензия
-
-Проект не содержит явно указанной лицензии. Можно добавить `LICENSE` по необходимости.
+1. show the modified files;
+2. summarize the README structure;
+3. list any commands documented;
+4. report suspected temporary scripts;
+5. do not modify source code.
