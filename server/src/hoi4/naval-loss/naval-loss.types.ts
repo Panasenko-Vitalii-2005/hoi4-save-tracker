@@ -43,7 +43,7 @@ export interface ParsedNavalLoss {
     killerName: string | null;
     killerCountryTag: string | null;
     killerDefinition: string | null;
-    assist: boolean;
+    assist: boolean | null;
   };
   event: {
     date: string | null;
