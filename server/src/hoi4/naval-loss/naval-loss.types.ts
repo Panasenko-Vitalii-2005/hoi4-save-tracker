@@ -84,6 +84,17 @@ export interface NavalLossEvent {
   sourceRecordIds: string[];
 }
 
+export interface NavalLossTypeCount {
+  definition: string;
+  count: number;
+}
+
+export interface CountryNavalLossSummary {
+  countryTag: string | null;
+  totalLost: number;
+  byType: NavalLossTypeCount[];
+}
+
 export interface NavalLossAmbiguity {
   ambiguityId: string;
   reason: string;

@@ -32,7 +32,23 @@ describe('analyzeSave naval-loss integration', () => {
   });
 
   test('returns an empty naval-loss list when no records exist', () => {
-    expect(analyzeText('dummy=1').navalLosses).toEqual([]);
+    const result = analyzeText('dummy=1');
+
+    expect(result.navalLosses).toEqual([]);
+    expect(result.navalLossSummaries).toEqual([]);
+  });
+
+  test('exposes country/type summaries without removing detailed events', () => {
+    const result = analyzeText(topLevelHistory(COMPLETE_SUNK_SHIP));
+
+    expect(result.navalLosses).toHaveLength(1);
+    expect(result.navalLossSummaries).toEqual([
+      {
+        countryTag: 'GER',
+        totalLost: 1,
+        byType: [{ definition: 'submarine', count: 1 }],
+      },
+    ]);
   });
 
   test('exposes one normalized global loss with useful fields', () => {

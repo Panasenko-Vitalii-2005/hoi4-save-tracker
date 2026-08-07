@@ -12,8 +12,12 @@
 import * as fs from 'fs';
 import AdmZip from 'adm-zip';
 import { parseGlobalNavalLossHistory } from './naval-loss/global-history.parser';
+import { aggregateNavalLosses } from './naval-loss/naval-loss.aggregator';
 import { deduplicateNavalLosses } from './naval-loss/naval-loss.deduplicator';
-import type { NavalLossEvent } from './naval-loss/naval-loss.types';
+import type {
+  CountryNavalLossSummary,
+  NavalLossEvent,
+} from './naval-loss/naval-loss.types';
 import { parseShipHistoryNavalLosses } from './naval-loss/ship-history.parser';
 
 // ── Core model (single source of truth) ─────────────────────────────────────
@@ -63,6 +67,7 @@ export interface AnalyzeResult {
   equipment_by_country: Record<string, Record<string, number>>;
   world_equipment: Record<string, number>;
   navalLosses: NavalLossEvent[];
+  navalLossSummaries: CountryNavalLossSummary[];
   // Diagnostic: raw parsed war casualties entries. Populated to avoid returning
   // a potentially misleading aggregated `manpowerCasualties` until
   // deduplication is implemented.
@@ -172,6 +177,7 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     [...globalNavalLosses, ...shipHistoryNavalLosses.records],
     shipHistoryNavalLosses.parentContexts,
   );
+  const navalLossSummaries = aggregateNavalLosses(navalLosses);
 
   // ── Game date ──
   const gameDate = DATE_RE.exec(content.slice(0, 20_000))?.[1] ?? 'unknown';
@@ -454,5 +460,6 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     world_equipment: worldEqSorted,
     warCasualties: parsedWarCasualties,
     navalLosses,
+    navalLossSummaries,
   };
 }
