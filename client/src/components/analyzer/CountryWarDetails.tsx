@@ -45,13 +45,12 @@ export const CountryWarDetails = memo(function CountryWarDetails({
           </div>
           <div className="table-wrap">
             <table className="recent-table war-casualties-table">
-              <thead><tr><th>Opponent</th><th>Start date</th><th>Role</th><th className="numeric-cell">Casualties</th></tr></thead>
+              <thead><tr><th>Opponent</th><th>Start date</th><th className="numeric-cell">Casualties</th></tr></thead>
               <tbody>
                 {filteredAndSortedWars.map((war, index) => (
-                  <tr key={`${war.opponentTag}-${war.startDate ?? "null"}-${war.role}-${index}`}>
+                  <tr key={`${war.opponentTag}-${war.startDate ?? "null"}-${index}`}>
                     <td className="country-cell"><strong>{countryFullName(war.opponentTag)}</strong></td>
                     <td className="date-cell">{war.startDate ?? ""}</td>
-                    <td className="war-role">{war.role === "first" ? "First side" : "Second side"}</td>
                     <td className="numeric-cell">{war.casualties.toLocaleString()}</td>
                   </tr>
                 ))}

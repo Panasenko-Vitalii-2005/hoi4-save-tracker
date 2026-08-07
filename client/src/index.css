@@ -734,14 +734,8 @@ select {
   overflow-wrap: anywhere;
 }
 
-.war-casualties-table .date-cell,
-.war-casualties-table .war-role {
+.war-casualties-table .date-cell {
   white-space: nowrap;
-}
-
-.war-casualties-table .war-role {
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .war-casualties-detail-head {
