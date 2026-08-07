@@ -11,6 +11,10 @@
 
 import * as fs from 'fs';
 import AdmZip from 'adm-zip';
+import { parseGlobalNavalLossHistory } from './naval-loss/global-history.parser';
+import { deduplicateNavalLosses } from './naval-loss/naval-loss.deduplicator';
+import type { NavalLossEvent } from './naval-loss/naval-loss.types';
+import { parseShipHistoryNavalLosses } from './naval-loss/ship-history.parser';
 
 // ── Core model (single source of truth) ─────────────────────────────────────
 
@@ -58,6 +62,7 @@ export interface AnalyzeResult {
   by_country: CountryStats[];
   equipment_by_country: Record<string, Record<string, number>>;
   world_equipment: Record<string, number>;
+  navalLosses: NavalLossEvent[];
   // Diagnostic: raw parsed war casualties entries. Populated to avoid returning
   // a potentially misleading aggregated `manpowerCasualties` until
   // deduplication is implemented.
@@ -161,6 +166,13 @@ export function analyzeSave(filePath: string): AnalyzeResult {
   const sizeMb =
     Math.round((fs.statSync(filePath).size / 1_048_576) * 100) / 100;
 
+  const globalNavalLosses = parseGlobalNavalLossHistory(content);
+  const shipHistoryNavalLosses = parseShipHistoryNavalLosses(content);
+  const navalLosses = deduplicateNavalLosses(
+    [...globalNavalLosses, ...shipHistoryNavalLosses.records],
+    shipHistoryNavalLosses.parentContexts,
+  );
+
   // ── Game date ──
   const gameDate = DATE_RE.exec(content.slice(0, 20_000))?.[1] ?? 'unknown';
 
@@ -180,8 +192,8 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     const [wb] = extractBlock(content, wm.index + wm[0].length);
     const fM = /first\s*=\s*"([A-Z][A-Z0-9]{2})"/.exec(wb);
     const sM = /second\s*=\s*"([A-Z][A-Z0-9]{2})"/.exec(wb);
-    const fcM = /first_casualties\s*=\s*([0-9\.]+)/.exec(wb);
-    const scM = /second_casualties\s*=\s*([0-9\.]+)/.exec(wb);
+    const fcM = /first_casualties\s*=\s*([0-9.]+)/.exec(wb);
+    const scM = /second_casualties\s*=\s*([0-9.]+)/.exec(wb);
     const sdM = /start_date\s*=\s*"([^"]+)"/.exec(wb);
     // collect wargoal ids found inside this war_relation (if any)
     const wargoalIds: number[] = [];
@@ -441,5 +453,6 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     equipment_by_country: eqByCountry,
     world_equipment: worldEqSorted,
     warCasualties: parsedWarCasualties,
+    navalLosses,
   };
 }
