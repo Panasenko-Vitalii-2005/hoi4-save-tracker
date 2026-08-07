@@ -272,4 +272,15 @@ describe('parseShipHistoryNavalLosses', () => {
     expect(result.records[0].recordId).not.toBe(result.records[1].recordId);
     expect(result.records[0].sunkShip).toEqual(result.records[1].sunkShip);
   });
+
+  test('parses the units wrapper used by real country save data', () => {
+    const result = parseShipHistoryNavalLosses(
+      shipHistoryFixture({ unitsWrapper: true }),
+    );
+
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0].sourcePath).toBe(
+      'countries.TAG.units.fleet.task_force.ship.history.army_history.history_queue.sunk_ship',
+    );
+  });
 });

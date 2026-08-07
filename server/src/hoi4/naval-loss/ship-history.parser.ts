@@ -19,6 +19,12 @@ interface RecordCandidate {
   block: LocatedBlock;
   parentContextId: string;
   provenanceWarnings: string[];
+  sourcePath: string;
+}
+
+interface FleetCandidate {
+  block: LocatedBlock;
+  sourcePath: string;
 }
 
 function parseDirectId(
@@ -106,6 +112,7 @@ function collectShipHistoryCandidates(
   fleet: LocatedBlock,
   taskForce: LocatedBlock,
   ship: LocatedBlock,
+  sourcePath: string,
 ): {
   context: NavalLossParentContext;
   candidates: RecordCandidate[];
@@ -158,6 +165,7 @@ function collectShipHistoryCandidates(
             block: sunkShip,
             parentContextId: contextId,
             provenanceWarnings,
+            sourcePath,
           });
         }
       }
@@ -179,6 +187,39 @@ function collectShipHistoryCandidates(
   };
 }
 
+function findCountryFleets(
+  saveText: string,
+  country: LocatedBlock,
+): FleetCandidate[] {
+  const direct = findDirectBlocks(
+    saveText,
+    country.bodyStart,
+    country.bodyEnd,
+    'fleet',
+  ).map((block) => ({
+    block,
+    sourcePath:
+      'countries.TAG.fleet.task_force.ship.history.army_history.history_queue.sunk_ship',
+  }));
+  const insideUnits = findDirectBlocks(
+    saveText,
+    country.bodyStart,
+    country.bodyEnd,
+    'units',
+  ).flatMap((units) =>
+    findDirectBlocks(saveText, units.bodyStart, units.bodyEnd, 'fleet').map(
+      (block) => ({
+        block,
+        sourcePath:
+          'countries.TAG.units.fleet.task_force.ship.history.army_history.history_queue.sunk_ship',
+      }),
+    ),
+  );
+  return [...direct, ...insideUnits].sort(
+    (left, right) => left.block.keyOffset - right.block.keyOffset,
+  );
+}
+
 export function parseShipHistoryNavalLosses(
   saveText: string,
 ): ShipHistoryParseResult {
@@ -198,12 +239,8 @@ export function parseShipHistoryNavalLosses(
     ).filter((block) => /^[A-Z][A-Z0-9]{2}$/.test(block.key));
 
     for (const country of countryBlocks) {
-      for (const fleet of findDirectBlocks(
-        saveText,
-        country.bodyStart,
-        country.bodyEnd,
-        'fleet',
-      )) {
+      for (const fleetCandidate of findCountryFleets(saveText, country)) {
+        const fleet = fleetCandidate.block;
         for (const taskForce of findDirectBlocks(
           saveText,
           fleet.bodyStart,
@@ -222,6 +259,7 @@ export function parseShipHistoryNavalLosses(
               fleet,
               taskForce,
               ship,
+              fleetCandidate.sourcePath,
             );
             if (collected) {
               contexts.push(collected.context);
@@ -242,7 +280,7 @@ export function parseShipHistoryNavalLosses(
       candidate.block,
       ordinal,
       'ship_history',
-      'countries.TAG.fleet.task_force.ship.history.army_history.history_queue.sunk_ship',
+      candidate.sourcePath,
       candidate.parentContextId,
       candidate.provenanceWarnings,
     ),

@@ -12,6 +12,7 @@ export interface ShipHistoryFixtureOptions {
   fleetId?: string | null;
   taskForceId?: string | null;
   ships?: FixtureShipOptions[];
+  unitsWrapper?: boolean;
 }
 
 export function historyQueue(
@@ -41,6 +42,7 @@ export function shipHistoryFixture({
       entries: [historyQueue()],
     },
   ],
+  unitsWrapper = false,
 }: ShipHistoryFixtureOptions = {}): string {
   const shipBlocks = ships
     .map(
@@ -62,15 +64,17 @@ export function shipHistoryFixture({
     )
     .join('\n');
 
-  return `countries={
-    ${countryTag}={
-      fleet={
+  const fleetBlock = `fleet={
         ${fleetId === null ? '' : `id=${fleetId}`}
         task_force={
           ${taskForceId === null ? '' : `id=${taskForceId}`}
           ${shipBlocks}
         }
-      }
+      }`;
+
+  return `countries={
+    ${countryTag}={
+      ${unitsWrapper ? `units={ ${fleetBlock} }` : fleetBlock}
     }
   }`;
 }

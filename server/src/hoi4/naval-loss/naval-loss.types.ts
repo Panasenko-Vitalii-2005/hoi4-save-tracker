@@ -72,6 +72,7 @@ export interface NavalLossSourceSummary {
 
 export interface NavalLossEvent {
   eventId: string;
+  rawRecordCount: number;
   confidence: NavalLossConfidence;
   deduplicationStatus: NavalLossDeduplicationStatus;
   countable: boolean;

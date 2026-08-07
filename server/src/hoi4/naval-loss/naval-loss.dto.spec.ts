@@ -57,6 +57,7 @@ describe('naval loss contracts', () => {
 
   const event: NavalLossEvent = {
     eventId: 'event-1',
+    rawRecordCount: 1,
     confidence: 'high',
     deduplicationStatus: 'global_anchor',
     countable: true,
