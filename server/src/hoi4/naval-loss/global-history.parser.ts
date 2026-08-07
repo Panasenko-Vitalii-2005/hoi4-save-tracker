@@ -1,6 +1,7 @@
 import type { ParsedNavalLoss, SaveScopedId } from './naval-loss.types';
 
-interface LocatedBlock {
+export interface LocatedBlock {
+  key: string;
   keyOffset: number;
   bodyStart: number;
   bodyEnd: number;
@@ -54,11 +55,11 @@ function readBracedBlock(
   return { bodyEnd: end, nextOffset: end, complete: false };
 }
 
-function findDirectBlocks(
+export function findDirectBlocks(
   text: string,
   start: number,
   end: number,
-  targetName: string,
+  targetName?: string,
 ): LocatedBlock[] {
   const blocks: LocatedBlock[] = [];
   let offset = start;
@@ -90,8 +91,9 @@ function findDirectBlocks(
 
     const openBrace = offset;
     const block = readBracedBlock(text, openBrace, end);
-    if (key === targetName) {
+    if (targetName === undefined || key === targetName) {
       blocks.push({
+        key,
         keyOffset,
         bodyStart: openBrace + 1,
         bodyEnd: block.bodyEnd,
@@ -102,6 +104,54 @@ function findDirectBlocks(
   }
 
   return blocks;
+}
+
+export function readDirectScalar(
+  text: string,
+  start: number,
+  end: number,
+  targetName: string,
+): string | null {
+  let offset = start;
+  while (offset < end) {
+    if (text[offset] === '"') {
+      offset = skipQuotedString(text, offset, end);
+      continue;
+    }
+    if (text[offset] === '{') {
+      offset = readBracedBlock(text, offset, end).nextOffset;
+      continue;
+    }
+    if (!isIdentifierCharacter(text[offset])) {
+      offset++;
+      continue;
+    }
+
+    const keyOffset = offset;
+    while (offset < end && isIdentifierCharacter(text[offset])) offset++;
+    const key = text.slice(keyOffset, offset);
+    while (offset < end && /\s/.test(text[offset])) offset++;
+    if (text[offset] !== '=') continue;
+    offset++;
+    while (offset < end && /\s/.test(text[offset])) offset++;
+
+    if (text[offset] === '{') {
+      offset = readBracedBlock(text, offset, end).nextOffset;
+      continue;
+    }
+    if (key !== targetName) continue;
+
+    if (text[offset] === '"') {
+      const valueEnd = skipQuotedString(text, offset, end);
+      return valueEnd <= end
+        ? text.slice(offset + 1, Math.max(offset + 1, valueEnd - 1))
+        : null;
+    }
+    const valueStart = offset;
+    while (offset < end && !/[\s{}]/.test(text[offset])) offset++;
+    return text.slice(valueStart, offset) || null;
+  }
+  return null;
 }
 
 function readScalar(body: string, field: string): string | null {
@@ -186,20 +236,24 @@ function readSaveScopedId(
   return { id: validId, type: validType, status: 'valid' };
 }
 
-function parseSunkShipBlock(
+export function parseSunkShipBlock(
   saveText: string,
   block: LocatedBlock,
   ordinal: number,
+  source: ParsedNavalLoss['source'] = 'global_history',
+  sourcePath = 'history.sunk_ship',
+  parentContextId: string | null = null,
+  provenanceWarnings: string[] = [],
 ): ParsedNavalLoss {
   const body = saveText.slice(block.bodyStart, block.bodyEnd);
-  const warnings: string[] = [];
+  const warnings: string[] = [...provenanceWarnings];
   if (!block.complete) warnings.push('unterminated sunk_ship block');
 
   const record: ParsedNavalLoss = {
-    recordId: `global_history:${block.keyOffset}:${ordinal}`,
-    source: 'global_history',
+    recordId: `${source}:${block.keyOffset}:${ordinal}`,
+    source,
     sourceOffset: block.keyOffset,
-    sourcePath: 'history.sunk_ship',
+    sourcePath,
     ordinal,
     complete: false,
     warnings,
@@ -222,7 +276,7 @@ function parseSunkShipBlock(
       battle: readSaveScopedId(body, 'battle', warnings),
       convoyRelated: readBoolean(body, 'convoy', warnings, true),
     },
-    parentContextId: null,
+    parentContextId,
   };
   record.complete = block.complete && warnings.length === 0;
   return record;
