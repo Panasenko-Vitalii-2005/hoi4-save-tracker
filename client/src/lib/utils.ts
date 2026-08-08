@@ -116,6 +116,59 @@ export function shortEqName(name: string): string {
     .replace(/\b(\w)/g, (c) => c.toUpperCase());
 }
 
+export interface Hoi4DateParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+}
+
+export function parseHoi4Date(
+  value: string | null | undefined,
+): Hoi4DateParts | null {
+  if (!value) return null;
+  const match = /^(\d{1,4})\.(\d{1,2})\.(\d{1,2})\.(\d{1,2})$/.exec(value);
+  if (!match) return null;
+
+  const [year, month, day, hour] = match.slice(1).map(Number);
+  if (year < 1 || month < 1 || month > 12 || hour < 0 || hour > 23) {
+    return null;
+  }
+
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  if (day < 1 || day > daysInMonth[month - 1]) return null;
+
+  return { year, month, day, hour };
+}
+
+export function formatHoi4Date(value: string | null | undefined): string {
+  const parsed = parseHoi4Date(value);
+  if (!parsed) return "Unknown";
+  return `${String(parsed.day).padStart(2, "0")}.${String(parsed.month).padStart(2, "0")}.${String(parsed.year).padStart(4, "0")}`;
+}
+
+export function navalShipTypeLabel(
+  definition: string | null | undefined,
+): string {
+  const readable = definition?.trim().replace(/_+/g, " ") ?? "";
+  if (!readable) return "Unknown";
+  return readable.charAt(0).toUpperCase() + readable.slice(1);
+}
+
 export const COUNTRY_NAMES: Record<string, string> = {
   GER: "Germany",
   SOV: "Soviet Union",

@@ -1,14 +1,17 @@
 import { useEffect, useMemo } from "react";
-import type { CountryNavalLossSummary } from "@/types";
+import type { CountryNavalLossSummary, NavalLossEvent } from "@/types";
 import { CountryNavalLossDetails } from "./CountryNavalLossDetails";
+import { CountryNavalLossEvents } from "./CountryNavalLossEvents";
 import { CountryNavalLossTable } from "./CountryNavalLossTable";
 
 export function NavalLossesTab({
   summaries,
+  events,
   selectedTag,
   onSelect,
 }: {
   summaries: CountryNavalLossSummary[];
+  events: NavalLossEvent[];
   selectedTag: string | null | undefined;
   onSelect: (tag: string | null | undefined) => void;
 }) {
@@ -23,9 +26,8 @@ export function NavalLossesTab({
 
   const selectedCountry = useMemo(
     () =>
-      summaries.find(
-        (summary) => summary.countryTag === resolvedSelectedTag,
-      ) ?? null,
+      summaries.find((summary) => summary.countryTag === resolvedSelectedTag) ??
+      null,
     [resolvedSelectedTag, summaries],
   );
 
@@ -50,7 +52,12 @@ export function NavalLossesTab({
         selectedTag={resolvedSelectedTag ?? null}
         onSelect={onSelect}
       />
-      <CountryNavalLossDetails summary={selectedCountry} />
+      <div className="naval-losses-detail-column">
+        <CountryNavalLossDetails summary={selectedCountry} />
+        {selectedCountry && (
+          <CountryNavalLossEvents summary={selectedCountry} events={events} />
+        )}
+      </div>
     </div>
   );
 }

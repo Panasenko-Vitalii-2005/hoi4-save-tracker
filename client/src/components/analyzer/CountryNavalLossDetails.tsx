@@ -1,15 +1,9 @@
 import { memo } from "react";
 import type { CountryNavalLossSummary } from "@/types";
-import { countryFullName } from "@/lib/utils";
+import { countryFullName, navalShipTypeLabel } from "@/lib/utils";
 
 function countryLabel(tag: string | null): string {
   return tag === null ? "Unknown country" : countryFullName(tag);
-}
-
-function shipTypeLabel(definition: string): string {
-  const readable = definition.trim().replace(/_+/g, " ");
-  if (!readable) return "Unknown";
-  return readable.charAt(0).toUpperCase() + readable.slice(1);
 }
 
 export const CountryNavalLossDetails = memo(function CountryNavalLossDetails({
@@ -44,7 +38,7 @@ export const CountryNavalLossDetails = memo(function CountryNavalLossDetails({
                 {summary.byType.map((type) => (
                   <tr key={type.definition}>
                     <td className="type-cell">
-                      <strong>{shipTypeLabel(type.definition)}</strong>
+                      <strong>{navalShipTypeLabel(type.definition)}</strong>
                     </td>
                     <td className="numeric-cell">
                       {type.count.toLocaleString()}

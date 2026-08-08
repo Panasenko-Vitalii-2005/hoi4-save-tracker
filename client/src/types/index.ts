@@ -83,6 +83,24 @@ export interface NavalLossTypeCount {
   count: number;
 }
 
+export interface NavalLossAttribution {
+  role: "primary_observed" | "assistant" | "alternative" | "unresolved";
+  killerName: string | null;
+  killerCountryTag: string | null;
+}
+
+export interface NavalLossEvent {
+  sunkShip: {
+    name: string | null;
+    countryTag: string | null;
+    definition: string | null;
+  };
+  event: {
+    date: string | null;
+  };
+  attributions: NavalLossAttribution[];
+}
+
 export interface CountryNavalLossSummary {
   countryTag: string | null;
   totalLost: number;
@@ -101,6 +119,7 @@ export interface AnalyzeResult {
   by_country: CountryStats[];
   equipment_by_country: Record<string, Record<string, number>>;
   world_equipment: Record<string, number>;
+  navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
   calculatedWarCasualtiesTotal?: number;
   warCasualties?: ParsedWarCasualties[];

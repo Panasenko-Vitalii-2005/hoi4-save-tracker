@@ -830,6 +830,12 @@ select {
   min-width: 0;
 }
 
+.naval-losses-detail-column {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
 .naval-losses-ranking .naval-losses-table {
   min-width: 360px;
 }
@@ -902,6 +908,44 @@ select {
 
 .naval-losses-note {
   margin-top: 16px;
+}
+
+.naval-losses-events {
+  min-width: 0;
+}
+
+.naval-losses-events .panel-head h2 {
+  font-size: 20px;
+}
+
+.naval-losses-events-table {
+  min-width: 720px;
+}
+
+.naval-losses-events-table .ship-cell,
+.naval-losses-events-table .killer-cell {
+  min-width: 190px;
+  overflow-wrap: anywhere;
+}
+
+.naval-losses-events-table .type-cell {
+  min-width: 130px;
+  overflow-wrap: anywhere;
+}
+
+.naval-losses-events-table .date-cell {
+  white-space: nowrap;
+}
+
+.naval-losses-inconsistent,
+.naval-losses-events-empty {
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.naval-losses-inconsistent {
+  color: var(--accent);
 }
 
 .naval-losses-empty {

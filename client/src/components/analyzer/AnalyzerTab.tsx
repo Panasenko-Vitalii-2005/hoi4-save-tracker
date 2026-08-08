@@ -640,6 +640,7 @@ export function AnalyzerTab() {
           ) : analysisView === "naval-losses" ? (
             <NavalLossesTab
               summaries={result.navalLossSummaries}
+              events={result.navalLosses}
               selectedTag={navalLossCountryTag}
               onSelect={setNavalLossCountryTag}
             />
