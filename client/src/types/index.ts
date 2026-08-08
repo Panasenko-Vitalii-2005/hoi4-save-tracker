@@ -78,6 +78,17 @@ export interface ParsedWarCasualties {
   wargoalIds: number[];
 }
 
+export interface NavalLossTypeCount {
+  definition: string;
+  count: number;
+}
+
+export interface CountryNavalLossSummary {
+  countryTag: string | null;
+  totalLost: number;
+  byType: NavalLossTypeCount[];
+}
+
 /** World totals — same shape as CountryStats minus the tag. */
 export type CountryTotals = Omit<CountryStats, "tag">;
 
@@ -90,6 +101,7 @@ export interface AnalyzeResult {
   by_country: CountryStats[];
   equipment_by_country: Record<string, Record<string, number>>;
   world_equipment: Record<string, number>;
+  navalLossSummaries: CountryNavalLossSummary[];
   calculatedWarCasualtiesTotal?: number;
   warCasualties?: ParsedWarCasualties[];
 }

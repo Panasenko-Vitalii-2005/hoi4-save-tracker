@@ -10,6 +10,7 @@ import { SummaryGrid } from "@/components/ui/SummaryGrid";
 import { fmtBig, shortEqName, countryFullName } from "@/lib/utils";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
 import { WarCasualtiesTab } from "./WarCasualtiesTab";
+import { NavalLossesTab } from "./NavalLossesTab";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -285,8 +286,11 @@ export function AnalyzerTab() {
   const [filter, setFilter] = useState("");
   const [showEq, setShowEq] = useState(false);
   const [eqCountry, setEqCountry] = useState("");
+  const [navalLossCountryTag, setNavalLossCountryTag] = useState<
+    string | null | undefined
+  >(undefined);
   const [analysisView, setAnalysisView] = useState<
-    "overview" | "war-casualties"
+    "overview" | "war-casualties" | "naval-losses"
   >("overview");
 
   const analyze = async (filePath: string, fileName: string) => {
@@ -621,10 +625,24 @@ export function AnalyzerTab() {
             >
               War Casualties
             </button>
+            <button
+              className={`tab-btn${analysisView === "naval-losses" ? " active" : ""}`}
+              onClick={() => setAnalysisView("naval-losses")}
+              role="tab"
+              aria-selected={analysisView === "naval-losses"}
+            >
+              Naval Losses
+            </button>
           </div>
 
           {analysisView === "war-casualties" ? (
             <WarCasualtiesTab countries={result.by_country} />
+          ) : analysisView === "naval-losses" ? (
+            <NavalLossesTab
+              summaries={result.navalLossSummaries}
+              selectedTag={navalLossCountryTag}
+              onSelect={setNavalLossCountryTag}
+            />
           ) : (
             <>
           {/* Summary cards — derived from totals: CountryTotals */}

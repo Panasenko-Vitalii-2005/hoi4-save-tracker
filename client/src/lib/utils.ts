@@ -123,6 +123,7 @@ export const COUNTRY_NAMES: Record<string, string> = {
   FRA: "France",
   USA: "United States",
   ITA: "Italy",
+  JAP: "Japan",
   JPN: "Japan",
   CHI: "China",
   CAN: "Canada",
