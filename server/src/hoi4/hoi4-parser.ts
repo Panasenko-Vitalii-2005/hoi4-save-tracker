@@ -12,10 +12,15 @@
 import * as fs from 'fs';
 import AdmZip from 'adm-zip';
 import { parseGlobalNavalLossHistory } from './naval-loss/global-history.parser';
+import { aggregateCreditedNavalKills } from './naval-loss/naval-kill.aggregator';
+import { resolveCreditedNavalKills } from './naval-loss/naval-kill.resolver';
 import { aggregateNavalLosses } from './naval-loss/naval-loss.aggregator';
 import { deduplicateNavalLosses } from './naval-loss/naval-loss.deduplicator';
 import type {
   CountryNavalLossSummary,
+  CountryNavalKillSummary,
+  CreditedNavalKill,
+  NavalKillerShipSummary,
   NavalLossEvent,
 } from './naval-loss/naval-loss.types';
 import { parseShipHistoryNavalLosses } from './naval-loss/ship-history.parser';
@@ -68,6 +73,9 @@ export interface AnalyzeResult {
   world_equipment: Record<string, number>;
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
+  navalKills: CreditedNavalKill[];
+  navalKillSummaries: CountryNavalKillSummary[];
+  navalKillerShipSummaries: NavalKillerShipSummary[];
   // Diagnostic: raw parsed war casualties entries. Populated to avoid returning
   // a potentially misleading aggregated `manpowerCasualties` until
   // deduplication is implemented.
@@ -178,6 +186,17 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     shipHistoryNavalLosses.parentContexts,
   );
   const navalLossSummaries = aggregateNavalLosses(navalLosses);
+  const navalKillResolutions = resolveCreditedNavalKills(
+    navalLosses,
+    shipHistoryNavalLosses.parentContexts,
+  );
+  const navalKills = navalKillResolutions.flatMap(({ creditedKill }) =>
+    creditedKill ? [creditedKill] : [],
+  );
+  const {
+    countrySummaries: navalKillSummaries,
+    killerShipSummaries: navalKillerShipSummaries,
+  } = aggregateCreditedNavalKills(navalKills);
 
   // ── Game date ──
   const gameDate = DATE_RE.exec(content.slice(0, 20_000))?.[1] ?? 'unknown';
@@ -461,5 +480,8 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     warCasualties: parsedWarCasualties,
     navalLosses,
     navalLossSummaries,
+    navalKills,
+    navalKillSummaries,
+    navalKillerShipSummaries,
   };
 }

@@ -36,6 +36,9 @@ describe('analyzeSave naval-loss integration', () => {
 
     expect(result.navalLosses).toEqual([]);
     expect(result.navalLossSummaries).toEqual([]);
+    expect(result.navalKills).toEqual([]);
+    expect(result.navalKillSummaries).toEqual([]);
+    expect(result.navalKillerShipSummaries).toEqual([]);
   });
 
   test('exposes country/type summaries without removing detailed events', () => {
@@ -49,6 +52,29 @@ describe('analyzeSave naval-loss integration', () => {
         byType: [{ definition: 'submarine', count: 1 }],
       },
     ]);
+  });
+
+  test('exposes a country credit without unsafe name-only ship aggregation', () => {
+    const result = analyzeText(topLevelHistory(COMPLETE_SUNK_SHIP));
+
+    expect(result.navalKills).toHaveLength(1);
+    expect(result.navalKills[0]).toMatchObject({
+      killerCountryTag: 'ENG',
+      killerShip: {
+        name: 'HMS Napier',
+        definition: 'destroyer',
+        identity: null,
+      },
+      shipCreditResolved: false,
+    });
+    expect(result.navalKillSummaries).toEqual([
+      {
+        countryTag: 'ENG',
+        creditedKills: 1,
+        byVictimType: [{ definition: 'submarine', count: 1 }],
+      },
+    ]);
+    expect(result.navalKillerShipSummaries).toEqual([]);
   });
 
   test('exposes one normalized global loss with useful fields', () => {
@@ -107,6 +133,23 @@ describe('analyzeSave naval-loss integration', () => {
         shipHistoryRecords: 1,
       },
     });
+    expect(result.navalKills[0]).toMatchObject({
+      killerCountryTag: 'ENG',
+      shipCreditResolved: true,
+      killerShip: {
+        name: 'HMS Napier',
+        identity: { id: 33, type: 51 },
+      },
+    });
+    expect(result.navalKillerShipSummaries).toEqual([
+      {
+        countryTag: 'ENG',
+        shipId: { id: 33, type: 51 },
+        shipName: 'HMS Napier',
+        shipDefinition: 'destroyer',
+        creditedKills: 1,
+      },
+    ]);
   });
 
   test('keeps multiple named ships from one battle as separate events', () => {
