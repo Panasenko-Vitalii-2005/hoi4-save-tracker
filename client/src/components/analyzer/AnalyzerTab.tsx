@@ -289,6 +289,9 @@ export function AnalyzerTab() {
   const [navalLossCountryTag, setNavalLossCountryTag] = useState<
     string | null | undefined
   >(undefined);
+  const [navalKillCountryTag, setNavalKillCountryTag] = useState<
+    string | undefined
+  >(undefined);
   const [analysisView, setAnalysisView] = useState<
     "overview" | "war-casualties" | "naval-losses"
   >("overview");
@@ -643,6 +646,10 @@ export function AnalyzerTab() {
               events={result.navalLosses}
               selectedTag={navalLossCountryTag}
               onSelect={setNavalLossCountryTag}
+              killSummaries={result.navalKillSummaries}
+              killerShips={result.navalKillerShipSummaries}
+              selectedKillTag={navalKillCountryTag}
+              onSelectKill={setNavalKillCountryTag}
             />
           ) : (
             <>

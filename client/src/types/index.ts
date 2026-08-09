@@ -107,6 +107,46 @@ export interface CountryNavalLossSummary {
   byType: NavalLossTypeCount[];
 }
 
+export interface CreditedKillerShipIdentity {
+  id: number;
+  type: number;
+}
+
+export interface CreditedKillerShip {
+  name: string | null;
+  definition: string | null;
+  identity: CreditedKillerShipIdentity | null;
+}
+
+export interface CreditedNavalKill {
+  eventId: string;
+  sunkShip: {
+    countryTag: string | null;
+    name: string | null;
+    definition: string | null;
+  };
+  event: {
+    date: string | null;
+  };
+  killerCountryTag: string;
+  killerShip: CreditedKillerShip | null;
+  shipCreditResolved: boolean;
+}
+
+export interface CountryNavalKillSummary {
+  countryTag: string;
+  creditedKills: number;
+  byVictimType: NavalLossTypeCount[];
+}
+
+export interface NavalKillerShipSummary {
+  countryTag: string;
+  shipId: CreditedKillerShipIdentity;
+  shipName: string | null;
+  shipDefinition: string | null;
+  creditedKills: number;
+}
+
 /** World totals — same shape as CountryStats minus the tag. */
 export type CountryTotals = Omit<CountryStats, "tag">;
 
@@ -121,6 +161,9 @@ export interface AnalyzeResult {
   world_equipment: Record<string, number>;
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
+  navalKills: CreditedNavalKill[];
+  navalKillSummaries: CountryNavalKillSummary[];
+  navalKillerShipSummaries: NavalKillerShipSummary[];
   calculatedWarCasualtiesTotal?: number;
   warCasualties?: ParsedWarCasualties[];
 }
