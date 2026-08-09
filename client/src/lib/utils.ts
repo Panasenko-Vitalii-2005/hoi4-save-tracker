@@ -130,8 +130,8 @@ export function parseHoi4Date(
   const match = /^(\d{1,4})\.(\d{1,2})\.(\d{1,2})\.(\d{1,2})$/.exec(value);
   if (!match) return null;
 
-  const [year, month, day, hour] = match.slice(1).map(Number);
-  if (year < 1 || month < 1 || month > 12 || hour < 0 || hour > 23) {
+  let [year, month, day, hour] = match.slice(1).map(Number);
+  if (year < 1 || month < 1 || month > 12 || hour < 0 || hour > 24) {
     return null;
   }
 
@@ -151,6 +151,19 @@ export function parseHoi4Date(
     31,
   ];
   if (day < 1 || day > daysInMonth[month - 1]) return null;
+
+  if (hour === 24) {
+    hour = 0;
+    day++;
+    if (day > daysInMonth[month - 1]) {
+      day = 1;
+      month++;
+      if (month > 12) {
+        month = 1;
+        year++;
+      }
+    }
+  }
 
   return { year, month, day, hour };
 }
