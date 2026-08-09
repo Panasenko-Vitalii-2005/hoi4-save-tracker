@@ -23,6 +23,7 @@ import type {
   NavalKillerShipSummary,
   NavalLossEvent,
 } from './naval-loss/naval-loss.types';
+import { decodeSaveText } from './save-text.decoder';
 import { parseShipHistoryNavalLosses } from './naval-loss/ship-history.parser';
 
 // ── Core model (single source of truth) ─────────────────────────────────────
@@ -103,9 +104,9 @@ function readSave(filePath: string): string {
     const zip = new AdmZip(buf);
     const entries = zip.getEntries();
     if (!entries.length) return '';
-    return entries[0].getData().toString('latin1');
+    return decodeSaveText(entries[0].getData());
   }
-  return buf.toString('latin1');
+  return decodeSaveText(buf);
 }
 
 // ── Block extractor ───────────────────────────────────────────────────────────
