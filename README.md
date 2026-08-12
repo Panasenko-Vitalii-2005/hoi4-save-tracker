@@ -208,7 +208,7 @@ Start the production-like two-container application from the repository root:
 docker compose up --build
 ```
 
-Open <http://localhost:8080>. The nginx frontend serves the built React SPA and
+Open <http://localhost:8081>. The nginx frontend serves the built React SPA and
 proxies `/api/*` to the internal NestJS backend. Upload `.hoi4` saves through
 the Analyzer; saves are processed from temporary container storage, removed
 after analysis, and are not included in either image. Allow Docker enough
