@@ -199,3 +199,23 @@ After editing the README:
 3. list any commands documented;
 4. report suspected temporary scripts;
 5. do not modify source code.
+
+## Docker
+
+Start the production-like two-container application from the repository root:
+
+```bash
+docker compose up --build
+```
+
+Open <http://localhost:8080>. The nginx frontend serves the built React SPA and
+proxies `/api/*` to the internal NestJS backend. Upload `.hoi4` saves through
+the Analyzer; saves are processed from temporary container storage, removed
+after analysis, and are not included in either image. Allow Docker enough
+memory for decoded late-game or modded saves larger than 100 MiB.
+
+Stop and remove the containers with:
+
+```bash
+docker compose down
+```

@@ -24,8 +24,10 @@ type SortCol = keyof CountryStats;
 
 function SaveBrowser({
   onSelect,
+  onUpload,
 }: {
   onSelect: (p: string, n: string) => void;
+  onUpload: (file: File) => void;
 }) {
   const [dir, setDir] = useState("");
   const [editDir, setEditDir] = useState("");
@@ -71,6 +73,22 @@ function SaveBrowser({
     <section className="panel">
       <div className="panel-head">
         <h2>Save Files</h2>
+        <label
+          className="button button-primary"
+          style={{ padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+        >
+          Upload .hoi4
+          <input
+            type="file"
+            accept=".hoi4"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onUpload(file);
+              event.target.value = "";
+            }}
+          />
+        </label>
         <button
           className="button button-secondary"
           style={{ padding: "6px 14px", fontSize: 13 }}
@@ -296,15 +314,26 @@ export function AnalyzerTab() {
     "overview" | "war-casualties" | "naval-losses"
   >("overview");
 
-  const analyze = async (filePath: string, fileName: string) => {
+  const analyze = async (
+    filePath: string,
+    fileName: string,
+    uploadedFile?: File,
+  ) => {
     setStatus({ type: "loading", msg: `Parsing ${fileName}… 10–20 s` });
     setResult(null);
     try {
-      const resp = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: filePath }),
-      });
+      const formData = new FormData();
+      if (uploadedFile) formData.append("file", uploadedFile);
+      const resp = await fetch(
+        "/api/analyze",
+        uploadedFile
+          ? { method: "POST", body: formData }
+          : {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: filePath }),
+            },
+      );
       const text = await resp.text();
       let data: AnalyzeResult;
       try {
@@ -593,7 +622,10 @@ export function AnalyzerTab() {
 
   return (
     <div className="analyzer-shell">
-      <SaveBrowser onSelect={analyze} />
+      <SaveBrowser
+        onSelect={analyze}
+        onUpload={(file) => analyze("", file.name, file)}
+      />
 
       {status.type !== "idle" && (
         <div

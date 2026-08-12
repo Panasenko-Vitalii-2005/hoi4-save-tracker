@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/dist
+**/build
+*.hoi4
+**/*.hoi4
+saves/
+.venv/
+**/__pycache__/
+coverage/
+*.log
+.env
+.env.*
