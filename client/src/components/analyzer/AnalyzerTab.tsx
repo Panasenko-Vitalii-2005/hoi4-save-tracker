@@ -30,8 +30,6 @@ function SaveBrowser({
   onUpload: (file: File) => void;
 }) {
   const [dir, setDir] = useState("");
-  const [editDir, setEditDir] = useState("");
-  const [editing, setEditing] = useState(false);
   const [files, setFiles] = useState<SaveFile[]>([]);
   const [page, setPage] = useState(1);
   const [exists, setExists] = useState(true);
@@ -39,19 +37,15 @@ function SaveBrowser({
 
   const PAGE_SIZE = 10;
 
-  const loadDir = useCallback(async (scanDir?: string) => {
+  const loadDir = useCallback(async () => {
     setLoading(true);
     try {
-      const url = scanDir
-        ? `/api/saves?dir=${encodeURIComponent(scanDir)}`
-        : "/api/saves";
-      const data = (await fetch(url).then((r) => r.json())) as {
+      const data = (await fetch("/api/saves").then((r) => r.json())) as {
         dir: string;
         exists: boolean;
         files: SaveFile[];
       };
       setDir(data.dir);
-      setEditDir(data.dir);
       setExists(data.exists);
       setFiles([...data.files].reverse());
       setPage(1);
@@ -92,7 +86,7 @@ function SaveBrowser({
         <button
           className="button button-secondary"
           style={{ padding: "6px 14px", fontSize: 13 }}
-          onClick={() => loadDir(dir)}
+          onClick={loadDir}
         >
           ↻ Refresh
         </button>
@@ -105,86 +99,42 @@ function SaveBrowser({
           alignItems: "center",
         }}
       >
-        {editing ? (
-          <>
-            <input
-              value={editDir}
-              onChange={(e) => setEditDir(e.target.value)}
-              onKeyDown={(e) =>
-                e.key === "Enter" && (setEditing(false), loadDir(editDir))
-              }
-              style={{
-                flex: 1,
-                border: "1.5px solid var(--accent-2)",
-                borderRadius: 12,
-                padding: "10px 16px",
-                font: '14px "IBM Plex Mono",monospace',
-                color: "var(--ink)",
-                background: "var(--paper-strong)",
-                outline: "none",
-              }}
-              autoFocus
-            />
-            <button
-              className="button button-primary"
-              style={{ padding: "10px 16px", fontSize: 13 }}
-              onClick={() => {
-                setEditing(false);
-                loadDir(editDir);
-              }}
-            >
-              Open
-            </button>
-            <button
-              className="button button-secondary"
-              style={{ padding: "10px 14px", fontSize: 13 }}
-              onClick={() => {
-                setEditing(false);
-                setEditDir(dir);
-              }}
-            >
-              ✕
-            </button>
-          </>
-        ) : (
-          <>
-            <div
-              style={{
-                flex: 1,
-                fontFamily: '"IBM Plex Mono",monospace',
-                fontSize: 13,
-                color: "var(--muted)",
-                background: "var(--paper-strong)",
-                border: "1px solid var(--line)",
-                borderRadius: 12,
-                padding: "10px 16px",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {dir || "…"}
-            </div>
-            <button
-              className="button button-secondary"
-              style={{ padding: "10px 14px", fontSize: 13 }}
-              onClick={() => setEditing(true)}
-              title="Change directory"
-            >
-              ✎
-            </button>
-          </>
-        )}
+        <div
+          style={{
+            minWidth: 130,
+            fontSize: 13,
+            color: "var(--muted)",
+          }}
+        >
+          Local saves directory
+        </div>
+        <div
+          style={{
+            flex: 1,
+            fontFamily: '"IBM Plex Mono",monospace',
+            fontSize: 13,
+            color: "var(--muted)",
+            background: "var(--paper-strong)",
+            border: "1px solid var(--line)",
+            borderRadius: 12,
+            padding: "10px 16px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {dir || "…"}
+        </div>
       </div>
       {loading ? (
         <div className="micro-copy" style={{ padding: "16px 0" }}>
           Scanning…
         </div>
       ) : !exists ? (
-        <div
-          style={{ padding: "16px 0", color: "var(--accent)", fontSize: 14 }}
-        >
-          Directory not found. Click ✎ to change the path.
+        <div className="micro-copy" style={{ padding: "16px 0" }}>
+          Local saves directory is unavailable.
+          <br />
+          You can still upload a .hoi4 save.
         </div>
       ) : files.length === 0 ? (
         <div className="micro-copy" style={{ padding: "16px 0" }}>

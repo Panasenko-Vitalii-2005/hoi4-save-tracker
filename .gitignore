@@ -131,6 +131,8 @@ test-results/
 # Hearts of Iron IV save files
 *.hoi4
 saves/
+!server/src/saves/
+!server/src/saves/*.ts
 
 # Python
 .venv/

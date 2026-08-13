@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { analyzeSave } from '../hoi4/hoi4-parser';
+import { LocalSavePathError, resolveLocalSavePath } from '../saves/local-saves';
 
 interface AnalyzeRequest {
   path: string;
@@ -39,20 +40,29 @@ export class AnalyzeController {
     @Body() body: AnalyzeRequest,
     @UploadedFile() uploadedSave?: UploadedSave,
   ) {
-    const filePath = uploadedSave?.path ?? (body?.path ?? '').trim();
+    const requestedPath = (body?.path ?? '').trim();
 
-    if (!filePath) {
+    if (!uploadedSave && !requestedPath) {
       throw new HttpException(
         'Upload a save file or provide a "path" field',
         HttpStatus.BAD_REQUEST,
       );
     }
 
-    if (!fs.existsSync(filePath)) {
-      throw new HttpException(
-        `File not found: ${filePath}`,
-        HttpStatus.NOT_FOUND,
-      );
+    let filePath = uploadedSave?.path;
+    if (!filePath) {
+      try {
+        filePath = resolveLocalSavePath(requestedPath);
+      } catch (error: unknown) {
+        if (error instanceof LocalSavePathError) {
+          const status =
+            error.code === 'file_not_found' || error.code === 'root_unavailable'
+              ? HttpStatus.NOT_FOUND
+              : HttpStatus.BAD_REQUEST;
+          throw new HttpException(error.message, status);
+        }
+        throw error;
+      }
     }
 
     try {

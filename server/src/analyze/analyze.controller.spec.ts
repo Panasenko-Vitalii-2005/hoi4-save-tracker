@@ -46,8 +46,11 @@ history={
 
 describe('AnalyzeController uploads', () => {
   let app: INestApplication<App>;
+  const originalRoot = process.env.HOI4_SAVES_DIR;
+  const localSaveRoot = mkdtempSync(join(tmpdir(), 'hoi4-local-analyze-'));
 
   beforeAll(async () => {
+    process.env.HOI4_SAVES_DIR = localSaveRoot;
     const moduleRef = await Test.createTestingModule({
       controllers: [AnalyzeController],
     }).compile();
@@ -57,6 +60,9 @@ describe('AnalyzeController uploads', () => {
 
   afterAll(async () => {
     await app.close();
+    rmSync(localSaveRoot, { recursive: true, force: true });
+    if (originalRoot === undefined) delete process.env.HOI4_SAVES_DIR;
+    else process.env.HOI4_SAVES_DIR = originalRoot;
   });
 
   test.each([
@@ -87,21 +93,38 @@ describe('AnalyzeController uploads', () => {
   );
 
   test('preserves the existing JSON path request', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'hoi4-analyze-path-'));
-    const savePath = join(directory, 'fixture.hoi4');
+    const savePath = join(localSaveRoot, 'fixture.hoi4');
     writeFileSync(savePath, Buffer.from(navalSave(MOWE), 'utf8'));
 
-    try {
-      const response = await request(app.getHttpServer())
-        .post('/api/analyze')
-        .send({ path: savePath })
-        .expect(201);
-      const body = response.body as AnalyzeResponse;
+    const response = await request(app.getHttpServer())
+      .post('/api/analyze')
+      .send({ path: savePath })
+      .expect(201);
+    const body = response.body as AnalyzeResponse;
 
-      expect(body.navalLosses[0].sunkShip.name).toBe(MOWE);
-      expect(existsSync(savePath)).toBe(true);
+    expect(body.navalLosses[0].sunkShip.name).toBe(MOWE);
+    expect(existsSync(savePath)).toBe(true);
+  });
+
+  test('rejects path traversal outside the configured save root', async () => {
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .send({ path: '../outside.hoi4' })
+      .expect(400);
+  });
+
+  test('rejects an absolute path outside the configured save root', async () => {
+    const outsideDirectory = mkdtempSync(join(tmpdir(), 'hoi4-outside-'));
+    const outsideSave = join(outsideDirectory, 'outside.hoi4');
+    writeFileSync(outsideSave, Buffer.from(navalSave(MOWE), 'utf8'));
+
+    try {
+      await request(app.getHttpServer())
+        .post('/api/analyze')
+        .send({ path: outsideSave })
+        .expect(400);
     } finally {
-      rmSync(directory, { recursive: true, force: true });
+      rmSync(outsideDirectory, { recursive: true, force: true });
     }
   });
 });

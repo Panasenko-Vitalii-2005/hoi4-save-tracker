@@ -5,6 +5,9 @@ services:
       dockerfile: server/Dockerfile
     environment:
       PORT: 3001
+      HOI4_SAVES_DIR: /app/saves
+    volumes:
+      - ./saves:/app/saves:ro
     expose:
       - "3001"
     healthcheck:

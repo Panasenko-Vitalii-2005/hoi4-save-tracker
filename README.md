@@ -214,6 +214,12 @@ the Analyzer; saves are processed from temporary container storage, removed
 after analysis, and are not included in either image. Allow Docker enough
 memory for decoded late-game or modded saves larger than 100 MiB.
 
+The host `./saves` directory is also mounted read-only as `/app/saves`, enabling
+optional local save browsing without copying saves into the image. Browser
+upload remains available when that directory is empty. To use another host
+directory, change or override the Compose volume mapping; entering a Windows
+host path in the browser cannot create a Docker mount.
+
 Stop and remove the containers with:
 
 ```bash
