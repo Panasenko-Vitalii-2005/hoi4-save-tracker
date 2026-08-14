@@ -34,6 +34,34 @@ export interface NationalStockpileRecord {
   warnings: string[];
 }
 
+export interface StockpileVariantSummary {
+  equipmentRef: EquipmentRef;
+  definition: string;
+  variantName: string | null;
+  amount: number;
+  version: number | null;
+  creatorTag: string | null;
+  originTag: string | null;
+  obsolete: boolean;
+}
+
+export interface UnresolvedStockpileVariantSummary {
+  equipmentRef: EquipmentRef | null;
+  amount: number;
+}
+
+export interface StockpileDefinitionSummary {
+  definition: string;
+  amount: number;
+  variants: StockpileVariantSummary[];
+}
+
+export interface CountryStockpileSummary {
+  countryTag: string;
+  definitions: StockpileDefinitionSummary[];
+  unresolvedVariants: UnresolvedStockpileVariantSummary[];
+}
+
 export function equipmentRefKey(reference: EquipmentRef): string {
   return `${reference.type}:${reference.id}`;
 }
