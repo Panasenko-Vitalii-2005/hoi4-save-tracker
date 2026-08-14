@@ -116,6 +116,22 @@ export function shortEqName(name: string): string {
     .replace(/\b(\w)/g, (c) => c.toUpperCase());
 }
 
+const STOCKPILE_AMOUNT_FORMATTER = new Intl.NumberFormat("en-US", {
+  useGrouping: true,
+  maximumFractionDigits: 15,
+});
+
+export function formatStockpileAmount(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  return STOCKPILE_AMOUNT_FORMATTER.format(value);
+}
+
+export function formatEquipmentDefinition(definition: string): string {
+  const readable = definition.trim().replace(/_+/g, " ");
+  if (!readable) return definition;
+  return readable.charAt(0).toUpperCase() + readable.slice(1);
+}
+
 export interface Hoi4DateParts {
   year: number;
   month: number;

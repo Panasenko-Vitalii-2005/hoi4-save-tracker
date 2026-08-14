@@ -147,6 +147,39 @@ export interface NavalKillerShipSummary {
   creditedKills: number;
 }
 
+export interface EquipmentRef {
+  id: number;
+  type: number;
+}
+
+export interface StockpileVariantSummary {
+  equipmentRef: EquipmentRef;
+  definition: string;
+  variantName: string | null;
+  amount: number;
+  version: number | null;
+  creatorTag: string | null;
+  originTag: string | null;
+  obsolete: boolean;
+}
+
+export interface UnresolvedStockpileVariantSummary {
+  equipmentRef: EquipmentRef | null;
+  amount: number;
+}
+
+export interface StockpileDefinitionSummary {
+  definition: string;
+  amount: number;
+  variants: StockpileVariantSummary[];
+}
+
+export interface CountryStockpileSummary {
+  countryTag: string;
+  definitions: StockpileDefinitionSummary[];
+  unresolvedVariants: UnresolvedStockpileVariantSummary[];
+}
+
 /** World totals — same shape as CountryStats minus the tag. */
 export type CountryTotals = Omit<CountryStats, "tag">;
 
@@ -159,6 +192,7 @@ export interface AnalyzeResult {
   by_country: CountryStats[];
   equipment_by_country: Record<string, Record<string, number>>;
   world_equipment: Record<string, number>;
+  stockpileSummaries: CountryStockpileSummary[];
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
   navalKills: CreditedNavalKill[];

@@ -11,6 +11,7 @@ import { fmtBig, shortEqName, countryFullName } from "@/lib/utils";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
 import { WarCasualtiesTab } from "./WarCasualtiesTab";
 import { NavalLossesTab } from "./NavalLossesTab";
+import { StockpileTab } from "./StockpileTab";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -261,7 +262,7 @@ export function AnalyzerTab() {
     string | undefined
   >(undefined);
   const [analysisView, setAnalysisView] = useState<
-    "overview" | "war-casualties" | "naval-losses"
+    "overview" | "war-casualties" | "naval-losses" | "stockpile"
   >("overview");
 
   const analyze = async (
@@ -618,6 +619,14 @@ export function AnalyzerTab() {
             >
               Naval Losses
             </button>
+            <button
+              className={`tab-btn${analysisView === "stockpile" ? " active" : ""}`}
+              onClick={() => setAnalysisView("stockpile")}
+              role="tab"
+              aria-selected={analysisView === "stockpile"}
+            >
+              Stockpile
+            </button>
           </div>
 
           {analysisView === "war-casualties" ? (
@@ -633,6 +642,8 @@ export function AnalyzerTab() {
               selectedKillTag={navalKillCountryTag}
               onSelectKill={setNavalKillCountryTag}
             />
+          ) : analysisView === "stockpile" ? (
+            <StockpileTab summaries={result.stockpileSummaries ?? []} />
           ) : (
             <>
           {/* Summary cards — derived from totals: CountryTotals */}
