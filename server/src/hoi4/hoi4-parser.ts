@@ -11,7 +11,10 @@
 
 import * as fs from 'fs';
 import AdmZip from 'adm-zip';
-import { parseGlobalNavalLossHistory } from './naval-loss/global-history.parser';
+import {
+  findDirectBlocks,
+  parseGlobalNavalLossHistory,
+} from './naval-loss/global-history.parser';
 import { aggregateCreditedNavalKills } from './naval-loss/naval-kill.aggregator';
 import { resolveCreditedNavalKills } from './naval-loss/naval-kill.resolver';
 import { aggregateNavalLosses } from './naval-loss/naval-loss.aggregator';
@@ -25,6 +28,10 @@ import type {
 } from './naval-loss/naval-loss.types';
 import { decodeSaveText } from './save-text.decoder';
 import { parseShipHistoryNavalLosses } from './naval-loss/ship-history.parser';
+import { parseEquipmentRegistry } from './stockpile/equipment-registry.parser';
+import { aggregateNationalStockpile } from './stockpile/stockpile.aggregator';
+import { parseNationalStockpile } from './stockpile/stockpile.parser';
+import type { CountryStockpileSummary } from './stockpile/stockpile.types';
 
 // ── Core model (single source of truth) ─────────────────────────────────────
 
@@ -72,6 +79,7 @@ export interface AnalyzeResult {
   by_country: CountryStats[];
   equipment_by_country: Record<string, Record<string, number>>;
   world_equipment: Record<string, number>;
+  stockpileSummaries: CountryStockpileSummary[];
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
   navalKills: CreditedNavalKill[];
@@ -154,8 +162,6 @@ const ARMY_MP_RE = /\barmy_manpower\s*=\s*\{/;
 const MP_VAL_RE = /\barmy_manpower_value\s*=\s*\{/;
 const MP_ENTRY_RE =
   /value\s*=\s*\{\s*tag\s*=\s*"([A-Z][A-Z0-9]{2})"\s*value\s*=\s*(\d+)\s*\}/g;
-const EQ_LOOKUP_RE =
-  /^[ \t]*([a-z][a-z0-9_]+)\s*=\s*\{\s*\n[ \t]*id\s*=\s*\{\s*id\s*=\s*(\d+)\s*type\s*=\s*70\s*\}/gm;
 const EQ_ENTRY_RE =
   /equipment\s*=\s*\{\s*id\s*=\s*\{\s*id\s*=\s*(\d+)\s*type\s*=\s*70\s*\}\s*amount\s*=\s*([\d.]+)/g;
 // Industry — state entries are numeric IDs: `\n\t123={\n`, buildings are objects: `arms_factory={ level=8 }`
@@ -179,6 +185,15 @@ export function analyzeSave(filePath: string): AnalyzeResult {
   const content = readSave(filePath);
   const sizeMb =
     Math.round((fs.statSync(filePath).size / 1_048_576) * 100) / 100;
+
+  const topLevelBlocks = findDirectBlocks(content, 0, content.length);
+  const equipmentRegistry = parseEquipmentRegistry(content, topLevelBlocks);
+  const stockpileRecords = parseNationalStockpile(
+    content,
+    equipmentRegistry,
+    topLevelBlocks,
+  );
+  const stockpileSummaries = aggregateNationalStockpile(stockpileRecords);
 
   const globalNavalLosses = parseGlobalNavalLossHistory(content);
   const shipHistoryNavalLosses = parseShipHistoryNavalLosses(content);
@@ -264,9 +279,10 @@ export function analyzeSave(filePath: string): AnalyzeResult {
 
   // ── Equipment id → name lookup ──
   const eqLookup: Record<number, string> = {};
-  for (const m of allMatches(EQ_LOOKUP_RE, content)) {
-    const id = parseInt(m[2]);
-    if (!(id in eqLookup)) eqLookup[id] = m[1];
+  for (const equipment of equipmentRegistry.records) {
+    if (equipment.equipmentRef.type !== 70) continue;
+    const id = equipment.equipmentRef.id;
+    if (!(id in eqLookup)) eqLookup[id] = equipment.definition;
   }
 
   // ── States block: active countries + industry ──
@@ -478,6 +494,7 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     by_country: byCountry,
     equipment_by_country: eqByCountry,
     world_equipment: worldEqSorted,
+    stockpileSummaries,
     warCasualties: parsedWarCasualties,
     navalLosses,
     navalLossSummaries,

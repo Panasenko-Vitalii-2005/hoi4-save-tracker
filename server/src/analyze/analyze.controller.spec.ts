@@ -21,6 +21,7 @@ const UPLOAD_DIRECTORY = join(tmpdir(), 'hoi4-save-tracker');
 interface AnalyzeResponse {
   game_date: string;
   navalLosses: Array<{ sunkShip: { name: string } }>;
+  stockpileSummaries: unknown[];
 }
 
 function navalSave(shipName: string): string {
@@ -88,6 +89,7 @@ describe('AnalyzeController uploads', () => {
 
       expect(body.game_date).toBe('1944.5.1');
       expect(body.navalLosses[0].sunkShip.name).toBe(name);
+      expect(body.stockpileSummaries).toEqual([]);
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
     },
   );
@@ -103,6 +105,7 @@ describe('AnalyzeController uploads', () => {
     const body = response.body as AnalyzeResponse;
 
     expect(body.navalLosses[0].sunkShip.name).toBe(MOWE);
+    expect(body.stockpileSummaries).toEqual([]);
     expect(existsSync(savePath)).toBe(true);
   });
 

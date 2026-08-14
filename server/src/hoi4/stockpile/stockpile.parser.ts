@@ -51,6 +51,7 @@ function createRegistryLookup(
 export function parseNationalStockpile(
   saveText: string,
   registry: EquipmentRegistryParseResult,
+  topLevelBlocks?: readonly LocatedBlock[],
 ): NationalStockpileRecord[] {
   const records: NationalStockpileRecord[] = [];
   const registryLookup = createRegistryLookup(registry);
@@ -58,12 +59,11 @@ export function parseNationalStockpile(
     registry.duplicateReferences.map(equipmentRefKey),
   );
 
-  for (const countriesBlock of findDirectBlocks(
-    saveText,
-    0,
-    saveText.length,
-    'countries',
-  )) {
+  const countriesBlocks = topLevelBlocks
+    ? topLevelBlocks.filter(({ key }) => key === 'countries')
+    : findDirectBlocks(saveText, 0, saveText.length, 'countries');
+
+  for (const countriesBlock of countriesBlocks) {
     for (const countryBlock of findDirectBlocks(
       saveText,
       countriesBlock.bodyStart,

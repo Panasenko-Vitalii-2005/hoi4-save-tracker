@@ -144,18 +144,18 @@ function parseDefinition(
 
 export function parseEquipmentRegistry(
   saveText: string,
+  topLevelBlocks?: readonly LocatedBlock[],
 ): EquipmentRegistryParseResult {
   const records: EquipmentDefinitionRecord[] = [];
   const duplicateReferences: EquipmentRef[] = [];
   const warnings: string[] = [];
   const seenReferences = new Set<string>();
 
-  for (const registryBlock of findDirectBlocks(
-    saveText,
-    0,
-    saveText.length,
-    'equipments',
-  )) {
+  const registryBlocks = topLevelBlocks
+    ? topLevelBlocks.filter(({ key }) => key === 'equipments')
+    : findDirectBlocks(saveText, 0, saveText.length, 'equipments');
+
+  for (const registryBlock of registryBlocks) {
     for (const definitionBlock of findDirectBlocks(
       saveText,
       registryBlock.bodyStart,
