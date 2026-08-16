@@ -66,9 +66,6 @@ export const CountryLandForcesDetails = memo(
 
     const summary = [
       ["Divisions", country.divisionCount],
-      ["Current manpower", country.currentManpowerTotal],
-      ["Required manpower", country.requiredManpowerTotal],
-      ["Missing manpower", country.missingManpowerTotal],
       ["Full manpower", country.fullManpowerDivisionCount],
       ["Under manpower", country.underManpowerDivisionCount],
       ["Armies", armyCount],
@@ -76,6 +73,12 @@ export const CountryLandForcesDetails = memo(
       ["Unassigned", hierarchy?.unassignedDivisionCount ?? 0],
       ["Expeditionary", expeditionaryCount],
     ] as const;
+    const manpowerProgress =
+      country.requiredManpowerTotal > 0 &&
+      country.currentManpowerTotal >= 0 &&
+      country.currentManpowerTotal <= country.requiredManpowerTotal
+        ? country.currentManpowerTotal / country.requiredManpowerTotal
+        : null;
 
     return (
       <div className="land-forces-details-column">
@@ -87,6 +90,34 @@ export const CountryLandForcesDetails = memo(
                 Current land-force snapshot · {country.countryTag}
               </div>
             </div>
+          </div>
+
+          <div className="land-forces-manpower-overview">
+            <div className="land-forces-manpower-copy">
+              <span>Current manpower</span>
+              <strong>
+                {country.currentManpowerTotal.toLocaleString()}
+                <small>
+                  / {country.requiredManpowerTotal.toLocaleString()} required
+                </small>
+              </strong>
+            </div>
+            <div className="land-forces-manpower-missing">
+              <span>Missing</span>
+              <strong>{country.missingManpowerTotal.toLocaleString()}</strong>
+            </div>
+            {manpowerProgress !== null && (
+              <div
+                className="land-forces-manpower-track"
+                role="progressbar"
+                aria-label="Current manpower compared with required manpower"
+                aria-valuemin={0}
+                aria-valuemax={country.requiredManpowerTotal}
+                aria-valuenow={country.currentManpowerTotal}
+              >
+                <span style={{ width: `${manpowerProgress * 100}%` }} />
+              </div>
+            )}
           </div>
 
           <dl className="land-forces-summary-grid">

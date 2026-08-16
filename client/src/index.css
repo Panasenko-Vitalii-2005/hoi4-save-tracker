@@ -2057,3 +2057,1008 @@ button {
 [data-theme="dark"] .analyzer-table tbody tr:hover td {
   background: rgba(217, 79, 43, 0.1);
 }
+
+/* ── Analyzer visual language ─────────────────────────────────────────── */
+.analyzer-shell {
+  --intel-surface: rgba(255, 250, 242, 0.9);
+  --intel-surface-raised: rgba(255, 252, 247, 0.98);
+  --intel-surface-deep: rgba(23, 34, 38, 0.035);
+  --intel-table-head: rgba(244, 237, 226, 0.98);
+  --intel-line: rgba(23, 34, 38, 0.09);
+  --intel-line-strong: rgba(23, 34, 38, 0.17);
+  --intel-row-alt: rgba(23, 34, 38, 0.018);
+  --intel-row-hover: rgba(217, 79, 43, 0.07);
+  --intel-selected: rgba(217, 79, 43, 0.11);
+  --intel-accent-soft: rgba(217, 79, 43, 0.12);
+  --intel-success: #347b5c;
+  --intel-warning: #b87720;
+  --intel-danger: #ad4e49;
+  --intel-panel-shadow: 0 14px 38px rgba(67, 47, 19, 0.09);
+  min-width: 0;
+}
+
+[data-theme="dark"] .analyzer-shell {
+  --intel-surface: rgba(23, 29, 40, 0.96);
+  --intel-surface-raised: rgba(29, 37, 50, 0.98);
+  --intel-surface-deep: rgba(10, 15, 23, 0.46);
+  --intel-table-head: rgba(18, 24, 34, 0.98);
+  --intel-line: rgba(163, 178, 197, 0.1);
+  --intel-line-strong: rgba(163, 178, 197, 0.2);
+  --intel-row-alt: rgba(255, 255, 255, 0.016);
+  --intel-row-hover: rgba(217, 79, 43, 0.085);
+  --intel-selected: rgba(217, 79, 43, 0.13);
+  --intel-accent-soft: rgba(217, 79, 43, 0.14);
+  --intel-success: #72a98d;
+  --intel-warning: #d7a351;
+  --intel-danger: #cf7770;
+  --intel-panel-shadow: 0 18px 42px rgba(0, 0, 0, 0.25);
+}
+
+.analyzer-shell > *,
+.analyzer-shell .stockpile-layout,
+.analyzer-shell .production-layout,
+.analyzer-shell .land-forces-layout,
+.analyzer-shell .war-casualties-layout,
+.analyzer-shell .naval-losses-layout,
+.analyzer-shell .naval-kills-layout {
+  min-width: 0;
+}
+
+.analyzer-shell .panel,
+.analyzer-shell .summary-card {
+  background: var(--intel-surface);
+  border-color: var(--intel-line);
+  box-shadow: var(--intel-panel-shadow);
+  backdrop-filter: blur(18px);
+}
+
+.analyzer-shell .panel {
+  border-radius: 18px;
+}
+
+.analyzer-shell .panel-head {
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--intel-line);
+}
+
+.analyzer-shell .panel-head h2 {
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.analyzer-shell .panel-head .micro-copy,
+.analyzer-shell .micro-copy {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.analyzer-shell .button {
+  min-height: 38px;
+  border-radius: 10px;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.analyzer-shell .button-primary {
+  background: var(--accent);
+  box-shadow: 0 8px 22px rgba(217, 79, 43, 0.22);
+}
+
+.analyzer-shell .button-secondary {
+  background: var(--intel-surface-raised);
+  border-color: var(--intel-line);
+}
+
+.analyzer-shell .button-secondary:hover {
+  background: var(--intel-accent-soft);
+  border-color: rgba(217, 79, 43, 0.28);
+}
+
+.analyzer-shell button:focus-visible,
+.analyzer-shell input:focus-visible,
+.analyzer-shell select:focus-visible,
+.analyzer-shell [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Save source */
+.analyzer-save-browser {
+  overflow: hidden;
+}
+
+.analyzer-save-browser-head {
+  justify-content: flex-start;
+}
+
+.analyzer-save-browser-head h2 {
+  margin-right: auto;
+}
+
+.analyzer-save-action {
+  padding: 7px 13px;
+  font-size: 12px;
+}
+
+.analyzer-save-directory {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.analyzer-save-directory-label {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.analyzer-save-directory-path {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 9px 13px;
+  background: var(--intel-surface-deep);
+  border: 1px solid var(--intel-line);
+  border-radius: 9px;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analyzer-save-pagination {
+  justify-content: flex-end;
+  padding: 0;
+  border: 0;
+}
+
+.analyzer-save-row {
+  cursor: pointer;
+}
+
+.analyzer-save-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.analyzer-status {
+  margin-top: 0;
+  background: var(--intel-surface-deep) !important;
+  border-left: 3px solid var(--intel-line-strong) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+.analyzer-status.ok {
+  border-left-color: var(--intel-success) !important;
+  color: var(--intel-success);
+}
+
+.analyzer-status.error {
+  border-left-color: var(--intel-danger) !important;
+  color: var(--intel-danger);
+}
+
+.analyzer-status.loading {
+  border-left-color: var(--accent) !important;
+  color: var(--ink);
+}
+
+/* Analyzer navigation and context */
+.analyzer-view-tabs {
+  position: sticky;
+  top: 12px;
+  z-index: 30;
+  width: max-content;
+  max-width: 100%;
+  gap: 3px;
+  overflow-x: auto;
+  margin: 0;
+  padding: 5px;
+  background: var(--intel-surface);
+  border: 1px solid var(--intel-line-strong);
+  border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+  flex-wrap: nowrap;
+  scrollbar-width: thin;
+}
+
+.analyzer-view-tabs .tab-btn,
+.analyzer-shell .naval-analysis-mode-tabs .tab-btn {
+  position: relative;
+  flex: none;
+  padding: 9px 15px;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.analyzer-view-tabs .tab-btn:hover,
+.analyzer-shell .naval-analysis-mode-tabs .tab-btn:hover {
+  background: var(--intel-surface-deep);
+  color: var(--ink);
+}
+
+.analyzer-view-tabs .tab-btn.active,
+.analyzer-shell .naval-analysis-mode-tabs .tab-btn.active {
+  background: var(--intel-accent-soft);
+  color: var(--ink);
+  box-shadow: inset 0 -2px var(--accent);
+}
+
+.analyzer-view-context {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 6px 4px 8px 18px;
+  border-left: 3px solid var(--accent);
+}
+
+.analyzer-view-context > div:first-child {
+  min-width: 0;
+}
+
+.analyzer-view-context > div:first-child > span,
+.analyzer-view-date span {
+  color: var(--accent);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.analyzer-view-context h2 {
+  margin-top: 5px;
+  font-size: clamp(26px, 3vw, 38px);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+}
+
+.analyzer-view-context p {
+  max-width: 760px;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.analyzer-view-date {
+  display: grid;
+  flex: none;
+  gap: 5px;
+  text-align: right;
+}
+
+.analyzer-view-date strong {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Overview metrics and analytical surfaces */
+.analyzer-view-context + .summary-grid {
+  margin-top: 0;
+}
+
+.analyzer-shell .summary-grid {
+  gap: 12px;
+}
+
+.analyzer-shell .summary-card {
+  position: relative;
+  overflow: hidden;
+  padding: 19px 18px 17px;
+  border-radius: 16px;
+}
+
+.analyzer-shell .summary-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--accent);
+  opacity: 0.72;
+}
+
+.analyzer-shell .summary-label,
+.production-summary-grid dt,
+.land-forces-summary-grid dt,
+.land-forces-detail-grid dt {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.analyzer-shell .summary-value {
+  margin-top: 8px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: clamp(27px, 2.2vw, 37px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.055em;
+}
+
+.analyzer-shell .summary-sub {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.analyzer-charts-row .panel,
+.analyzer-shell .chart-panel {
+  background: var(--intel-surface);
+}
+
+/* Tables */
+.analyzer-shell .table-wrap {
+  max-width: 100%;
+  background: var(--intel-surface-deep);
+  border: 1px solid var(--intel-line);
+  border-radius: 11px;
+  scrollbar-color: var(--intel-line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.analyzer-shell .table-wrap::-webkit-scrollbar,
+.analyzer-view-tabs::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.analyzer-shell .table-wrap::-webkit-scrollbar-track,
+.analyzer-view-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.analyzer-shell .table-wrap::-webkit-scrollbar-thumb,
+.analyzer-view-tabs::-webkit-scrollbar-thumb {
+  background: var(--intel-line-strong);
+  border-radius: 999px;
+}
+
+.analyzer-shell .table-wrap::-webkit-scrollbar-button,
+.analyzer-view-tabs::-webkit-scrollbar-button {
+  display: none;
+}
+
+.analyzer-shell .recent-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--ink);
+}
+
+.analyzer-shell .recent-table th,
+.analyzer-shell .recent-table td {
+  padding: 11px 12px;
+  border-bottom-color: var(--intel-line);
+}
+
+.analyzer-shell .recent-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--intel-table-head);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.analyzer-shell .recent-table tbody tr:nth-child(even) td {
+  background: var(--intel-row-alt);
+}
+
+.analyzer-shell .recent-table tbody tr {
+  transition: background 120ms ease;
+}
+
+.analyzer-shell .recent-table tbody tr:hover td {
+  background: var(--intel-row-hover);
+}
+
+.analyzer-shell .recent-table tbody tr.selected td {
+  background: var(--intel-selected);
+}
+
+.analyzer-shell .recent-table tbody tr.selected td:first-child {
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+.analyzer-shell .recent-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.analyzer-shell .recent-table tbody tr[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.analyzer-shell .numeric-cell {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.analyzer-shell :is(
+    .country-cell,
+    .equipment-cell,
+    .design-cell,
+    .ship-cell,
+    .type-cell,
+    .division-cell
+  ) strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.stockpile-tag,
+.stockpile-definition-code,
+.production-code,
+.production-line-meta,
+.production-cell-note,
+.land-forces-code {
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+/* Shared country/detail treatment */
+.analyzer-shell :is(
+    .stockpile-country-panel,
+    .production-country-panel,
+    .land-forces-country-panel,
+    .war-casualties-ranking,
+    .naval-losses-ranking,
+    .naval-kills-ranking
+  ) {
+  background: var(--intel-surface-deep);
+  box-shadow: none;
+}
+
+.analyzer-shell :is(
+    .stockpile-detail-head,
+    .production-detail-head,
+    .land-forces-detail-head,
+    .war-casualties-detail-head,
+    .naval-losses-detail-head,
+    .naval-kills-detail-head
+  ) {
+  position: relative;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--intel-line);
+}
+
+.analyzer-shell :is(
+    .stockpile-detail-head,
+    .production-detail-head,
+    .land-forces-detail-head,
+    .war-casualties-detail-head,
+    .naval-losses-detail-head,
+    .naval-kills-detail-head
+  ) h2 {
+  font-size: clamp(25px, 2.4vw, 32px);
+  font-weight: 650;
+  letter-spacing: -0.04em;
+}
+
+.stockpile-detail-count,
+.stockpile-definition-total,
+.production-line-count {
+  color: var(--accent);
+}
+
+.stockpile-obsolete,
+.production-obsolete,
+.land-forces-muted-badge {
+  padding: 2px 7px;
+  background: var(--intel-surface-deep);
+  border: 1px solid var(--intel-line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.production-partial {
+  padding: 2px 7px;
+  background: rgba(215, 163, 81, 0.1);
+  border: 1px solid rgba(215, 163, 81, 0.22);
+  border-radius: 999px;
+  color: var(--intel-warning);
+  font-size: 10px;
+}
+
+.production-shortage-badge {
+  padding: 3px 8px;
+  background: rgba(215, 163, 81, 0.11);
+  border: 1px solid rgba(215, 163, 81, 0.25);
+  border-radius: 999px;
+  color: var(--intel-warning);
+}
+
+.production-resource-warning {
+  color: var(--intel-warning);
+}
+
+.production-resource-none {
+  color: var(--muted);
+}
+
+.production-summary-grid > div,
+.land-forces-summary-grid > div {
+  padding: 13px 14px;
+  background: var(--intel-surface-deep);
+  border: 0;
+  border-radius: 10px;
+  box-shadow: inset 0 1px var(--intel-line);
+}
+
+.production-summary-grid dd,
+.land-forces-summary-grid dd {
+  margin-top: 7px;
+  color: var(--ink);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 19px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* War and naval summaries */
+.war-casualties-stats {
+  gap: 10px;
+}
+
+.war-casualties-stats > div,
+.naval-losses-total,
+.naval-kills-total {
+  min-width: 180px;
+  padding: 12px 14px;
+  background: var(--intel-surface-deep);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+}
+
+.war-casualties-stats span,
+.naval-losses-total span,
+.naval-kills-total span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.war-casualties-stats strong,
+.naval-losses-total strong,
+.naval-kills-total strong {
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.war-casualties-zero-toggle {
+  padding: 7px 10px;
+  background: var(--intel-surface-deep);
+  border-radius: 8px;
+}
+
+.war-casualties-zero-toggle input {
+  accent-color: var(--accent);
+}
+
+.naval-analysis-mode-tabs {
+  width: max-content;
+  margin: 0 0 18px;
+  padding: 4px;
+  background: var(--intel-surface-deep);
+  border: 1px solid var(--intel-line);
+  border-radius: 11px;
+}
+
+/* Land forces: country metrics and command hierarchy */
+.land-forces-manpower-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 24px;
+  margin-bottom: 14px;
+  padding: 16px 17px;
+  background: var(--intel-surface-deep);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 12px 12px 0;
+}
+
+.land-forces-manpower-copy,
+.land-forces-manpower-missing {
+  display: grid;
+  gap: 5px;
+}
+
+.land-forces-manpower-copy > span,
+.land-forces-manpower-missing > span {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.land-forces-manpower-copy strong,
+.land-forces-manpower-missing strong {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 23px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.land-forces-manpower-copy small {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.land-forces-manpower-missing {
+  text-align: right;
+}
+
+.land-forces-manpower-missing strong {
+  color: var(--intel-warning);
+  font-size: 18px;
+}
+
+.land-forces-manpower-track {
+  grid-column: 1 / -1;
+  height: 5px;
+  overflow: hidden;
+  background: var(--intel-line);
+  border-radius: 999px;
+}
+
+.land-forces-manpower-track span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+}
+
+.land-forces-view-tabs {
+  background: var(--intel-surface-deep);
+  border-color: var(--intel-line);
+  border-radius: 10px;
+}
+
+.land-forces-view-tabs button {
+  border-radius: 7px;
+  font-weight: 600;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.land-forces-view-tabs button.active {
+  background: var(--intel-accent-soft);
+  color: var(--ink);
+  box-shadow: inset 0 -2px var(--accent);
+}
+
+.land-forces-hierarchy-section > h3,
+.land-forces-details-sections h3,
+.land-forces-section-head h3 {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.land-forces-hierarchy-section > h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.land-forces-hierarchy-section > h3::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--intel-line);
+}
+
+.land-forces-group {
+  background: var(--intel-surface-deep);
+  border-color: var(--intel-line);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.land-forces-group:has(> .land-forces-group-button[aria-expanded="true"]) {
+  border-color: rgba(217, 79, 43, 0.24);
+}
+
+.land-forces-army {
+  background: var(--intel-surface-raised);
+  border-color: var(--intel-line);
+  border-radius: 9px;
+}
+
+.land-forces-group-button {
+  border-left: 3px solid transparent;
+}
+
+.land-forces-group-button[aria-expanded="true"] {
+  border-left-color: var(--accent);
+}
+
+.land-forces-expand-button {
+  padding: 12px 14px;
+}
+
+.land-forces-expand-button:hover {
+  background: var(--intel-row-hover);
+}
+
+.land-forces-expand-button strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.land-forces-expand-button small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+
+.land-forces-group-content {
+  position: relative;
+  margin-left: 20px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(217, 79, 43, 0.32);
+}
+
+.land-forces-army-content {
+  margin-left: 18px;
+  padding-left: 12px;
+  border-left: 1px solid var(--intel-line-strong);
+}
+
+.land-forces-division-link {
+  border-radius: 7px;
+}
+
+.land-forces-division-link:hover,
+.land-forces-division-link.selected {
+  background: var(--intel-row-hover);
+  border-color: transparent;
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.land-forces-filter-bar {
+  padding: 12px;
+  background: var(--intel-surface-deep);
+  border: 1px solid var(--intel-line);
+  border-radius: 11px;
+}
+
+.land-forces-filter-bar label > span {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.land-forces-filter-bar input,
+.land-forces-filter-bar select {
+  background: var(--intel-surface-raised);
+  border-color: var(--intel-line);
+  border-radius: 8px;
+}
+
+.land-forces-details-sections > section {
+  padding: 15px;
+  background: var(--intel-surface-deep);
+  border-radius: 11px;
+}
+
+.land-forces-detail-grid > div {
+  padding: 8px 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--intel-line);
+  border-radius: 0;
+}
+
+.land-forces-detail-grid > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.land-forces-detail-grid dd {
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.land-forces-template-section,
+.land-forces-equipment-section {
+  border-top-color: var(--intel-line-strong);
+}
+
+.land-forces-composition-group {
+  background: var(--intel-surface-deep);
+  border-color: var(--intel-line);
+  border-radius: 10px;
+}
+
+.land-forces-composition-group h4 {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.land-forces-composition-group li::marker {
+  color: var(--accent);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+.land-forces-composition-group code {
+  color: var(--ink);
+}
+
+/* Empty states and contextual notes */
+.analyzer-shell :is(
+    .stockpile-empty,
+    .stockpile-inner-empty,
+    .production-empty,
+    .production-inner-empty,
+    .land-forces-empty,
+    .land-forces-inner-empty,
+    .war-casualties-empty,
+    .naval-losses-empty,
+    .naval-kills-empty,
+    .naval-losses-events-empty,
+    .naval-killer-ships-empty
+  ) {
+  background: var(--intel-surface-deep);
+  border: 1px dashed var(--intel-line-strong);
+  border-radius: 10px;
+}
+
+.stockpile-note,
+.production-note,
+.land-forces-note,
+.war-casualties-note {
+  padding: 9px 12px;
+  background: var(--intel-surface-deep);
+  border-left: 2px solid var(--intel-line-strong);
+  border-radius: 0 8px 8px 0;
+}
+
+/* Responsive analyzer surfaces */
+@media (max-width: 1180px) {
+  .stockpile-layout,
+  .production-layout,
+  .land-forces-layout,
+  .war-casualties-layout,
+  .naval-losses-layout,
+  .naval-kills-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .analyzer-shell .panel {
+    padding: 16px;
+    border-radius: 15px;
+  }
+
+  .analyzer-view-tabs {
+    width: 100%;
+  }
+
+  .analyzer-view-context {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .analyzer-view-date {
+    text-align: left;
+  }
+
+  .analyzer-save-directory {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .analyzer-save-directory-path {
+    width: 100%;
+  }
+
+  .land-forces-group-content {
+    margin-left: 10px;
+    padding-left: 9px;
+  }
+
+  .land-forces-army-content {
+    margin-left: 8px;
+    padding-left: 8px;
+  }
+}
+
+@media (max-width: 560px) {
+  .analyzer-shell {
+    gap: 14px;
+  }
+
+  .analyzer-view-context h2 {
+    font-size: 27px;
+  }
+
+  .analyzer-save-browser-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .analyzer-save-browser-head h2 {
+    margin-right: 0;
+  }
+
+  .land-forces-manpower-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .land-forces-manpower-copy strong {
+    font-size: 19px;
+  }
+
+  .land-forces-manpower-copy small {
+    display: block;
+    margin: 4px 0 0;
+  }
+
+  .land-forces-manpower-missing {
+    text-align: left;
+  }
+
+  .land-forces-manpower-track {
+    grid-column: 1;
+  }
+
+  .war-casualties-stats > div,
+  .naval-losses-total,
+  .naval-kills-total {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .analyzer-shell *,
+  .analyzer-shell *::before,
+  .analyzer-shell *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

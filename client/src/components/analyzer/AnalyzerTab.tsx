@@ -24,6 +24,78 @@ interface SaveFile {
   modified: string;
 }
 type SortCol = keyof CountryStats;
+type AnalysisView =
+  | "overview"
+  | "war-casualties"
+  | "naval-losses"
+  | "stockpile"
+  | "production"
+  | "land-forces";
+
+const ANALYZER_VIEW_COPY: Record<
+  AnalysisView,
+  { eyebrow: string; title: string; description: string }
+> = {
+  overview: {
+    eyebrow: "Campaign intelligence",
+    title: "Strategic overview",
+    description:
+      "Campaign-scale manpower, forces and industrial capacity from the current save.",
+  },
+  "war-casualties": {
+    eyebrow: "Conflict analysis",
+    title: "War casualties",
+    description:
+      "Calculated bilateral casualty records with exact per-war detail.",
+  },
+  "naval-losses": {
+    eyebrow: "Naval intelligence",
+    title: "Naval losses",
+    description:
+      "Recoverable ship-loss events and safely credited naval kills.",
+  },
+  stockpile: {
+    eyebrow: "Logistics intelligence",
+    title: "National stockpiles",
+    description:
+      "Exact equipment definitions and designs held in national stockpiles.",
+  },
+  production: {
+    eyebrow: "Industrial intelligence",
+    title: "Military production",
+    description:
+      "Current land and air production lines, factories, rates and resource constraints.",
+  },
+  "land-forces": {
+    eyebrow: "Army intelligence",
+    title: "Land forces",
+    description:
+      "Country command hierarchies and exact current division snapshots.",
+  },
+};
+
+function AnalyzerViewContext({
+  view,
+  gameDate,
+}: {
+  view: AnalysisView;
+  gameDate: string;
+}) {
+  const copy = ANALYZER_VIEW_COPY[view];
+  return (
+    <section className="analyzer-view-context">
+      <div>
+        <span>{copy.eyebrow}</span>
+        <h2>{copy.title}</h2>
+        <p>{copy.description}</p>
+      </div>
+      <div className="analyzer-view-date">
+        <span>Save date</span>
+        <strong>{gameDate}</strong>
+      </div>
+    </section>
+  );
+}
 
 function SaveBrowser({
   onSelect,
@@ -67,12 +139,11 @@ function SaveBrowser({
   };
 
   return (
-    <section className="panel">
-      <div className="panel-head">
+    <section className="panel analyzer-save-browser">
+      <div className="panel-head analyzer-save-browser-head">
         <h2>Save Files</h2>
         <label
-          className="button button-primary"
-          style={{ padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+          className="button button-primary analyzer-save-action"
         >
           Upload .hoi4
           <input
@@ -87,45 +158,17 @@ function SaveBrowser({
           />
         </label>
         <button
-          className="button button-secondary"
-          style={{ padding: "6px 14px", fontSize: 13 }}
+          className="button button-secondary analyzer-save-action"
           onClick={loadDir}
         >
           ↻ Refresh
         </button>
       </div>
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 14,
-          alignItems: "center",
-        }}
-      >
-        <div
-          style={{
-            minWidth: 130,
-            fontSize: 13,
-            color: "var(--muted)",
-          }}
-        >
+      <div className="analyzer-save-directory">
+        <div className="analyzer-save-directory-label">
           Local saves directory
         </div>
-        <div
-          style={{
-            flex: 1,
-            fontFamily: '"IBM Plex Mono",monospace',
-            fontSize: 13,
-            color: "var(--muted)",
-            background: "var(--paper-strong)",
-            border: "1px solid var(--line)",
-            borderRadius: 12,
-            padding: "10px 16px",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
+        <div className="analyzer-save-directory-path">
           {dir || "…"}
         </div>
       </div>
@@ -145,10 +188,7 @@ function SaveBrowser({
         </div>
       ) : (
         <>
-          <div
-            className="panel-head"
-            style={{ justifyContent: "space-between", gap: 12 }}
-          >
+          <div className="panel-head analyzer-save-pagination">
             <div />
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span className="micro-copy">
@@ -195,15 +235,16 @@ function SaveBrowser({
                   .map((f) => (
                     <tr
                       key={f.path}
+                      className="analyzer-save-row"
                       onClick={() => onSelect(f.path, f.name)}
-                      style={{ cursor: "pointer" }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.background =
-                          "rgba(217,79,43,0.07)")
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.background = "")
-                      }
+                      tabIndex={0}
+                      aria-label={`Analyze ${f.name}`}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelect(f.path, f.name);
+                        }
+                      }}
                     >
                       <td>
                         <span
@@ -215,22 +256,10 @@ function SaveBrowser({
                           {f.name}
                         </span>
                       </td>
-                      <td
-                        style={{
-                          textAlign: "right",
-                          color: "var(--muted)",
-                          fontSize: 13,
-                        }}
-                      >
+                      <td className="numeric-cell analyzer-save-meta">
                         {f.size_mb} MB
                       </td>
-                      <td
-                        style={{
-                          textAlign: "right",
-                          color: "var(--muted)",
-                          fontSize: 13,
-                        }}
-                      >
+                      <td className="numeric-cell analyzer-save-meta">
                         {fmt(f.modified)}
                       </td>
                     </tr>
@@ -263,14 +292,8 @@ export function AnalyzerTab() {
   const [navalKillCountryTag, setNavalKillCountryTag] = useState<
     string | undefined
   >(undefined);
-  const [analysisView, setAnalysisView] = useState<
-    | "overview"
-    | "war-casualties"
-    | "naval-losses"
-    | "stockpile"
-    | "production"
-    | "land-forces"
-  >("overview");
+  const [analysisView, setAnalysisView] =
+    useState<AnalysisView>("overview");
   const [productionCountryTag, setProductionCountryTag] = useState<
     string | null
   >(null);
@@ -663,6 +686,11 @@ export function AnalyzerTab() {
               Land Forces
             </button>
           </div>
+
+          <AnalyzerViewContext
+            view={analysisView}
+            gameDate={result.game_date}
+          />
 
           {analysisView === "war-casualties" ? (
             <WarCasualtiesTab countries={result.by_country} />
