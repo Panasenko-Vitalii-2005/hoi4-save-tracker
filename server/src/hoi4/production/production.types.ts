@@ -64,7 +64,6 @@ export interface MilitaryProductionLineSummary {
   hasResourceShortage: boolean;
   resourceShortages: ProductionResourceShortage[];
   industrialManufacturerRef: EquipmentRef | null;
-  sourceOffset: number;
   complete: boolean;
   warnings: string[];
 }

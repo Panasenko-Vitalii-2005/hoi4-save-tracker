@@ -7,6 +7,10 @@ import type {
   ProductionResourceShortage,
 } from './production.types';
 
+interface DerivedMilitaryProductionLine extends MilitaryProductionLineSummary {
+  sourceOffset: number;
+}
+
 function compareStrings(left: string, right: string): number {
   if (left < right) return -1;
   if (left > right) return 1;
@@ -34,8 +38,8 @@ function compareNullableReferences(
 }
 
 function compareLines(
-  left: MilitaryProductionLineSummary,
-  right: MilitaryProductionLineSummary,
+  left: DerivedMilitaryProductionLine,
+  right: DerivedMilitaryProductionLine,
 ): number {
   const byActive =
     right.effectiveActiveFactories - left.effectiveActiveFactories;
@@ -140,7 +144,7 @@ function deriveResourceShortages(
 
 function deriveLine(
   record: ParsedMilitaryProductionLine,
-): MilitaryProductionLineSummary {
+): DerivedMilitaryProductionLine {
   const warnings = [...record.warnings];
   const efficiencies = deriveEfficiencies(record, warnings);
   const resourceShortages = deriveResourceShortages(record);
@@ -184,6 +188,14 @@ function deriveLine(
   };
 }
 
+function toPublicLine(
+  line: DerivedMilitaryProductionLine,
+): MilitaryProductionLineSummary {
+  const { sourceOffset: _sourceOffset, ...publicLine } = line;
+  void _sourceOffset;
+  return publicLine;
+}
+
 function factoryTotal(
   lines: readonly MilitaryProductionLineSummary[],
   field:
@@ -202,7 +214,7 @@ function factoryTotal(
 
 function buildDefinitionSummary(
   equipmentDefinition: string,
-  lines: MilitaryProductionLineSummary[],
+  lines: DerivedMilitaryProductionLine[],
 ): MilitaryProductionDefinitionSummary {
   lines.sort(compareLines);
   const knownOutputs = lines.flatMap(({ currentItemsPerDay }) =>
@@ -224,7 +236,7 @@ function buildDefinitionSummary(
     resourceShortageLineCount: lines.filter(
       ({ hasResourceShortage }) => hasResourceShortage,
     ).length,
-    lines,
+    lines: lines.map(toPublicLine),
   };
 }
 
@@ -232,8 +244,8 @@ function buildCountrySummary(
   countryTag: string,
   records: readonly ParsedMilitaryProductionLine[],
 ): CountryMilitaryProductionSummary {
-  const definitions = new Map<string, MilitaryProductionLineSummary[]>();
-  const unresolvedLines: MilitaryProductionLineSummary[] = [];
+  const definitions = new Map<string, DerivedMilitaryProductionLine[]>();
+  const unresolvedLines: DerivedMilitaryProductionLine[] = [];
   const allLines = records.map(deriveLine);
 
   for (const line of allLines) {
@@ -265,7 +277,7 @@ function buildCountrySummary(
       ({ hasResourceShortage }) => hasResourceShortage,
     ).length,
     definitions: definitionSummaries,
-    unresolvedLines,
+    unresolvedLines: unresolvedLines.map(toPublicLine),
   };
 }
 

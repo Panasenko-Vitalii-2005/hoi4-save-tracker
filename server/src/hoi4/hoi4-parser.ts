@@ -27,6 +27,9 @@ import type {
   NavalLossEvent,
 } from './naval-loss/naval-loss.types';
 import { decodeSaveText } from './save-text.decoder';
+import { aggregateMilitaryProduction } from './production/military-production.aggregator';
+import { parseMilitaryProductionLines } from './production/military-production.parser';
+import type { CountryMilitaryProductionSummary } from './production/production.types';
 import { parseShipHistoryNavalLosses } from './naval-loss/ship-history.parser';
 import { parseEquipmentRegistry } from './stockpile/equipment-registry.parser';
 import { aggregateNationalStockpile } from './stockpile/stockpile.aggregator';
@@ -80,6 +83,7 @@ export interface AnalyzeResult {
   equipment_by_country: Record<string, Record<string, number>>;
   world_equipment: Record<string, number>;
   stockpileSummaries: CountryStockpileSummary[];
+  militaryProductionSummaries: CountryMilitaryProductionSummary[];
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
   navalKills: CreditedNavalKill[];
@@ -194,6 +198,14 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     topLevelBlocks,
   );
   const stockpileSummaries = aggregateNationalStockpile(stockpileRecords);
+  const militaryProductionRecords = parseMilitaryProductionLines(
+    content,
+    equipmentRegistry,
+    topLevelBlocks,
+  );
+  const militaryProductionSummaries = aggregateMilitaryProduction(
+    militaryProductionRecords,
+  );
 
   const globalNavalLosses = parseGlobalNavalLossHistory(content);
   const shipHistoryNavalLosses = parseShipHistoryNavalLosses(content);
@@ -495,6 +507,7 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     equipment_by_country: eqByCountry,
     world_equipment: worldEqSorted,
     stockpileSummaries,
+    militaryProductionSummaries,
     warCasualties: parsedWarCasualties,
     navalLosses,
     navalLossSummaries,
