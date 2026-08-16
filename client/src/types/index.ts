@@ -243,6 +243,140 @@ export interface CountryMilitaryProductionSummary {
   unresolvedLines: MilitaryProductionLineSummary[];
 }
 
+export interface DivisionEquipmentOccurrence {
+  equipmentRef: EquipmentRef | null;
+  amount: number | null;
+}
+
+export interface DivisionTemplateUnitSlot {
+  unitType: string;
+  x: number | null;
+  y: number | null;
+}
+
+export interface DivisionTemplateCatalogEntry {
+  templateRef: EquipmentRef;
+  name: string | null;
+  countryTag: string | null;
+  originalTag: string | null;
+  foreignTemplateTag: string | null;
+  role: string | null;
+  obsolete: boolean;
+  obsoleteChangeDate: string | null;
+  regiments: DivisionTemplateUnitSlot[];
+  supportCompanies: DivisionTemplateUnitSlot[];
+  regimentalSupport: DivisionTemplateUnitSlot[];
+  complete: boolean;
+}
+
+export interface DivisionEquipmentCatalogEntry {
+  equipmentRef: EquipmentRef;
+  definition: string;
+  name: string | null;
+  version: number | null;
+  maxVersion: number | null;
+  parentEquipmentRef: EquipmentRef | null;
+  creatorTag: string | null;
+  originTag: string | null;
+  obsolete: boolean;
+  isFrame: boolean | null;
+  designTeamRef: EquipmentRef | null;
+}
+
+export interface DivisionSummary {
+  countryTag: string;
+  divisionRef: EquipmentRef | null;
+  logicalCountryTag: string | null;
+  expeditionaryOwnerTag: string | null;
+  overrideName: string | null;
+  nameType: number | null;
+  nameOrder: number | null;
+  divisionTemplateRef: EquipmentRef | null;
+  currentManpower: number | null;
+  requiredManpower: number | null;
+  currentManpowerTag: string | null;
+  requiredManpowerTag: string | null;
+  missingManpower: number | null;
+  manpowerCompleteness: number | null;
+  strength: number | null;
+  organization: number | null;
+  experience: number | null;
+  equipment: DivisionEquipmentOccurrence[];
+  provinceId: number | null;
+  supply: {
+    current: number | null;
+    max: number | null;
+    gain: number | null;
+    outOfSupplyDays: number | null;
+    disrupted: number | null;
+  };
+  supplyRatio: number | null;
+  fuel: number | null;
+  fuelRequested: number | null;
+  status: {
+    strategicRedeployment: boolean | null;
+    retreat: boolean | null;
+    supportAttack: number | null;
+  };
+  complete: boolean;
+}
+
+export interface CountryDivisionSummary {
+  countryTag: string;
+  divisionCount: number;
+  resolvedTemplateCount: number;
+  unresolvedTemplateCount: number;
+  currentManpowerTotal: number;
+  requiredManpowerTotal: number;
+  missingManpowerTotal: number;
+  fullManpowerDivisionCount: number;
+  underManpowerDivisionCount: number;
+  divisions: DivisionSummary[];
+}
+
+export interface DivisionReference {
+  countryTag: string;
+  divisionRef: EquipmentRef | null;
+}
+
+export interface CommanderSummary {
+  commanderRef: EquipmentRef | null;
+  name: string | null;
+  countryTag: string | null;
+  role: "corps_commander" | "field_marshal";
+  skill: number | null;
+  traits: string[];
+}
+
+export interface ArmySummary {
+  armyRef: EquipmentRef | null;
+  name: string | null;
+  commander: CommanderSummary | null;
+  divisions: DivisionReference[];
+  unresolvedDivisionRefs: EquipmentRef[];
+  ambiguousDivisionRefs: EquipmentRef[];
+  complete: boolean;
+}
+
+export interface ArmyGroupSummary {
+  armyGroupRef: EquipmentRef | null;
+  name: string | null;
+  commander: CommanderSummary | null;
+  armies: ArmySummary[];
+  unresolvedArmyRefs: EquipmentRef[];
+  ambiguousArmyRefs: EquipmentRef[];
+  complete: boolean;
+}
+
+export interface CountryArmyHierarchySummary {
+  countryTag: string;
+  armyGroups: ArmyGroupSummary[];
+  grouplessArmies: ArmySummary[];
+  linkedDivisionCount: number;
+  unassignedDivisionCount: number;
+  unassignedDivisions: DivisionReference[];
+}
+
 /** World totals — same shape as CountryStats minus the tag. */
 export type CountryTotals = Omit<CountryStats, "tag">;
 
@@ -257,6 +391,10 @@ export interface AnalyzeResult {
   world_equipment: Record<string, number>;
   stockpileSummaries: CountryStockpileSummary[];
   militaryProductionSummaries: CountryMilitaryProductionSummary[];
+  divisionSummaries: CountryDivisionSummary[];
+  divisionTemplateCatalog: DivisionTemplateCatalogEntry[];
+  divisionEquipmentCatalog: DivisionEquipmentCatalogEntry[];
+  armyHierarchySummaries: CountryArmyHierarchySummary[];
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
   navalKills: CreditedNavalKill[];

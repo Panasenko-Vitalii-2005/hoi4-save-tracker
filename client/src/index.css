@@ -1076,6 +1076,528 @@ select {
   }
 }
 
+/* Land forces and division browser */
+.land-forces-layout {
+  display: grid;
+  grid-template-columns: minmax(330px, 0.62fr) minmax(720px, 1.75fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.land-forces-country-panel,
+.land-forces-country-details,
+.land-forces-division-details,
+.land-forces-details-column,
+.land-forces-empty {
+  min-width: 0;
+}
+
+.land-forces-details-column {
+  display: grid;
+  gap: 18px;
+}
+
+.land-forces-country-table {
+  min-width: 610px;
+}
+
+.land-forces-country-table tbody tr,
+.land-forces-division-table tbody tr {
+  cursor: pointer;
+}
+
+.land-forces-country-table tbody tr:hover td,
+.land-forces-country-table tbody tr.selected td,
+.land-forces-division-table tbody tr:hover td,
+.land-forces-division-table tbody tr.selected td {
+  background: rgba(217, 79, 43, 0.08);
+}
+
+.land-forces-country-table tbody tr:focus-visible,
+.land-forces-division-table tbody tr:focus-visible,
+.land-forces-division-link:focus-visible,
+.land-forces-expand-button:focus-visible,
+.land-forces-view-tabs button:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: -2px;
+}
+
+.land-forces-country-table .numeric-cell,
+.land-forces-division-table .numeric-cell,
+.land-forces-equipment-table .numeric-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.land-forces-country-table .country-cell,
+.land-forces-division-table .division-cell,
+.land-forces-division-table .template-cell,
+.land-forces-equipment-table .equipment-cell,
+.land-forces-equipment-table .definition-cell {
+  min-width: 180px;
+  overflow-wrap: anywhere;
+}
+
+.land-forces-code {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.land-forces-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.land-forces-detail-head h2 {
+  font-size: 28px;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+
+.land-forces-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0 0 20px;
+}
+
+.land-forces-summary-grid > div,
+.land-forces-detail-grid > div {
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.land-forces-summary-grid dt,
+.land-forces-detail-grid dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.land-forces-summary-grid dd,
+.land-forces-detail-grid dd {
+  margin: 5px 0 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.land-forces-summary-grid dd {
+  font-size: 18px;
+}
+
+.land-forces-view-tabs {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 18px;
+  padding: 4px;
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.land-forces-view-tabs button {
+  padding: 8px 14px;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.land-forces-view-tabs button.active {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.land-forces-view-tabs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.land-forces-hierarchy,
+.land-forces-group-list,
+.land-forces-group-content,
+.land-forces-details-sections {
+  display: grid;
+  gap: 12px;
+}
+
+.land-forces-hierarchy-section + .land-forces-hierarchy-section {
+  margin-top: 22px;
+}
+
+.land-forces-hierarchy-section > h3,
+.land-forces-details-sections h3,
+.land-forces-section-head h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.land-forces-hierarchy-section > h3 span {
+  margin-left: 8px;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.land-forces-group,
+.land-forces-army {
+  min-width: 0;
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.land-forces-army {
+  background: var(--paper);
+  border-radius: 11px;
+}
+
+.land-forces-expand-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 15px;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.land-forces-expand-button:hover {
+  background: rgba(217, 79, 43, 0.06);
+}
+
+.land-forces-expand-button > span:first-child {
+  min-width: 0;
+}
+
+.land-forces-expand-button strong,
+.land-forces-expand-button small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.land-forces-expand-button small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.land-forces-expand-meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.land-forces-expand-meta b {
+  width: 18px;
+  color: var(--accent);
+  font-size: 18px;
+  text-align: center;
+}
+
+.land-forces-group-content,
+.land-forces-army-content {
+  padding: 0 12px 12px;
+}
+
+.land-forces-hierarchy-divisions {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.land-forces-division-link {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 11px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.land-forces-division-link:hover,
+.land-forces-division-link.selected {
+  background: rgba(217, 79, 43, 0.08);
+  border-color: rgba(217, 79, 43, 0.18);
+}
+
+.land-forces-division-link:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.land-forces-division-link span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.land-forces-division-link small {
+  flex: none;
+  max-width: 42%;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.land-forces-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(4, minmax(130px, 0.7fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.land-forces-filter-bar label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.land-forces-filter-bar label > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.land-forces-filter-bar input,
+.land-forces-filter-bar select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.land-forces-filter-bar input:focus-visible,
+.land-forces-filter-bar select:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 1px;
+}
+
+.land-forces-table-count {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.land-forces-division-table {
+  min-width: 1120px;
+}
+
+.land-forces-muted-badge {
+  display: inline-block;
+  margin-left: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.land-forces-empty,
+.land-forces-inner-empty {
+  display: grid;
+  place-items: center;
+  min-height: 110px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.land-forces-empty-save {
+  min-height: 240px;
+}
+
+.land-forces-inner-empty .land-forces-code {
+  margin-top: 8px;
+}
+
+.land-forces-division-details {
+  display: grid;
+  gap: 24px;
+}
+
+.land-forces-details-sections {
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+}
+
+.land-forces-details-sections > section {
+  min-width: 0;
+}
+
+.land-forces-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.land-forces-detail-grid.compact {
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+}
+
+.land-forces-section-head {
+  align-items: flex-start;
+}
+
+.land-forces-section-head > div {
+  min-width: 0;
+}
+
+.land-forces-template-section,
+.land-forces-equipment-section {
+  min-width: 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.land-forces-composition-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.land-forces-composition-group {
+  min-width: 0;
+  padding: 12px;
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.land-forces-composition-group h4 {
+  margin: 0 0 9px;
+  font-size: 13px;
+}
+
+.land-forces-composition-group ol {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.land-forces-composition-group li {
+  min-width: 0;
+}
+
+.land-forces-composition-group code,
+.land-forces-composition-group li span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.land-forces-composition-group li span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.land-forces-equipment-table {
+  min-width: 820px;
+}
+
+.land-forces-note {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 2px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 1260px) {
+  .land-forces-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .land-forces-filter-bar {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+  }
+
+  .land-forces-search {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 820px) {
+  .land-forces-summary-grid,
+  .land-forces-detail-grid.compact {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .land-forces-details-sections,
+  .land-forces-composition-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .land-forces-filter-bar {
+    grid-template-columns: repeat(2, minmax(130px, 1fr));
+  }
+
+  .land-forces-search {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .land-forces-summary-grid,
+  .land-forces-detail-grid,
+  .land-forces-detail-grid.compact,
+  .land-forces-filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .land-forces-expand-button,
+  .land-forces-division-link {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .land-forces-expand-meta,
+  .land-forces-division-link small {
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
+  }
+}
+
 .war-casualties-layout {
   display: grid;
   grid-template-columns: minmax(360px, 0.8fr) minmax(560px, 1.4fr);

@@ -1,4 +1,4 @@
-import type { SaveRecord, XMode } from "@/types";
+import type { EquipmentRef, SaveRecord, XMode } from "@/types";
 
 // Keep only country-focused numeric metrics here. Performance/write metrics
 // were moved to non-used/client_performance_legacy.ts for archival.
@@ -124,6 +124,22 @@ const STOCKPILE_AMOUNT_FORMATTER = new Intl.NumberFormat("en-US", {
 export function formatStockpileAmount(value: number): string {
   if (!Number.isFinite(value)) return "—";
   return STOCKPILE_AMOUNT_FORMATTER.format(value);
+}
+
+export function equipmentReferenceKey(
+  reference: EquipmentRef | null | undefined,
+): string | null {
+  return reference ? `${reference.type}:${reference.id}` : null;
+}
+
+const DIVISION_RATIO_FORMATTER = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+
+export function formatDivisionRatio(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return DIVISION_RATIO_FORMATTER.format(value);
 }
 
 export function formatEquipmentDefinition(definition: string): string {

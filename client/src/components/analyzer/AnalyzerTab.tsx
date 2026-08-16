@@ -13,6 +13,7 @@ import { WarCasualtiesTab } from "./WarCasualtiesTab";
 import { NavalLossesTab } from "./NavalLossesTab";
 import { ProductionTab } from "./ProductionTab";
 import { StockpileTab } from "./StockpileTab";
+import { LandForcesTab } from "./LandForcesTab";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -263,12 +264,23 @@ export function AnalyzerTab() {
     string | undefined
   >(undefined);
   const [analysisView, setAnalysisView] = useState<
-    "overview" | "war-casualties" | "naval-losses" | "stockpile" | "production"
+    | "overview"
+    | "war-casualties"
+    | "naval-losses"
+    | "stockpile"
+    | "production"
+    | "land-forces"
   >("overview");
   const [productionCountryTag, setProductionCountryTag] = useState<
     string | null
   >(null);
   const [productionDefinitionName, setProductionDefinitionName] = useState<
+    string | null
+  >(null);
+  const [landForcesCountryTag, setLandForcesCountryTag] = useState<
+    string | null
+  >(null);
+  const [landForcesDivisionKey, setLandForcesDivisionKey] = useState<
     string | null
   >(null);
 
@@ -642,6 +654,14 @@ export function AnalyzerTab() {
             >
               Production
             </button>
+            <button
+              className={`tab-btn${analysisView === "land-forces" ? " active" : ""}`}
+              onClick={() => setAnalysisView("land-forces")}
+              role="tab"
+              aria-selected={analysisView === "land-forces"}
+            >
+              Land Forces
+            </button>
           </div>
 
           {analysisView === "war-casualties" ? (
@@ -666,6 +686,17 @@ export function AnalyzerTab() {
               selectedDefinitionName={productionDefinitionName}
               onSelectedTagChange={setProductionCountryTag}
               onSelectedDefinitionChange={setProductionDefinitionName}
+            />
+          ) : analysisView === "land-forces" ? (
+            <LandForcesTab
+              summaries={result.divisionSummaries}
+              templates={result.divisionTemplateCatalog}
+              equipment={result.divisionEquipmentCatalog}
+              hierarchies={result.armyHierarchySummaries}
+              selectedTag={landForcesCountryTag}
+              selectedDivisionKey={landForcesDivisionKey}
+              onSelectedTagChange={setLandForcesCountryTag}
+              onSelectedDivisionKeyChange={setLandForcesDivisionKey}
             />
           ) : (
             <>
