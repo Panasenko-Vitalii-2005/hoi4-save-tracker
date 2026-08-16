@@ -857,6 +857,225 @@ select {
   }
 }
 
+/* Current military production analysis */
+.production-layout {
+  display: grid;
+  grid-template-columns: minmax(310px, 0.58fr) minmax(680px, 1.7fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.production-country-panel,
+.production-details-panel,
+.production-line-panel,
+.production-unresolved-panel,
+.production-details-column {
+  min-width: 0;
+}
+
+.production-details-column {
+  display: grid;
+  gap: 18px;
+}
+
+.production-country-table {
+  min-width: 430px;
+}
+
+.production-definition-table {
+  min-width: 760px;
+}
+
+.production-line-table {
+  min-width: 980px;
+}
+
+.production-country-table tbody tr,
+.production-definition-table tbody tr {
+  cursor: pointer;
+}
+
+.production-country-table tbody tr:hover td,
+.production-country-table tbody tr.selected td,
+.production-definition-table tbody tr:hover td,
+.production-definition-table tbody tr.selected td {
+  background: rgba(217, 79, 43, 0.08);
+}
+
+.production-country-table tbody tr:focus-visible,
+.production-definition-table tbody tr:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: -2px;
+}
+
+.production-country-table .numeric-cell,
+.production-definition-table .numeric-cell,
+.production-line-table .numeric-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.production-country-table .country-cell,
+.production-definition-table .equipment-cell,
+.production-line-table .design-cell {
+  min-width: 180px;
+  overflow-wrap: anywhere;
+}
+
+.production-code,
+.production-line-meta,
+.production-cell-note {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.production-code {
+  font-family: "IBM Plex Mono", monospace;
+  word-break: break-all;
+}
+
+.production-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.production-detail-head h2 {
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+.production-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0 0 20px;
+}
+
+.production-summary-grid > div {
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.production-summary-grid dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.production-summary-grid dd {
+  margin: 5px 0 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.production-definition-wrap {
+  margin-top: 4px;
+}
+
+.production-line-head {
+  align-items: flex-start;
+}
+
+.production-line-head > div {
+  min-width: 0;
+}
+
+.production-line-count {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.production-factories-cell strong {
+  font-weight: 600;
+}
+
+.production-obsolete,
+.production-partial,
+.production-shortage-badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.production-obsolete,
+.production-partial {
+  color: var(--muted);
+}
+
+.production-shortage-badge,
+.production-resource-warning {
+  color: var(--accent);
+}
+
+.production-resource-none {
+  color: var(--muted);
+}
+
+.production-resource-warning {
+  min-width: 190px;
+}
+
+.production-shortage-item {
+  display: grid;
+  gap: 2px;
+}
+
+.production-shortage-item + .production-shortage-item {
+  margin-top: 7px;
+}
+
+.production-shortage-item span {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.production-empty,
+.production-inner-empty {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.production-empty-save {
+  min-height: 240px;
+}
+
+.production-note {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 2px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 1180px) {
+  .production-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .production-summary-grid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+}
+
 .war-casualties-layout {
   display: grid;
   grid-template-columns: minmax(360px, 0.8fr) minmax(560px, 1.4fr);

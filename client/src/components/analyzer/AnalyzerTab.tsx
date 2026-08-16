@@ -11,6 +11,7 @@ import { fmtBig, shortEqName, countryFullName } from "@/lib/utils";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
 import { WarCasualtiesTab } from "./WarCasualtiesTab";
 import { NavalLossesTab } from "./NavalLossesTab";
+import { ProductionTab } from "./ProductionTab";
 import { StockpileTab } from "./StockpileTab";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
@@ -262,8 +263,14 @@ export function AnalyzerTab() {
     string | undefined
   >(undefined);
   const [analysisView, setAnalysisView] = useState<
-    "overview" | "war-casualties" | "naval-losses" | "stockpile"
+    "overview" | "war-casualties" | "naval-losses" | "stockpile" | "production"
   >("overview");
+  const [productionCountryTag, setProductionCountryTag] = useState<
+    string | null
+  >(null);
+  const [productionDefinitionName, setProductionDefinitionName] = useState<
+    string | null
+  >(null);
 
   const analyze = async (
     filePath: string,
@@ -627,6 +634,14 @@ export function AnalyzerTab() {
             >
               Stockpile
             </button>
+            <button
+              className={`tab-btn${analysisView === "production" ? " active" : ""}`}
+              onClick={() => setAnalysisView("production")}
+              role="tab"
+              aria-selected={analysisView === "production"}
+            >
+              Production
+            </button>
           </div>
 
           {analysisView === "war-casualties" ? (
@@ -644,6 +659,14 @@ export function AnalyzerTab() {
             />
           ) : analysisView === "stockpile" ? (
             <StockpileTab summaries={result.stockpileSummaries ?? []} />
+          ) : analysisView === "production" ? (
+            <ProductionTab
+              summaries={result.militaryProductionSummaries ?? []}
+              selectedTag={productionCountryTag}
+              selectedDefinitionName={productionDefinitionName}
+              onSelectedTagChange={setProductionCountryTag}
+              onSelectedDefinitionChange={setProductionDefinitionName}
+            />
           ) : (
             <>
           {/* Summary cards — derived from totals: CountryTotals */}

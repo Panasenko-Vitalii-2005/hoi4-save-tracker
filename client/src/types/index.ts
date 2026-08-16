@@ -180,6 +180,69 @@ export interface CountryStockpileSummary {
   unresolvedVariants: UnresolvedStockpileVariantSummary[];
 }
 
+export interface ProductionResourceShortage {
+  resource: string | null;
+  amount: number | null;
+  need: number;
+}
+
+export interface MilitaryProductionLineSummary {
+  countryTag: string;
+  lineRef: EquipmentRef | null;
+  equipmentRef: EquipmentRef | null;
+  equipmentDefinition: string | null;
+  variantName: string | null;
+  version: number | null;
+  creatorTag: string | null;
+  originTag: string | null;
+  obsolete: boolean | null;
+  priority: number | null;
+  requestedFactories: number | null;
+  activeFactories: number | null;
+  queuedFactories: number | null;
+  damagedFactories: number | null;
+  effectiveActiveFactories: number;
+  effectiveQueuedFactories: number;
+  effectiveDamagedFactories: number;
+  currentItemsPerDay: number | null;
+  progressFraction: number | null;
+  activeEfficiencyAverage: number | null;
+  activeEfficiencyMin: number | null;
+  activeEfficiencyMax: number | null;
+  hasResourceShortage: boolean;
+  resourceShortages: ProductionResourceShortage[];
+  industrialManufacturerRef: EquipmentRef | null;
+  complete: boolean;
+  warnings: string[];
+}
+
+export interface MilitaryProductionDefinitionSummary {
+  equipmentDefinition: string;
+  lineCount: number;
+  requestedFactories: number;
+  activeFactories: number;
+  queuedFactories: number;
+  damagedFactories: number;
+  currentItemsPerDay: number | null;
+  knownCurrentItemsPerDay: number;
+  outputComplete: boolean;
+  resourceShortageLineCount: number;
+  lines: MilitaryProductionLineSummary[];
+}
+
+export interface CountryMilitaryProductionSummary {
+  countryTag: string;
+  lineCount: number;
+  definitionCount: number;
+  requestedFactories: number;
+  activeFactories: number;
+  queuedFactories: number;
+  damagedFactories: number;
+  resourceShortageLineCount: number;
+  definitions: MilitaryProductionDefinitionSummary[];
+  unresolvedLines: MilitaryProductionLineSummary[];
+}
+
 /** World totals — same shape as CountryStats minus the tag. */
 export type CountryTotals = Omit<CountryStats, "tag">;
 
@@ -193,6 +256,7 @@ export interface AnalyzeResult {
   equipment_by_country: Record<string, Record<string, number>>;
   world_equipment: Record<string, number>;
   stockpileSummaries: CountryStockpileSummary[];
+  militaryProductionSummaries: CountryMilitaryProductionSummary[];
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
   navalKills: CreditedNavalKill[];

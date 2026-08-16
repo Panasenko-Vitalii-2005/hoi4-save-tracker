@@ -132,6 +132,37 @@ export function formatEquipmentDefinition(definition: string): string {
   return readable.charAt(0).toUpperCase() + readable.slice(1);
 }
 
+const PRODUCTION_RATE_FORMATTER = new Intl.NumberFormat("en-US", {
+  useGrouping: true,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const PRODUCTION_VALUE_FORMATTER = new Intl.NumberFormat("en-US", {
+  useGrouping: true,
+  maximumFractionDigits: 2,
+});
+
+const PRODUCTION_PROGRESS_FORMATTER = new Intl.NumberFormat("en-US", {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+
+export function formatProductionRate(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return PRODUCTION_RATE_FORMATTER.format(value);
+}
+
+export function formatProductionValue(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return PRODUCTION_VALUE_FORMATTER.format(value);
+}
+
+export function formatProductionProgress(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return PRODUCTION_PROGRESS_FORMATTER.format(value);
+}
+
 export interface Hoi4DateParts {
   year: number;
   month: number;
