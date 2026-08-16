@@ -59,3 +59,28 @@ export interface DivisionRecord {
   complete: boolean;
   warnings: string[];
 }
+
+export interface DivisionTemplateUnitSlot {
+  unitType: string;
+  x: number | null;
+  y: number | null;
+  sourceOffset: number;
+  warnings: string[];
+}
+
+export interface DivisionTemplateRecord {
+  templateRef: EquipmentRef | null;
+  name: string | null;
+  countryTag: string | null;
+  originalTag: string | null;
+  foreignTemplateTag: string | null;
+  role: string | null;
+  obsolete: boolean;
+  obsoleteDate: string | null;
+  regiments: DivisionTemplateUnitSlot[];
+  supportCompanies: DivisionTemplateUnitSlot[];
+  regimentalSupport: DivisionTemplateUnitSlot[];
+  sourceOffset: number;
+  complete: boolean;
+  warnings: string[];
+}
