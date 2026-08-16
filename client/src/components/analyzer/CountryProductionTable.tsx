@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { CountryMilitaryProductionSummary } from "@/types";
 import { countryFullName } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 
 interface Props {
   countries: CountryMilitaryProductionSummary[];
@@ -50,12 +51,7 @@ export const CountryProductionTable = memo(function CountryProductionTable({
                   }}
                 >
                   <td className="country-cell">
-                    <strong>{name}</strong>
-                    {name !== country.countryTag && (
-                      <span className="production-code">
-                        {country.countryTag}
-                      </span>
-                    )}
+                    <CountryDisplay tag={country.countryTag} />
                   </td>
                   <td className="numeric-cell">
                     {country.activeFactories.toLocaleString()}

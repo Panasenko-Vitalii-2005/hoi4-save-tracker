@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { CountryStockpileSummary } from "@/types";
 import { countryFullName } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 
 interface Props {
   countries: CountryStockpileSummary[];
@@ -34,6 +35,7 @@ export const CountryStockpileTable = memo(function CountryStockpileTable({
                 (total, definition) => total + definition.variants.length,
                 0,
               );
+              const countryName = countryFullName(country.countryTag);
               return (
                 <tr
                   key={country.countryTag}
@@ -41,7 +43,7 @@ export const CountryStockpileTable = memo(function CountryStockpileTable({
                     selectedTag === country.countryTag ? "selected" : ""
                   }
                   aria-selected={selectedTag === country.countryTag}
-                  aria-label={`Inspect ${countryFullName(country.countryTag)} stockpile`}
+                  aria-label={`Inspect ${countryName} stockpile`}
                   onClick={() => onSelect(country.countryTag)}
                   tabIndex={0}
                   onKeyDown={(event) => {
@@ -52,13 +54,7 @@ export const CountryStockpileTable = memo(function CountryStockpileTable({
                   }}
                 >
                   <td className="country-cell">
-                    <strong>{countryFullName(country.countryTag)}</strong>
-                    {countryFullName(country.countryTag) !==
-                      country.countryTag && (
-                      <span className="stockpile-tag">
-                        {country.countryTag}
-                      </span>
-                    )}
+                    <CountryDisplay tag={country.countryTag} />
                   </td>
                   <td className="numeric-cell">
                     {country.definitions.length.toLocaleString()}

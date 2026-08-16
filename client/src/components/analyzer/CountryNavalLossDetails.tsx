@@ -1,10 +1,7 @@
 import { memo } from "react";
 import type { CountryNavalLossSummary } from "@/types";
-import { countryFullName, navalShipTypeLabel } from "@/lib/utils";
-
-function countryLabel(tag: string | null): string {
-  return tag === null ? "Unknown country" : countryFullName(tag);
-}
+import { navalShipTypeLabel } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 
 export const CountryNavalLossDetails = memo(function CountryNavalLossDetails({
   summary,
@@ -20,7 +17,9 @@ export const CountryNavalLossDetails = memo(function CountryNavalLossDetails({
       ) : (
         <>
           <div className="naval-losses-detail-head">
-            <h2>{countryLabel(summary.countryTag)}</h2>
+            <h2>
+              <CountryDisplay tag={summary.countryTag} />
+            </h2>
             <div className="naval-losses-total">
               <strong>{summary.totalLost.toLocaleString()}</strong>
               <span>recoverable detailed naval losses</span>

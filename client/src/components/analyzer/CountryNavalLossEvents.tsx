@@ -1,7 +1,7 @@
 import { memo, useMemo } from "react";
 import type { CountryNavalLossSummary, NavalLossEvent } from "@/types";
 import {
-  countryFullName,
+  formatCountryDisplayName,
   formatHoi4Date,
   navalShipTypeLabel,
   parseHoi4Date,
@@ -38,9 +38,9 @@ function killerLabel(event: NavalLossEvent): string {
 
   const name = killer.killerName?.trim() ? killer.killerName : null;
   const country = killer.killerCountryTag?.trim() || null;
-  if (name && country) return `${name} (${countryFullName(country)})`;
+  if (name && country) return `${name} · ${formatCountryDisplayName(country)}`;
   if (name) return name;
-  if (country) return countryFullName(country);
+  if (country) return formatCountryDisplayName(country);
   return "Unknown";
 }
 

@@ -4,14 +4,14 @@ import type {
   UnresolvedStockpileVariantSummary,
 } from "@/types";
 import {
-  countryFullName,
+  formatCountryDisplayName,
   formatEquipmentDefinition,
   formatStockpileAmount,
 } from "@/lib/utils";
 
 function displayTag(tag: string | null): string {
   if (!tag) return "—";
-  return countryFullName(tag);
+  return formatCountryDisplayName(tag);
 }
 
 function unresolvedKey(

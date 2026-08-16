@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import type { CountryStats } from "@/types";
-import { countryFullName } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 
 export const CountryWarDetails = memo(function CountryWarDetails({
   country,
@@ -23,7 +23,9 @@ export const CountryWarDetails = memo(function CountryWarDetails({
       ) : (
         <>
           <div className="war-casualties-detail-head">
-            <h2>{countryFullName(country.tag)}</h2>
+            <h2>
+              <CountryDisplay tag={country.tag} />
+            </h2>
             <div className="war-casualties-stats">
               <div><span>Calculated casualties:</span><strong>{(country.calculatedWarCasualtiesTotal ?? 0).toLocaleString()}</strong></div>
               <div><span>Wars:</span><strong>{country.warCasualties.length.toLocaleString()}</strong></div>
@@ -49,7 +51,9 @@ export const CountryWarDetails = memo(function CountryWarDetails({
               <tbody>
                 {filteredAndSortedWars.map((war, index) => (
                   <tr key={`${war.opponentTag}-${war.startDate ?? "null"}-${index}`}>
-                    <td className="country-cell"><strong>{countryFullName(war.opponentTag)}</strong></td>
+                    <td className="country-cell">
+                      <CountryDisplay tag={war.opponentTag} />
+                    </td>
                     <td className="date-cell">{war.startDate ?? ""}</td>
                     <td className="numeric-cell">{war.casualties.toLocaleString()}</td>
                   </tr>

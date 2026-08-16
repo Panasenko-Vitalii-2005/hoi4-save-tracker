@@ -4,7 +4,10 @@ import type {
   DivisionTemplateUnitSlot,
   EquipmentRef,
 } from "@/types";
-import { equipmentReferenceKey } from "@/lib/utils";
+import {
+  equipmentReferenceKey,
+  formatCountryDisplayName,
+} from "@/lib/utils";
 
 function CompositionGroup({
   title,
@@ -64,9 +67,12 @@ export const DivisionTemplateDetails = memo(
 
     const metadata = [
       ["Role", template.role],
-      ["Template country", template.countryTag],
-      ["Original tag", template.originalTag],
-      ["Foreign template tag", template.foreignTemplateTag],
+      ["Template country", formatCountryDisplayName(template.countryTag)],
+      ["Original tag", formatCountryDisplayName(template.originalTag)],
+      [
+        "Foreign template tag",
+        formatCountryDisplayName(template.foreignTemplateTag),
+      ],
       ["Obsolete", template.obsolete ? "Yes" : "No"],
       ["Obsolete change date", template.obsoleteChangeDate],
       ["Record status", template.complete ? "Complete" : "Partial"],

@@ -5,6 +5,7 @@ import type {
 } from "@/types";
 import {
   equipmentReferenceKey,
+  formatCountryDisplayName,
   formatEquipmentDefinition,
   formatStockpileAmount,
 } from "@/lib/utils";
@@ -82,7 +83,11 @@ export const DivisionEquipmentTable = memo(
                       <td>{definition?.version ?? "—"}</td>
                       <td>
                         {definition
-                          ? `${definition.creatorTag ?? "—"} / ${definition.originTag ?? "—"}`
+                          ? `${formatCountryDisplayName(
+                              definition.creatorTag,
+                            )} / ${formatCountryDisplayName(
+                              definition.originTag,
+                            )}`
                           : "—"}
                       </td>
                     </tr>

@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { CountryDivisionSummary } from "@/types";
 import { countryFullName } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 
 interface Props {
   countries: CountryDivisionSummary[];
@@ -51,12 +52,7 @@ export const CountryDivisionTable = memo(function CountryDivisionTable({
                   }}
                 >
                   <td className="country-cell">
-                    <strong>{countryName}</strong>
-                    {countryName !== country.countryTag && (
-                      <span className="land-forces-code">
-                        {country.countryTag}
-                      </span>
-                    )}
+                    <CountryDisplay tag={country.countryTag} />
                   </td>
                   <td className="numeric-cell">
                     {country.divisionCount.toLocaleString()}

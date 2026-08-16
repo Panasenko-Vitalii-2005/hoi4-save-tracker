@@ -5,6 +5,7 @@ import type {
 } from "@/types";
 import {
   equipmentReferenceKey,
+  formatCountryDisplayName,
   formatDivisionRatio,
 } from "@/lib/utils";
 
@@ -246,7 +247,11 @@ export const DivisionTable = memo(function DivisionTable({
                   <td className="numeric-cell">
                     {formatDivisionRatio(division.supplyRatio)}
                   </td>
-                  <td>{division.expeditionaryOwnerTag ?? "—"}</td>
+                  <td>
+                    {formatCountryDisplayName(
+                      division.expeditionaryOwnerTag,
+                    )}
+                  </td>
                 </tr>
               );
             })}

@@ -4,10 +4,10 @@ import type {
   MilitaryProductionDefinitionSummary,
 } from "@/types";
 import {
-  countryFullName,
   formatEquipmentDefinition,
   formatProductionRate,
 } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 import { ProductionLineTable } from "./ProductionLineTable";
 
 interface Props {
@@ -66,7 +66,9 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
       <section className="panel production-details-panel">
         <div className="production-detail-head">
           <div>
-            <h2>{countryFullName(country.countryTag)}</h2>
+            <h2>
+              <CountryDisplay tag={country.countryTag} />
+            </h2>
             <div className="micro-copy">
               Current land and air military production lines
             </div>

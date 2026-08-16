@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { CountryStats } from "@/types";
-import { countryFullName } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 
 interface Props {
   countries: CountryStats[];
@@ -37,7 +37,9 @@ export const CountryCasualtiesTable = memo(function CountryCasualtiesTable({
                   }
                 }}
               >
-                <td className="country-cell"><strong>{countryFullName(country.tag)}</strong></td>
+                <td className="country-cell">
+                  <CountryDisplay tag={country.tag} />
+                </td>
                 <td className="numeric-cell">{(country.calculatedWarCasualtiesTotal ?? 0).toLocaleString()}</td>
                 <td className="numeric-cell">{country.warCasualties.length.toLocaleString()}</td>
               </tr>

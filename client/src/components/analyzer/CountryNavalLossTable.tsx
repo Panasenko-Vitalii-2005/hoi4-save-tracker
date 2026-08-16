@@ -1,15 +1,11 @@
 import { memo } from "react";
 import type { CountryNavalLossSummary } from "@/types";
-import { countryFullName } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 
 interface Props {
   summaries: CountryNavalLossSummary[];
   selectedTag: string | null;
   onSelect: (tag: string | null) => void;
-}
-
-function countryLabel(tag: string | null): string {
-  return tag === null ? "Unknown country" : countryFullName(tag);
 }
 
 export const CountryNavalLossTable = memo(function CountryNavalLossTable({
@@ -49,7 +45,7 @@ export const CountryNavalLossTable = memo(function CountryNavalLossTable({
                   }}
                 >
                   <td className="country-cell">
-                    <strong>{countryLabel(summary.countryTag)}</strong>
+                    <CountryDisplay tag={summary.countryTag} />
                   </td>
                   <td className="numeric-cell">
                     {summary.totalLost.toLocaleString()}

@@ -5,7 +5,7 @@ import type {
   ProductionResourceShortage,
 } from "@/types";
 import {
-  countryFullName,
+  formatCountryDisplayName,
   formatEquipmentDefinition,
   formatProductionProgress,
   formatProductionRate,
@@ -52,11 +52,13 @@ function DesignCell({
         <span className="production-line-meta">
           {line.version !== null && `Version ${line.version}`}
           {line.version !== null && line.creatorTag && " · "}
-          {line.creatorTag && `Creator: ${countryFullName(line.creatorTag)}`}
+          {line.creatorTag &&
+            `Creator: ${formatCountryDisplayName(line.creatorTag)}`}
           {(line.version !== null || line.creatorTag) &&
             line.originTag &&
             " · "}
-          {line.originTag && `Origin: ${countryFullName(line.originTag)}`}
+          {line.originTag &&
+            `Origin: ${formatCountryDisplayName(line.originTag)}`}
         </span>
       )}
     </td>

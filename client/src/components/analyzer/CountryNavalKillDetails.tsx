@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { CountryNavalKillSummary } from "@/types";
-import { countryFullName, navalShipTypeLabel } from "@/lib/utils";
+import { navalShipTypeLabel } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 
 export const CountryNavalKillDetails = memo(
   function CountryNavalKillDetails({
@@ -11,7 +12,9 @@ export const CountryNavalKillDetails = memo(
     return (
       <section className="panel naval-kills-details">
         <div className="naval-kills-detail-head">
-          <h2>{countryFullName(summary.countryTag)}</h2>
+          <h2>
+            <CountryDisplay tag={summary.countryTag} />
+          </h2>
           <div className="naval-kills-total">
             <strong>{summary.creditedKills.toLocaleString()}</strong>
             <span>credited naval kills found in detailed save records</span>

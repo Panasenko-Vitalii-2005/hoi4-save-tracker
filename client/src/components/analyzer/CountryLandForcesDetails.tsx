@@ -6,7 +6,7 @@ import type {
   DivisionSummary,
   DivisionTemplateCatalogEntry,
 } from "@/types";
-import { countryFullName } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 import { ArmyHierarchyView } from "./ArmyHierarchyView";
 import { DivisionDetails } from "./DivisionDetails";
 import { DivisionTable } from "./DivisionTable";
@@ -85,9 +85,11 @@ export const CountryLandForcesDetails = memo(
         <section className="panel land-forces-country-details">
           <div className="land-forces-detail-head">
             <div>
-              <h2>{countryFullName(country.countryTag)}</h2>
+              <h2>
+                <CountryDisplay tag={country.countryTag} />
+              </h2>
               <div className="micro-copy">
-                Current land-force snapshot · {country.countryTag}
+                Current land-force snapshot
               </div>
             </div>
           </div>

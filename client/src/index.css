@@ -2501,6 +2501,39 @@ button {
   white-space: nowrap;
 }
 
+.analyzer-shell .country-display {
+  display: inline-flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  vertical-align: top;
+}
+
+.analyzer-shell .country-display-name {
+  color: var(--ink);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.analyzer-shell .country-display-tag {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+}
+
+.analyzer-shell h2 .country-display-tag {
+  margin-top: 3px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+}
+
+.analyzer-country-rank-cell .country-display {
+  vertical-align: middle;
+}
+
 .analyzer-shell :is(
     .country-cell,
     .equipment-cell,

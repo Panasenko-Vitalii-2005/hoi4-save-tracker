@@ -4,10 +4,10 @@ import type {
   StockpileDefinitionSummary,
 } from "@/types";
 import {
-  countryFullName,
   formatEquipmentDefinition,
   formatStockpileAmount,
 } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 import { StockpileVariantTable } from "./StockpileVariantTable";
 
 interface Props {
@@ -34,7 +34,9 @@ export const CountryStockpileDetails = memo(function CountryStockpileDetails({
       <section className="panel stockpile-details-panel">
         <div className="stockpile-detail-head">
           <div>
-            <h2>{countryFullName(country.countryTag)}</h2>
+            <h2>
+              <CountryDisplay tag={country.countryTag} />
+            </h2>
             <div className="micro-copy">
               National stockpile balances grouped by exact equipment definition
             </div>

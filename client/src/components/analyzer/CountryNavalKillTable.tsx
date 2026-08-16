@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { CountryNavalKillSummary } from "@/types";
-import { countryFullName } from "@/lib/utils";
+import { CountryDisplay } from "./CountryDisplay";
 
 interface Props {
   summaries: CountryNavalKillSummary[];
@@ -45,7 +45,7 @@ export const CountryNavalKillTable = memo(function CountryNavalKillTable({
                   }}
                 >
                   <td className="country-cell">
-                    <strong>{countryFullName(summary.countryTag)}</strong>
+                    <CountryDisplay tag={summary.countryTag} />
                   </td>
                   <td className="numeric-cell">
                     {summary.creditedKills.toLocaleString()}

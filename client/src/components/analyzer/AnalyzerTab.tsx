@@ -7,13 +7,19 @@ import React, {
 } from "react";
 import type { AnalyzeResult, CountryStats } from "@/types";
 import { SummaryGrid } from "@/components/ui/SummaryGrid";
-import { fmtBig, shortEqName, countryFullName } from "@/lib/utils";
+import {
+  countryFullName,
+  fmtBig,
+  formatCountryDisplayName,
+  shortEqName,
+} from "@/lib/utils";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
 import { WarCasualtiesTab } from "./WarCasualtiesTab";
 import { NavalLossesTab } from "./NavalLossesTab";
 import { ProductionTab } from "./ProductionTab";
 import { StockpileTab } from "./StockpileTab";
 import { LandForcesTab } from "./LandForcesTab";
+import { CountryDisplay } from "./CountryDisplay";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -1166,7 +1172,7 @@ export function AnalyzerTab() {
                   >
                     {eqCountries.map((c) => (
                       <option key={c} value={c}>
-                        {countryFullName(c)}
+                        {formatCountryDisplayName(c)}
                       </option>
                     ))}
                   </select>
@@ -1311,11 +1317,11 @@ export function AnalyzerTab() {
                 <tbody>
                   {sortedRows.map((r, i) => (
                     <tr key={r.tag}>
-                      <td>
+                      <td className="country-cell analyzer-country-rank-cell">
                         <span style={{ color: "var(--muted)", marginRight: 8 }}>
                           {i + 1}
                         </span>
-                        <strong>{countryFullName(r.tag)}</strong>
+                        <CountryDisplay tag={r.tag} />
                       </td>
                       <td>
                         {r.manpowerInField

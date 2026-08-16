@@ -245,44 +245,10 @@ export function navalShipTypeLabel(
   return readable.charAt(0).toUpperCase() + readable.slice(1);
 }
 
-export const COUNTRY_NAMES: Record<string, string> = {
-  GER: "Germany",
-  SOV: "Soviet Union",
-  ENG: "United Kingdom",
-  FRA: "France",
-  USA: "United States",
-  ITA: "Italy",
-  JAP: "Japan",
-  JPN: "Japan",
-  CHI: "China",
-  CAN: "Canada",
-  BEL: "Belgium",
-  NED: "Netherlands",
-  SWE: "Sweden",
-  NOR: "Norway",
-  DNK: "Denmark",
-  POL: "Poland",
-  HUN: "Hungary",
-  ROU: "Romania",
-  BUL: "Bulgaria",
-  FIN: "Finland",
-  TUR: "Turkey",
-  YUG: "Yugoslavia",
-  GRE: "Greece",
-  SPA: "Spain",
-  POR: "Portugal",
-  BRA: "Brazil",
-  ARG: "Argentina",
-  PER: "Peru",
-  MEX: "Mexico",
-  RUS: "Russia",
-  CZE: "Czech Republic",
-  AUS: "Austria",
-};
-
-export function countryFullName(tag: string): string {
-  return COUNTRY_NAMES[tag.toUpperCase()] ?? tag;
-}
+export {
+  getCountryDisplayName as countryFullName,
+  formatCountryDisplayName,
+} from "./countryNames";
 
 const SETTINGS_KEY = "hoi4-dashboard-v1";
 export function loadSettings<T>(defaults: T): T {

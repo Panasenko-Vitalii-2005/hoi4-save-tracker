@@ -5,8 +5,8 @@ import type {
   DivisionTemplateCatalogEntry,
 } from "@/types";
 import {
-  countryFullName,
   equipmentReferenceKey,
+  formatCountryDisplayName,
   formatDivisionRatio,
   formatStockpileAmount,
 } from "@/lib/utils";
@@ -42,26 +42,29 @@ export const DivisionDetails = memo(function DivisionDetails({
   }
 
   const name = division.overrideName ?? template?.name ?? "Unnamed division";
-  const controllerName = countryFullName(division.countryTag);
   const provenance = [
-    [
-      "Controller country",
-      controllerName === division.countryTag
-        ? division.countryTag
-        : `${controllerName} (${division.countryTag})`,
-    ],
+    ["Controller country", formatCountryDisplayName(division.countryTag)],
     [
       "Logical country",
       division.logicalCountryTag &&
       division.logicalCountryTag !== division.countryTag
-        ? division.logicalCountryTag
+        ? formatCountryDisplayName(division.logicalCountryTag)
         : "Same as controller",
     ],
-    ["Expeditionary owner", division.expeditionaryOwnerTag],
+    [
+      "Expeditionary owner",
+      formatCountryDisplayName(division.expeditionaryOwnerTag),
+    ],
     ["Template", template?.name],
     ["Template role", template?.role],
-    ["Current manpower source", division.currentManpowerTag],
-    ["Required manpower source", division.requiredManpowerTag],
+    [
+      "Current manpower source",
+      formatCountryDisplayName(division.currentManpowerTag),
+    ],
+    [
+      "Required manpower source",
+      formatCountryDisplayName(division.requiredManpowerTag),
+    ],
   ] as const;
   const manpower = [
     ["Current manpower", valueText(division.currentManpower)],
