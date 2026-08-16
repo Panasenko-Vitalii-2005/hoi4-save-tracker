@@ -84,3 +84,47 @@ export interface DivisionTemplateRecord {
   complete: boolean;
   warnings: string[];
 }
+
+export interface ResolvedDivisionSummary {
+  countryTag: string;
+  divisionRef: EquipmentRef | null;
+  logicalCountryTag: string | null;
+  expeditionaryOwnerTag: string | null;
+  overrideName: string | null;
+  nameType: number | null;
+  nameOrder: number | null;
+  divisionTemplateRef: EquipmentRef | null;
+  template: DivisionTemplateRecord | null;
+  currentManpower: number | null;
+  requiredManpower: number | null;
+  currentManpowerTag: string | null;
+  requiredManpowerTag: string | null;
+  missingManpower: number | null;
+  manpowerCompleteness: number | null;
+  strength: number | null;
+  organization: number | null;
+  experience: number | null;
+  equipment: DivisionEquipmentRecord[];
+  provinceId: number | null;
+  supply: DivisionSupply;
+  supplyRatio: number | null;
+  fuel: number | null;
+  fuelRequested: number | null;
+  status: DivisionStatus;
+  sourceOffset: number;
+  complete: boolean;
+  warnings: string[];
+}
+
+export interface CountryDivisionSummary {
+  countryTag: string;
+  divisionCount: number;
+  resolvedTemplateCount: number;
+  unresolvedTemplateCount: number;
+  currentManpowerTotal: number;
+  requiredManpowerTotal: number;
+  missingManpowerTotal: number;
+  fullManpowerDivisionCount: number;
+  underManpowerDivisionCount: number;
+  divisions: ResolvedDivisionSummary[];
+}
