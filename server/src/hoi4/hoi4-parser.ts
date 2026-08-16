@@ -40,9 +40,11 @@ import { parseDivisions } from './division/division.parser';
 import { parseDivisionTemplates } from './division/division-template.parser';
 import {
   toPublicArmyHierarchySummaries,
-  toPublicDivisionSummaries,
+  toPublicDivisionData,
   type PublicCountryArmyHierarchySummary,
   type PublicCountryDivisionSummary,
+  type PublicDivisionTemplate,
+  type PublicEquipmentDefinition,
 } from './division/division.public';
 import { linkArmyHierarchy, parseArmyHierarchy } from './division/army.parser';
 
@@ -95,6 +97,8 @@ export interface AnalyzeResult {
   stockpileSummaries: CountryStockpileSummary[];
   militaryProductionSummaries: CountryMilitaryProductionSummary[];
   divisionSummaries: PublicCountryDivisionSummary[];
+  divisionTemplateCatalog: PublicDivisionTemplate[];
+  divisionEquipmentCatalog: PublicEquipmentDefinition[];
   armyHierarchySummaries: PublicCountryArmyHierarchySummary[];
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
@@ -226,7 +230,11 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     armyHierarchy,
     resolvedDivisions,
   );
-  const divisionSummaries = toPublicDivisionSummaries(resolvedDivisions);
+  const {
+    divisionSummaries,
+    divisionTemplateCatalog,
+    divisionEquipmentCatalog,
+  } = toPublicDivisionData(resolvedDivisions);
   const armyHierarchySummaries =
     toPublicArmyHierarchySummaries(linkedArmyHierarchy);
 
@@ -532,6 +540,8 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     stockpileSummaries,
     militaryProductionSummaries,
     divisionSummaries,
+    divisionTemplateCatalog,
+    divisionEquipmentCatalog,
     armyHierarchySummaries,
     warCasualties: parsedWarCasualties,
     navalLosses,

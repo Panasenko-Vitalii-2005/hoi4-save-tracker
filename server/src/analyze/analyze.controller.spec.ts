@@ -24,6 +24,8 @@ interface AnalyzeResponse {
   stockpileSummaries: unknown[];
   militaryProductionSummaries: unknown[];
   divisionSummaries: unknown[];
+  divisionTemplateCatalog: unknown[];
+  divisionEquipmentCatalog: unknown[];
   armyHierarchySummaries: unknown[];
 }
 
@@ -95,6 +97,8 @@ describe('AnalyzeController uploads', () => {
       expect(body.stockpileSummaries).toEqual([]);
       expect(body.militaryProductionSummaries).toEqual([]);
       expect(body.divisionSummaries).toEqual([]);
+      expect(body.divisionTemplateCatalog).toEqual([]);
+      expect(body.divisionEquipmentCatalog).toEqual([]);
       expect(body.armyHierarchySummaries).toEqual([]);
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
     },
@@ -114,6 +118,8 @@ describe('AnalyzeController uploads', () => {
     expect(body.stockpileSummaries).toEqual([]);
     expect(body.militaryProductionSummaries).toEqual([]);
     expect(body.divisionSummaries).toEqual([]);
+    expect(body.divisionTemplateCatalog).toEqual([]);
+    expect(body.divisionEquipmentCatalog).toEqual([]);
     expect(body.armyHierarchySummaries).toEqual([]);
     expect(existsSync(savePath)).toBe(true);
   });

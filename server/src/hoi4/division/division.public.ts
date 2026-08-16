@@ -1,7 +1,12 @@
-import type {
-  EquipmentDefinitionRecord,
-  EquipmentRef,
+import {
+  equipmentRefKey,
+  type EquipmentDefinitionRecord,
+  type EquipmentRef,
 } from '../stockpile/stockpile.types';
+/*
+ * Public division data intentionally normalizes reusable template and
+ * equipment metadata. Parser/aggregator records remain unchanged internally.
+ */
 import type {
   CommanderRecord,
   CountryArmyHierarchySummary,
@@ -32,7 +37,6 @@ export interface PublicEquipmentDefinition {
 export interface PublicDivisionEquipment {
   equipmentRef: EquipmentRef | null;
   amount: number | null;
-  equipment: PublicEquipmentDefinition | null;
 }
 
 export interface PublicDivisionTemplateUnitSlot {
@@ -42,7 +46,7 @@ export interface PublicDivisionTemplateUnitSlot {
 }
 
 export interface PublicDivisionTemplate {
-  templateRef: EquipmentRef | null;
+  templateRef: EquipmentRef;
   name: string | null;
   countryTag: string | null;
   originalTag: string | null;
@@ -65,7 +69,6 @@ export interface PublicDivisionSummary {
   nameType: number | null;
   nameOrder: number | null;
   divisionTemplateRef: EquipmentRef | null;
-  template: PublicDivisionTemplate | null;
   currentManpower: number | null;
   requiredManpower: number | null;
   currentManpowerTag: string | null;
@@ -106,6 +109,12 @@ export interface PublicCountryDivisionSummary {
   fullManpowerDivisionCount: number;
   underManpowerDivisionCount: number;
   divisions: PublicDivisionSummary[];
+}
+
+export interface PublicDivisionData {
+  divisionSummaries: PublicCountryDivisionSummary[];
+  divisionTemplateCatalog: PublicDivisionTemplate[];
+  divisionEquipmentCatalog: PublicEquipmentDefinition[];
 }
 
 export interface PublicCommanderSummary {
@@ -179,10 +188,6 @@ function toPublicEquipment(
   return {
     equipmentRef: cloneReference(entry.equipmentRef),
     amount: entry.amount,
-    equipment:
-      entry.equipment === null
-        ? null
-        : toPublicEquipmentDefinition(entry.equipment),
   };
 }
 
@@ -194,9 +199,10 @@ function toPublicTemplateSlot(
 
 function toPublicTemplate(
   template: DivisionTemplateRecord,
+  templateRef: EquipmentRef,
 ): PublicDivisionTemplate {
   return {
-    templateRef: cloneReference(template.templateRef),
+    templateRef: { ...templateRef },
     name: template.name,
     countryTag: template.countryTag,
     originalTag: template.originalTag,
@@ -223,8 +229,6 @@ function toPublicDivision(
     nameType: division.nameType,
     nameOrder: division.nameOrder,
     divisionTemplateRef: cloneReference(division.divisionTemplateRef),
-    template:
-      division.template === null ? null : toPublicTemplate(division.template),
     currentManpower: division.currentManpower,
     requiredManpower: division.requiredManpower,
     currentManpowerTag: division.currentManpowerTag,
@@ -245,10 +249,16 @@ function toPublicDivision(
   };
 }
 
-export function toPublicDivisionSummaries(
+function compareReferences(left: EquipmentRef, right: EquipmentRef): number {
+  return left.type - right.type || left.id - right.id;
+}
+
+export function toPublicDivisionData(
   countries: readonly CountryDivisionSummary[],
-): PublicCountryDivisionSummary[] {
-  return countries.map((country) => ({
+): PublicDivisionData {
+  const templates = new Map<string, PublicDivisionTemplate>();
+  const equipment = new Map<string, PublicEquipmentDefinition>();
+  const divisionSummaries = countries.map((country) => ({
     countryTag: country.countryTag,
     divisionCount: country.divisionCount,
     resolvedTemplateCount: country.resolvedTemplateCount,
@@ -258,8 +268,36 @@ export function toPublicDivisionSummaries(
     missingManpowerTotal: country.missingManpowerTotal,
     fullManpowerDivisionCount: country.fullManpowerDivisionCount,
     underManpowerDivisionCount: country.underManpowerDivisionCount,
-    divisions: country.divisions.map(toPublicDivision),
+    divisions: country.divisions.map((division) => {
+      if (division.divisionTemplateRef !== null && division.template !== null) {
+        const key = equipmentRefKey(division.divisionTemplateRef);
+        if (!templates.has(key)) {
+          templates.set(
+            key,
+            toPublicTemplate(division.template, division.divisionTemplateRef),
+          );
+        }
+      }
+      for (const entry of division.equipment) {
+        if (entry.equipmentRef === null || entry.equipment === null) continue;
+        const key = equipmentRefKey(entry.equipmentRef);
+        if (!equipment.has(key)) {
+          equipment.set(key, toPublicEquipmentDefinition(entry.equipment));
+        }
+      }
+      return toPublicDivision(division);
+    }),
   }));
+
+  return {
+    divisionSummaries,
+    divisionTemplateCatalog: [...templates.values()].sort((left, right) =>
+      compareReferences(left.templateRef, right.templateRef),
+    ),
+    divisionEquipmentCatalog: [...equipment.values()].sort((left, right) =>
+      compareReferences(left.equipmentRef, right.equipmentRef),
+    ),
+  };
 }
 
 function toPublicCommander(

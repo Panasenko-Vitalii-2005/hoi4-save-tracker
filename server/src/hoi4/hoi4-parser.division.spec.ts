@@ -6,19 +6,40 @@ import { DIVISION_FIXTURE } from './division/fixtures/division.fixture';
 import { analyzeSave, type AnalyzeResult } from './hoi4-parser';
 
 const INTEGRATION_HIERARCHY_FIXTURE = `
-division_templates={
-  division_template={
-    id={ id=102 type=52 }
-    name="Foreign Template"
-    country="D04"
-    original_tag="D04"
-    foreign_template_tag="RKN"
-    role="modded_role"
-    regiments={ modded_battalion={ x=0 y=0 } }
+equipments={
+  duplicate_service_rifle={
+    id={ id=11 type=70 }
+    name="Service Rifle"
+    creator="USA"
+    origin="---"
   }
 }
 countries={
   USA={
+    units={
+      division={
+        id={ id=4 type=51 }
+        logical_country="USA"
+        id={ id=4 type=51 }
+        division_template_id={ id=100 type=52 }
+        division_name={ type=0 override="Shared Template Division" }
+        location=4201
+        max_supply=108
+        organisation=22
+        strength=101
+        equipment={
+          equipment={ id={ id=10 type=70 } amount=10 }
+          equipment={ id={ id=11 type=70 } amount=1.5 }
+        }
+        army_manpower={
+          army_manpower_value={ value={ tag="USA" value=1000 } }
+          army_manpower_need={ value={ tag="USA" value=1200 } }
+        }
+        experience=50
+        army_current_supply_ratio=100
+        supply_gain=0.1
+      }
+    }
     theatres={
       theatre={
         id={ id=1 type=53 }
@@ -109,10 +130,12 @@ describe('analyzeSave division integration', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  test('returns non-optional empty division and hierarchy summaries', () => {
+  test('returns non-optional empty division data and hierarchy summaries', () => {
     const empty = analyzeSave(emptyPath);
 
     expect(empty.divisionSummaries).toEqual([]);
+    expect(empty.divisionTemplateCatalog).toEqual([]);
+    expect(empty.divisionEquipmentCatalog).toEqual([]);
     expect(empty.armyHierarchySummaries).toEqual([]);
   });
 
@@ -125,7 +148,11 @@ describe('analyzeSave division integration', () => {
     );
 
     expect(division?.divisionTemplateRef).toEqual({ id: 100, type: 52 });
-    expect(division?.template).toMatchObject({
+    expect(division).not.toHaveProperty('template');
+    const template = result.divisionTemplateCatalog.find(
+      ({ templateRef }) => templateRef.id === 100 && templateRef.type === 52,
+    );
+    expect(template).toMatchObject({
       templateRef: { id: 100, type: 52 },
       name: 'Duplicate Name',
       role: 'infantry',
@@ -134,17 +161,56 @@ describe('analyzeSave division integration', () => {
       foreignTemplateTag: '---',
       obsolete: false,
     });
-    expect(division?.template?.regiments).toHaveLength(3);
-    expect(division?.template?.supportCompanies).toHaveLength(2);
-    expect(division?.template?.regimentalSupport).toHaveLength(1);
+    expect(template?.regiments).toHaveLength(3);
+    expect(template?.supportCompanies).toHaveLength(2);
+    expect(template?.regimentalSupport).toHaveLength(1);
 
-    const obsoleteTemplate = usa?.divisions.find(
-      ({ divisionRef }) => divisionRef?.id === 2,
-    )?.template;
+    const obsoleteTemplate = result.divisionTemplateCatalog.find(
+      ({ templateRef }) => templateRef.id === 101,
+    );
     expect(obsoleteTemplate).toMatchObject({
       obsolete: true,
       obsoleteChangeDate: '1944.5.1.24',
     });
+  });
+
+  test('deduplicates shared templates and keeps duplicate names distinct by ref', () => {
+    const usa = result.divisionSummaries.find(
+      ({ countryTag }) => countryTag === 'USA',
+    );
+    const sharedTemplateDivisions = usa?.divisions.filter(
+      ({ divisionTemplateRef }) =>
+        divisionTemplateRef?.id === 100 && divisionTemplateRef.type === 52,
+    );
+    const duplicateNameTemplates = result.divisionTemplateCatalog.filter(
+      ({ name }) => name === 'Duplicate Name',
+    );
+
+    expect(sharedTemplateDivisions).toHaveLength(2);
+    expect(
+      result.divisionTemplateCatalog.filter(
+        ({ templateRef }) => templateRef.id === 100 && templateRef.type === 52,
+      ),
+    ).toHaveLength(1);
+    expect(
+      duplicateNameTemplates.map(({ templateRef }) => templateRef),
+    ).toEqual([
+      { id: 100, type: 52 },
+      { id: 101, type: 52 },
+    ]);
+  });
+
+  test('preserves an unresolved template ref without fabricating metadata', () => {
+    const division = result.divisionSummaries.find(
+      ({ countryTag }) => countryTag === 'D04',
+    )?.divisions[0];
+
+    expect(division?.divisionTemplateRef).toEqual({ id: 102, type: 52 });
+    expect(
+      result.divisionTemplateCatalog.some(
+        ({ templateRef }) => templateRef.id === 102 && templateRef.type === 52,
+      ),
+    ).toBe(false);
   });
 
   test('preserves manpower derivations and raw division snapshot fields', () => {
@@ -203,27 +269,65 @@ describe('analyzeSave division integration', () => {
     });
   });
 
-  test('preserves exact resolved and unresolved equipment entries', () => {
+  test('preserves exact resolved and unresolved equipment occurrences', () => {
     const division = result.divisionSummaries.find(
       ({ countryTag }) => countryTag === 'D04',
     )?.divisions[0];
 
     expect(division?.equipment).toHaveLength(3);
-    expect(division?.equipment[0]).toMatchObject({
+    expect(division?.equipment[0]).toEqual({
       equipmentRef: { id: 20, type: 170 },
       amount: 0,
-      equipment: {
-        equipmentRef: { id: 20, type: 170 },
-        definition: 'modded_tank.alpha',
-        name: 'Variant Alpha',
-        creatorTag: 'D04',
-      },
     });
     expect(division?.equipment[2]).toEqual({
       equipmentRef: { id: 999, type: 70 },
       amount: 0.03846,
-      equipment: null,
     });
+    expect(division?.equipment.map(({ amount }) => amount)).toEqual([
+      0, -2.5, 0.03846,
+    ]);
+    expect(
+      result.divisionEquipmentCatalog.find(
+        ({ equipmentRef }) =>
+          equipmentRef.id === 20 && equipmentRef.type === 170,
+      ),
+    ).toMatchObject({
+      definition: 'modded_tank.alpha',
+      name: 'Variant Alpha',
+      creatorTag: 'D04',
+    });
+    expect(
+      result.divisionEquipmentCatalog.some(
+        ({ equipmentRef }) =>
+          equipmentRef.id === 999 && equipmentRef.type === 70,
+      ),
+    ).toBe(false);
+  });
+
+  test('deduplicates equipment metadata and keeps identical names distinct by ref', () => {
+    const occurrences = result.divisionSummaries.flatMap(({ divisions }) =>
+      divisions.flatMap(({ equipment }) => equipment),
+    );
+    const serviceRifles = result.divisionEquipmentCatalog.filter(
+      ({ name }) => name === 'Service Rifle',
+    );
+
+    expect(
+      occurrences.filter(
+        ({ equipmentRef }) =>
+          equipmentRef?.id === 10 && equipmentRef.type === 70,
+      ).length,
+    ).toBeGreaterThan(1);
+    expect(
+      result.divisionEquipmentCatalog.filter(
+        ({ equipmentRef }) =>
+          equipmentRef.id === 10 && equipmentRef.type === 70,
+      ),
+    ).toHaveLength(1);
+    expect(serviceRifles.map(({ equipmentRef }) => equipmentRef)).toEqual([
+      { id: 10, type: 70 },
+      { id: 11, type: 70 },
+    ]);
   });
 
   test('links an army group, commander, army, and exact division references', () => {
@@ -322,6 +426,8 @@ describe('analyzeSave division integration', () => {
   test('does not expose parser offsets, warnings, indexes, or registries', () => {
     const publicData = JSON.stringify({
       divisionSummaries: result.divisionSummaries,
+      divisionTemplateCatalog: result.divisionTemplateCatalog,
+      divisionEquipmentCatalog: result.divisionEquipmentCatalog,
       armyHierarchySummaries: result.armyHierarchySummaries,
     });
 
@@ -330,6 +436,52 @@ describe('analyzeSave division integration', () => {
     expect(publicData).not.toContain('topLevelBlocks');
     expect(publicData).not.toContain('duplicateReferences');
     expect(publicData).not.toContain('equipmentRegistry');
+  });
+
+  test('all resolved division references reconstruct through the catalogs', () => {
+    const templateKeys = new Set(
+      result.divisionTemplateCatalog.map(
+        ({ templateRef }) => `${templateRef.type}:${templateRef.id}`,
+      ),
+    );
+    const equipmentKeys = new Set(
+      result.divisionEquipmentCatalog.map(
+        ({ equipmentRef }) => `${equipmentRef.type}:${equipmentRef.id}`,
+      ),
+    );
+    const divisions = result.divisionSummaries.flatMap(
+      ({ divisions }) => divisions,
+    );
+
+    for (const division of divisions.filter(
+      ({ divisionTemplateRef }) => divisionTemplateRef?.id !== 102,
+    )) {
+      expect(
+        templateKeys.has(
+          `${division.divisionTemplateRef?.type}:${division.divisionTemplateRef?.id}`,
+        ),
+      ).toBe(true);
+    }
+    for (const occurrence of divisions.flatMap(({ equipment }) => equipment)) {
+      const key = `${occurrence.equipmentRef?.type}:${occurrence.equipmentRef?.id}`;
+      expect(equipmentKeys.has(key)).toBe(occurrence.equipmentRef?.id !== 999);
+    }
+  });
+
+  test('sorts catalogs deterministically by ref type and id', () => {
+    expect(
+      result.divisionTemplateCatalog.map(({ templateRef }) => templateRef),
+    ).toEqual([
+      { id: 100, type: 52 },
+      { id: 101, type: 52 },
+    ]);
+    expect(
+      result.divisionEquipmentCatalog.map(({ equipmentRef }) => equipmentRef),
+    ).toEqual([
+      { id: 10, type: 70 },
+      { id: 11, type: 70 },
+      { id: 20, type: 170 },
+    ]);
   });
 
   test('hierarchy references resolve exactly to public divisions', () => {
@@ -358,6 +510,12 @@ describe('analyzeSave division integration', () => {
     const repeat = analyzeSave(populatedPath);
 
     expect(repeat.divisionSummaries).toEqual(result.divisionSummaries);
+    expect(repeat.divisionTemplateCatalog).toEqual(
+      result.divisionTemplateCatalog,
+    );
+    expect(repeat.divisionEquipmentCatalog).toEqual(
+      result.divisionEquipmentCatalog,
+    );
     expect(repeat.armyHierarchySummaries).toEqual(
       result.armyHierarchySummaries,
     );
