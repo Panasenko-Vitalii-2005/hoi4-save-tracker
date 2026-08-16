@@ -23,6 +23,8 @@ interface AnalyzeResponse {
   navalLosses: Array<{ sunkShip: { name: string } }>;
   stockpileSummaries: unknown[];
   militaryProductionSummaries: unknown[];
+  divisionSummaries: unknown[];
+  armyHierarchySummaries: unknown[];
 }
 
 function navalSave(shipName: string): string {
@@ -92,6 +94,8 @@ describe('AnalyzeController uploads', () => {
       expect(body.navalLosses[0].sunkShip.name).toBe(name);
       expect(body.stockpileSummaries).toEqual([]);
       expect(body.militaryProductionSummaries).toEqual([]);
+      expect(body.divisionSummaries).toEqual([]);
+      expect(body.armyHierarchySummaries).toEqual([]);
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
     },
   );
@@ -109,6 +113,8 @@ describe('AnalyzeController uploads', () => {
     expect(body.navalLosses[0].sunkShip.name).toBe(MOWE);
     expect(body.stockpileSummaries).toEqual([]);
     expect(body.militaryProductionSummaries).toEqual([]);
+    expect(body.divisionSummaries).toEqual([]);
+    expect(body.armyHierarchySummaries).toEqual([]);
     expect(existsSync(savePath)).toBe(true);
   });
 

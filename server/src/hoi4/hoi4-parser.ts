@@ -35,6 +35,16 @@ import { parseEquipmentRegistry } from './stockpile/equipment-registry.parser';
 import { aggregateNationalStockpile } from './stockpile/stockpile.aggregator';
 import { parseNationalStockpile } from './stockpile/stockpile.parser';
 import type { CountryStockpileSummary } from './stockpile/stockpile.types';
+import { aggregateDivisions } from './division/division.aggregator';
+import { parseDivisions } from './division/division.parser';
+import { parseDivisionTemplates } from './division/division-template.parser';
+import {
+  toPublicArmyHierarchySummaries,
+  toPublicDivisionSummaries,
+  type PublicCountryArmyHierarchySummary,
+  type PublicCountryDivisionSummary,
+} from './division/division.public';
+import { linkArmyHierarchy, parseArmyHierarchy } from './division/army.parser';
 
 // ── Core model (single source of truth) ─────────────────────────────────────
 
@@ -84,6 +94,8 @@ export interface AnalyzeResult {
   world_equipment: Record<string, number>;
   stockpileSummaries: CountryStockpileSummary[];
   militaryProductionSummaries: CountryMilitaryProductionSummary[];
+  divisionSummaries: PublicCountryDivisionSummary[];
+  armyHierarchySummaries: PublicCountryArmyHierarchySummary[];
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
   navalKills: CreditedNavalKill[];
@@ -206,6 +218,17 @@ export function analyzeSave(filePath: string): AnalyzeResult {
   const militaryProductionSummaries = aggregateMilitaryProduction(
     militaryProductionRecords,
   );
+  const divisions = parseDivisions(content, equipmentRegistry, topLevelBlocks);
+  const divisionTemplates = parseDivisionTemplates(content, topLevelBlocks);
+  const resolvedDivisions = aggregateDivisions(divisions, divisionTemplates);
+  const armyHierarchy = parseArmyHierarchy(content, topLevelBlocks);
+  const linkedArmyHierarchy = linkArmyHierarchy(
+    armyHierarchy,
+    resolvedDivisions,
+  );
+  const divisionSummaries = toPublicDivisionSummaries(resolvedDivisions);
+  const armyHierarchySummaries =
+    toPublicArmyHierarchySummaries(linkedArmyHierarchy);
 
   const globalNavalLosses = parseGlobalNavalLossHistory(content);
   const shipHistoryNavalLosses = parseShipHistoryNavalLosses(content);
@@ -508,6 +531,8 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     world_equipment: worldEqSorted,
     stockpileSummaries,
     militaryProductionSummaries,
+    divisionSummaries,
+    armyHierarchySummaries,
     warCasualties: parsedWarCasualties,
     navalLosses,
     navalLossSummaries,
