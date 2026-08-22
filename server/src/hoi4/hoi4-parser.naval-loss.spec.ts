@@ -247,6 +247,18 @@ describe('analyzeSave naval-loss integration', () => {
       militaryFactories: 0,
       civilianFactories: 0,
       dockyards: 0,
+      effectiveDockyards: 0,
+      shipProductionDockyards: 0,
+      repairDockyards: 0,
+      occupiedMilitaryFactories: 0,
+      subjectMilitaryFactories: 0,
+      subjectCivilianFactories: 0,
+      occupiedCivilianFactories: 0,
+      ownedCivilianFactories: 0,
+      tradeCivilianFactories: 0,
+      effectiveCivilianFactories: 0,
+      effectiveOwnMilitaryFactories: 0,
+      effectiveMilitaryFactories: 0,
     });
   });
 
