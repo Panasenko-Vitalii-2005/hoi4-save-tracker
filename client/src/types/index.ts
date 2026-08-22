@@ -61,10 +61,25 @@ export interface CountryStats {
   aircraft: number; // planes in air_wing_pool
   // Navy
   ships: number; // ship= entries in task_forces
-  // Industry (from states block)
-  militaryFactories: number; // arms_factory buildings
-  civilianFactories: number; // industrial_complex buildings
-  dockyards: number; // dockyard buildings
+  // Industry
+  militaryFactories: number;
+  civilianFactories: number;
+  dockyards: number;
+
+  occupiedMilitaryFactories: number;
+  subjectMilitaryFactories: number;
+  effectiveOwnMilitaryFactories: number;
+  effectiveMilitaryFactories: number;
+
+  subjectCivilianFactories: number;
+  occupiedCivilianFactories: number;
+  ownedCivilianFactories: number;
+  tradeCivilianFactories: number;
+  effectiveCivilianFactories: number;
+
+  shipProductionDockyards: number;
+  repairDockyards: number;
+  effectiveDockyards: number;
 }
 
 export interface ParsedWarCasualties {

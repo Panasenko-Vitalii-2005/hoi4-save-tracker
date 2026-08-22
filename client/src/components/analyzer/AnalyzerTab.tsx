@@ -424,15 +424,15 @@ export function AnalyzerTab() {
       [...(result?.by_country ?? [])]
         .filter(
           (r) =>
-            r.militaryFactories > 0 ||
-            r.civilianFactories > 0 ||
-            r.dockyards > 0,
+            r.effectiveMilitaryFactories > 0 ||
+            r.effectiveCivilianFactories > 0 ||
+            r.effectiveDockyards > 0,
         )
         .sort(
           (a, b) =>
-            b.militaryFactories +
-            b.civilianFactories -
-            (a.militaryFactories + a.civilianFactories),
+            b.effectiveMilitaryFactories +
+            b.effectiveCivilianFactories -
+            (a.effectiveMilitaryFactories + a.effectiveCivilianFactories),
         )
         .slice(0, 25),
     [result],
@@ -500,12 +500,12 @@ export function AnalyzerTab() {
     if (!result || !prevTotals) return null;
     return {
       industry:
-        result.totals.militaryFactories +
-        result.totals.civilianFactories +
-        result.totals.dockyards -
-        (prevTotals.militaryFactories +
-          prevTotals.civilianFactories +
-          prevTotals.dockyards),
+        result.totals.effectiveMilitaryFactories +
+        result.totals.effectiveCivilianFactories +
+        result.totals.effectiveDockyards -
+        (prevTotals.effectiveMilitaryFactories +
+          prevTotals.effectiveCivilianFactories +
+          prevTotals.effectiveDockyards),
       ships: result.totals.ships - prevTotals.ships,
       aircraft: result.totals.aircraft - prevTotals.aircraft,
       manpowerInField:
@@ -536,8 +536,8 @@ export function AnalyzerTab() {
       },
       {
         label: "War industry",
-        value: result.totals.militaryFactories.toLocaleString(),
-        sub: `mil fac · ${result.totals.civilianFactories} civ · ${result.totals.dockyards} dockyards`,
+        value: result.totals.effectiveMilitaryFactories.toLocaleString(),
+        sub: `mil fac · ${result.totals.effectiveCivilianFactories} civ · ${result.totals.effectiveDockyards} dockyards`,
       },
     ];
     if (diffTotals) {
@@ -858,7 +858,7 @@ export function AnalyzerTab() {
                     name: "Mil. factories",
                     x: [...industryRows]
                       .reverse()
-                      .map((r) => r.militaryFactories),
+                      .map((r) => r.effectiveMilitaryFactories),
                     y: industryY,
                     marker: { color: "#d94f2b", opacity: 0.85 },
                     hovertemplate:
@@ -871,7 +871,7 @@ export function AnalyzerTab() {
                     name: "Civ. factories",
                     x: [...industryRows]
                       .reverse()
-                      .map((r) => r.civilianFactories),
+                      .map((r) => r.effectiveCivilianFactories),
                     y: industryY,
                     marker: { color: "#0b7a75", opacity: 0.85 },
                     hovertemplate:
@@ -882,7 +882,7 @@ export function AnalyzerTab() {
                     type: "bar",
                     orientation: "h",
                     name: "Dockyards",
-                    x: [...industryRows].reverse().map((r) => r.dockyards),
+                    x: [...industryRows].reverse().map((r) => r.effectiveDockyards),
                     y: industryY,
                     marker: { color: "#7a8898", opacity: 0.85 },
                     hovertemplate:
@@ -941,9 +941,9 @@ export function AnalyzerTab() {
                         x: topIndustry
                           .map(
                             (r) =>
-                              r.militaryFactories +
-                              r.civilianFactories +
-                              r.dockyards,
+                              r.effectiveMilitaryFactories +
+                              r.effectiveCivilianFactories +
+                              r.effectiveDockyards,
                           )
                           .reverse(),
                         y: topIndustry
@@ -1309,9 +1309,9 @@ export function AnalyzerTab() {
                     <SortTh col="divisions" label="Divisions" />
                     <SortTh col="aircraft" label="Aircraft" />
                     <SortTh col="ships" label="Ships" />
-                    <SortTh col="militaryFactories" label="Mil. fac." />
-                    <SortTh col="civilianFactories" label="Civ. fac." />
-                    <SortTh col="dockyards" label="Dockyards" />
+                    <SortTh col="effectiveMilitaryFactories" label="Mil. fac." />
+                    <SortTh col="effectiveCivilianFactories" label="Civ. fac." />
+                    <SortTh col="effectiveDockyards" label="Dockyards" />
                   </tr>
                 </thead>
                 <tbody>
@@ -1334,17 +1334,17 @@ export function AnalyzerTab() {
                       <td>{r.aircraft ? r.aircraft.toLocaleString() : "—"}</td>
                       <td>{r.ships ? r.ships.toLocaleString() : "—"}</td>
                       <td>
-                        {r.militaryFactories
-                          ? r.militaryFactories.toLocaleString()
+                        {r.effectiveMilitaryFactories
+                          ? r.effectiveMilitaryFactories.toLocaleString()
                           : "—"}
                       </td>
                       <td>
-                        {r.civilianFactories
-                          ? r.civilianFactories.toLocaleString()
+                        {r.effectiveCivilianFactories
+                          ? r.effectiveCivilianFactories.toLocaleString()
                           : "—"}
                       </td>
                       <td>
-                        {r.dockyards ? r.dockyards.toLocaleString() : "—"}
+                        {r.effectiveDockyards ? r.effectiveDockyards.toLocaleString() : "—"}
                       </td>
                     </tr>
                   ))}
