@@ -57,7 +57,7 @@ countries={
     expect(result).toMatchObject({
       militaryFactories: 6,
       civilianFactories: 5,
-      effectiveOwnMilitaryFactories: 5,
+      effectiveOwnMilitaryFactories: 6,
       occupiedMilitaryFactories: 0,
       effectiveMilitaryFactories: 5,
       ownedCivilianFactories: 5,
@@ -109,7 +109,8 @@ countries={
     );
 
     expect(result?.occupiedCivilianFactories).toBe(1);
-    expect(result?.occupiedMilitaryFactories).toBe(3);
+    expect(result?.effectiveOwnMilitaryFactories).toBe(1);
+    expect(result?.occupiedMilitaryFactories).toBe(2);
   });
 
   test('aggregates ordinary subject transfers with off-map, trade, idea and leader modifiers', () => {
@@ -197,5 +198,132 @@ countries={
 
     expect(result?.subjectCivilianFactories).toBe(3);
     expect(result?.subjectMilitaryFactories).toBe(7);
+  });
+
+  test('uses the subject runtime autonomy state when diplomacy is stale', () => {
+    const result = country(
+      `states={
+\t2={
+\t\tbuildings={
+\t\t\tarms_factory={ level=8 healthy_levels=8 }
+\t\t\tindustrial_complex={ level=4 healthy_levels=4 }
+\t\t}
+\t\towner="BBB"
+\t}
+}
+countries={
+\tAAA={
+\t\tpuppet={ first="AAA" second="BBB" autonomy_state="autonomy_puppet" }
+\t}
+\tBBB={
+\t\tcores={ 2 }
+\t\tautonomy_state={ current_state="autonomy_integrated_puppet" }
+\t}
+}`,
+      'AAA',
+    );
+
+    expect(result?.subjectCivilianFactories).toBe(1);
+    expect(result?.subjectMilitaryFactories).toBe(6);
+  });
+
+  test('rounds ordinary subject transfers per subject', () => {
+    const result = country(
+      `states={
+\t2={ buildings={ arms_factory={ level=1 healthy_levels=1 } } owner="BBB" }
+\t3={ buildings={ arms_factory={ level=1 healthy_levels=1 } } owner="CCC" }
+}
+countries={
+\tAAA={
+\t\tpuppet={ first="AAA" second="BBB" autonomy_state="autonomy_puppet" }
+\t\tpuppet={ first="AAA" second="CCC" autonomy_state="autonomy_puppet" }
+\t}
+\tBBB={
+\t\tcores={ 2 }
+\t\tpolitics={ ideas={ SOV_comecon_puppet_default } }
+\t}
+\tCCC={
+\t\tcores={ 3 }
+\t\tpolitics={ ideas={ SOV_comecon_puppet_default } }
+\t}
+}`,
+      'AAA',
+    );
+
+    expect(result?.subjectMilitaryFactories).toBe(2);
+  });
+
+  test('applies the selected occupation-law local factory modifier', () => {
+    const result = country(
+      `states={
+\t2={
+\t\tbuildings={
+\t\t\tarms_factory={ level=4 healthy_levels=4 }
+\t\t\tindustrial_complex={ level=4 healthy_levels=4 }
+\t\t}
+\t\towner="BBB"
+\t\tcontroller="AAA"
+\t\tresistance={ occupied_country_tag="BBB" compliance=50 }
+\t}
+}
+countries={
+\tAAA={
+\t\toccupation_status={
+\t\t\toccupation={ BBB={ occupation_law_list={ 2="independent_rule" } } }
+\t\t}
+\t}
+}`,
+      'AAA',
+    );
+
+    expect(result?.occupiedCivilianFactories).toBe(1);
+    expect(result?.occupiedMilitaryFactories).toBe(2);
+  });
+
+  test('counts controller-owned occupied cores as full owned industry', () => {
+    const result = country(
+      `states={
+\t2={
+\t\tbuildings={
+\t\t\tarms_factory={ level=3 healthy_levels=3 }
+\t\t\tindustrial_complex={ level=2 healthy_levels=2 }
+\t\t}
+\t\towner="AAA"
+\t\tresistance={ occupied_country_tag="BBB" compliance=0 }
+\t}
+}
+countries={
+\tAAA={ cores={ 2 } }
+}`,
+      'AAA',
+    );
+
+    expect(result).toMatchObject({
+      ownedCivilianFactories: 2,
+      occupiedCivilianFactories: 0,
+      effectiveOwnMilitaryFactories: 3,
+      occupiedMilitaryFactories: 0,
+    });
+  });
+
+  test('includes healthy off-map country buildings in effective industry', () => {
+    const result = country(
+      `countries={
+\tAAA={
+\t\tbuildings={
+\t\t\tarms_factory={ level=1 healthy_levels=1 }
+\t\t\tindustrial_complex={ level=2 healthy_levels=2 }
+\t\t}
+\t}
+}`,
+      'AAA',
+    );
+
+    expect(result).toMatchObject({
+      occupiedCivilianFactories: 2,
+      effectiveCivilianFactories: 2,
+      occupiedMilitaryFactories: 1,
+      effectiveMilitaryFactories: 1,
+    });
   });
 });

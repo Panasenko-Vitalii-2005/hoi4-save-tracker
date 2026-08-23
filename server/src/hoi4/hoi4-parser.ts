@@ -232,6 +232,8 @@ type IndustryState = {
 type CountryIndustry = {
   militaryFactories: number;
   civilianFactories: number;
+  healthyMilitaryFactories?: number;
+  healthyCivilianFactories?: number;
 };
 
 const NORMAL_INDUSTRY_TRANSFER_MODIFIERS: Record<
@@ -240,11 +242,42 @@ const NORMAL_INDUSTRY_TRANSFER_MODIFIERS: Record<
 > = {
   MAL_colonial_administration_idea: { civilian: 0.15, military: 0 },
   aloof_authority: { civilian: 0.05, military: 0 },
+  SOV_comecon_puppet_default: { civilian: 0.5, military: 0.5 },
 };
 
 const LEGACY_TARGETED_INDUSTRY_IDEA_RE =
   /\b(?:GER_german_controlled_reichskommissariat|GER_government_general_idea|GER_reichsprotectorate_idea)\b/;
 const GOVERNMENT_IN_EXILE_FACTORY_DONATION_MAX = 5;
+
+// `local_factories` modifiers from the base-game occupation laws. The save
+// stores the selected law id, but not the law's numeric modifier.
+const OCCUPATION_LAW_LOCAL_FACTORY_MODIFIERS: Record<string, number> = {
+  secret_police_oversight: 0.05,
+  liberate_workers_occupation: 0.2,
+  forced_labor_occupation: 0.05,
+  harsh_quotas_occupation: 0.25,
+  colonial_police_improved: 0.25,
+  colonial_police_final: 0.25,
+  independent_rule: -0.35,
+  princely_subjugation: 0.6,
+  senbu_occupation_law: -0.1,
+  GEACPS_exploitation_occupation_law: 0.2,
+  GEACPS_prosperity_occupation_law: 0.1,
+};
+
+function occupationLocalFactoryFactor(
+  state: IndustryState,
+  occupationLaws: Record<string, Map<number, string>>,
+): number {
+  const compliance = state.compliancePercent / 100;
+  const law = occupationLaws[state.controller]?.get(state.id);
+  return (
+    0.25 +
+    0.65 * compliance +
+    (state.compliancePercent >= 40 ? 0.1 : 0) +
+    (law ? (OCCUPATION_LAW_LOCAL_FACTORY_MODIFIERS[law] ?? 0) : 0)
+  );
+}
 
 function parseIndustryBuilding(
   buildingsBlock: string,
@@ -322,37 +355,61 @@ function parseIndustryStates(statesBlock: string): IndustryState[] {
 }
 
 type OccupiedIndustryGroup = {
-  physicalMilitaryFactories: number;
-  physicalCivilianFactories: number;
   complianceWeightedMilitaryFactories: number;
   complianceWeightedCivilianFactories: number;
-  hasForeignOwnedState: boolean;
+  ownership: 'self' | 'foreign';
+  hasMilitaryDamage: boolean;
 };
 
 function calculateOccupiedIndustryByController(
   industryStates: IndustryState[],
   countriesBlock: string,
+  health: 'level' | 'healthy' = 'level',
 ): {
   civilian: Record<string, number>;
   military: Record<string, number>;
+  ownedCivilian: Record<string, number>;
+  ownedMilitary: Record<string, number>;
   transferableMilitary: Record<string, number>;
 } {
   const coresByTag = parseCoresByTag(countriesBlock);
   const occupationLaws = parseOccupationLawsByController(countriesBlock);
-  const civilianGroupsByController: Record<
+  const groupsByController: Record<
     string,
     Record<string, OccupiedIndustryGroup>
   > = {};
-  const militaryGroupsByController: Record<
-    string,
-    Record<string, OccupiedIndustryGroup>
-  > = {};
+  const fullForeignCivilianByController: Record<string, number> = {};
+  const fullForeignMilitaryByController: Record<string, number> = {};
 
   for (const state of industryStates) {
-    if (
-      !state.occupiedTag ||
-      (state.militaryFactories <= 0 && state.civilianFactories <= 0)
-    ) {
+    const militaryFactories =
+      health === 'level'
+        ? state.militaryFactories
+        : state.healthyMilitaryFactories;
+    const civilianFactories =
+      health === 'level'
+        ? state.civilianFactories
+        : state.healthyCivilianFactories;
+    const controllerCores = coresByTag[state.controller];
+    const isControllerCore = controllerCores?.has(state.id) ?? false;
+
+    if (!state.occupiedTag) {
+      if (state.owner !== state.controller && isControllerCore) {
+        acc(
+          fullForeignCivilianByController,
+          state.controller,
+          civilianFactories,
+        );
+        acc(
+          fullForeignMilitaryByController,
+          state.controller,
+          militaryFactories,
+        );
+      }
+      continue;
+    }
+
+    if (militaryFactories <= 0 && civilianFactories <= 0) {
       continue;
     }
 
@@ -364,107 +421,129 @@ function calculateOccupiedIndustryByController(
       continue;
     }
 
-    const compliance = state.compliancePercent / 100;
-    const localFactoryFactor =
-      0.25 + 0.65 * compliance + (state.compliancePercent >= 40 ? 0.1 : 0);
+    // Controller-owned cores are ordinary owned industry even if the save
+    // still carries an occupation runtime entry for the state.
+    if (state.owner === state.controller && isControllerCore) {
+      continue;
+    }
 
-    const controllerCores = coresByTag[state.controller];
-    const isControllerCore = controllerCores?.has(state.id) ?? false;
-    const addToGroup = (
-      groups: Record<string, Record<string, OccupiedIndustryGroup>>,
-      key: string,
-    ) => {
-      groups[state.controller] ??= {};
-      const group = groups[state.controller][key] ?? {
-        physicalMilitaryFactories: 0,
-        physicalCivilianFactories: 0,
-        complianceWeightedMilitaryFactories: 0,
-        complianceWeightedCivilianFactories: 0,
-        hasForeignOwnedState: false,
-      };
-      group.physicalMilitaryFactories += state.militaryFactories;
-      group.physicalCivilianFactories += state.civilianFactories;
-      group.complianceWeightedMilitaryFactories +=
-        state.militaryFactories * localFactoryFactor;
-      group.complianceWeightedCivilianFactories +=
-        state.civilianFactories * (isControllerCore ? 1 : localFactoryFactor);
-      group.hasForeignOwnedState ||= state.owner !== state.controller;
-      groups[state.controller][key] = group;
-    };
-
-    // CIV is rounded per occupied country. MIC uses the same joint CIV+MIC
-    // rounding, but controller-owned and foreign-owned state buckets remain
-    // separate in the runtime occupation accounting.
-    addToGroup(civilianGroupsByController, state.occupiedTag);
-    addToGroup(
-      militaryGroupsByController,
-      `${state.occupiedTag}:${state.owner === state.controller ? 'owned' : 'foreign'}`,
+    const localFactoryFactor = occupationLocalFactoryFactor(
+      state,
+      occupationLaws,
     );
+    const ownership = state.owner === state.controller ? 'self' : 'foreign';
+    const key = `${state.occupiedTag}:${ownership}`;
+    groupsByController[state.controller] ??= {};
+    const group = groupsByController[state.controller][key] ?? {
+      complianceWeightedMilitaryFactories: 0,
+      complianceWeightedCivilianFactories: 0,
+      ownership,
+      hasMilitaryDamage: false,
+    };
+    group.complianceWeightedMilitaryFactories +=
+      militaryFactories * (isControllerCore ? 1 : localFactoryFactor);
+    group.complianceWeightedCivilianFactories +=
+      civilianFactories * (isControllerCore ? 1 : localFactoryFactor);
+    group.hasMilitaryDamage ||=
+      state.healthyMilitaryFactories < state.militaryFactories;
+    groupsByController[state.controller][key] = group;
   }
 
   const civilian: Record<string, number> = {};
   const military: Record<string, number> = {};
+  const ownedCivilian: Record<string, number> = {};
+  const ownedMilitary: Record<string, number> = {};
   const transferableMilitary: Record<string, number> = {};
 
-  const roundedGroup = (group: OccupiedIndustryGroup) => {
-    const round = group.hasForeignOwnedState ? Math.round : Math.floor;
-    const total = round(
-      group.complianceWeightedMilitaryFactories +
-        group.complianceWeightedCivilianFactories +
-        Number.EPSILON,
+  const controllers = new Set([
+    ...Object.keys(groupsByController),
+    ...Object.keys(fullForeignCivilianByController),
+    ...Object.keys(fullForeignMilitaryByController),
+  ]);
+  for (const controller of controllers) {
+    const groups = Object.values(groupsByController[controller] ?? {});
+    const selfGroups = groups.filter((group) => group.ownership === 'self');
+    const foreignGroups = groups.filter(
+      (group) => group.ownership === 'foreign',
     );
-    let civilianFactories = round(
-      group.complianceWeightedCivilianFactories + Number.EPSILON,
+    const sum = (
+      entries: OccupiedIndustryGroup[],
+      field:
+        | 'complianceWeightedCivilianFactories'
+        | 'complianceWeightedMilitaryFactories',
+    ) => entries.reduce((total, group) => total + group[field], 0);
+
+    const selfCivilianRaw = sum(
+      selfGroups,
+      'complianceWeightedCivilianFactories',
     );
-    if (group.hasForeignOwnedState && group.physicalCivilianFactories > 0) {
-      civilianFactories = Math.max(1, civilianFactories);
-    }
-    return {
-      civilian: civilianFactories,
-      military: Math.max(0, total - civilianFactories),
-    };
+    const foreignCivilianRaw = sum(
+      foreignGroups,
+      'complianceWeightedCivilianFactories',
+    );
+    const selfMilitaryRaw = sum(
+      selfGroups,
+      'complianceWeightedMilitaryFactories',
+    );
+    const selfMilitaryHasDamage = selfGroups.some(
+      (group) => group.hasMilitaryDamage,
+    );
+    const ownedOccupiedCivilian = Math.floor(selfCivilianRaw + Number.EPSILON);
+    const roundedOccupiedCivilian =
+      foreignCivilianRaw > 0
+        ? selfCivilianRaw > 0
+          ? Math.round(selfCivilianRaw + foreignCivilianRaw + Number.EPSILON)
+          : Math.floor(foreignCivilianRaw + Number.EPSILON)
+        : ownedOccupiedCivilian;
+    ownedCivilian[controller] = ownedOccupiedCivilian;
+    ownedMilitary[controller] =
+      selfCivilianRaw > 0
+        ? health === 'level' || !selfMilitaryHasDamage
+          ? Math.max(
+              0,
+              Math.round(selfCivilianRaw + selfMilitaryRaw + Number.EPSILON) -
+                Math.round(selfCivilianRaw + Number.EPSILON),
+            )
+          : Math.round(selfMilitaryRaw + Number.EPSILON)
+        : Math.floor(selfMilitaryRaw + Number.EPSILON);
+
+    civilian[controller] =
+      (fullForeignCivilianByController[controller] ?? 0) +
+      Math.max(0, roundedOccupiedCivilian - ownedOccupiedCivilian);
+
+    const foreignMilitary =
+      foreignGroups.length === 1
+        ? Math.max(
+            0,
+            Math.round(
+              foreignGroups[0].complianceWeightedCivilianFactories +
+                foreignGroups[0].complianceWeightedMilitaryFactories +
+                Number.EPSILON,
+            ) -
+              Math.round(
+                foreignGroups[0].complianceWeightedCivilianFactories +
+                  Number.EPSILON,
+              ),
+          )
+        : Math.round(
+            sum(foreignGroups, 'complianceWeightedMilitaryFactories') +
+              Number.EPSILON,
+          );
+    military[controller] =
+      (fullForeignMilitaryByController[controller] ?? 0) + foreignMilitary;
+
+    transferableMilitary[controller] = Math.round(
+      sum(groups, 'complianceWeightedMilitaryFactories') + Number.EPSILON,
+    );
+  }
+
+  return {
+    civilian,
+    military,
+    ownedCivilian,
+    ownedMilitary,
+    transferableMilitary,
   };
-
-  for (const [controller, occupiedCountries] of Object.entries(
-    civilianGroupsByController,
-  )) {
-    civilian[controller] = Object.values(occupiedCountries).reduce(
-      (total, group) => total + roundedGroup(group).civilian,
-      0,
-    );
-    transferableMilitary[controller] = Object.values(occupiedCountries).reduce(
-      (total, group) => {
-        const roundedCivilian = Math.round(
-          group.complianceWeightedCivilianFactories,
-        );
-        const roundedTotal = Math.round(
-          group.complianceWeightedCivilianFactories +
-            group.complianceWeightedMilitaryFactories,
-        );
-        return total + Math.max(0, roundedTotal - roundedCivilian);
-      },
-      0,
-    );
-  }
-
-  for (const [controller, occupiedCountries] of Object.entries(
-    militaryGroupsByController,
-  )) {
-    military[controller] = Object.values(occupiedCountries).reduce(
-      (total, group) => {
-        if (
-          group.physicalMilitaryFactories <= 0 &&
-          group.physicalCivilianFactories <= 0
-        ) {
-          return total;
-        }
-        return total + roundedGroup(group).military;
-      },
-      0,
-    );
-  }
-
-  return { civilian, military, transferableMilitary };
 }
 
 function getDirectCountryBlock(
@@ -586,8 +665,10 @@ function parseCountryIndustryByTag(
     const civilian = parseIndustryBuilding(buildings, 'industrial_complex');
     const military = parseIndustryBuilding(buildings, 'arms_factory');
     result[tag] = {
-      civilianFactories: civilian.healthy,
-      militaryFactories: military.healthy,
+      civilianFactories: civilian.level,
+      militaryFactories: military.level,
+      healthyCivilianFactories: civilian.healthy,
+      healthyMilitaryFactories: military.healthy,
     };
   }
 
@@ -674,7 +755,18 @@ type SubjectRelation = {
   overlord: string;
   subject: string;
   autonomy: string;
+  currentAutonomy: string | null;
 };
+
+function parseCurrentAutonomyState(countryBlock: string): string | null {
+  const match = /\bautonomy_state\s*=\s*\{/.exec(countryBlock);
+  if (!match) return null;
+  const [autonomyBlock] = extractBlock(
+    countryBlock,
+    match.index + match[0].length,
+  );
+  return /\bcurrent_state\s*=\s*"([^"]+)"/.exec(autonomyBlock)?.[1] ?? null;
+}
 
 function parseSubjectRelations(countriesBlock: string): SubjectRelation[] {
   const result: SubjectRelation[] = [];
@@ -695,7 +787,15 @@ function parseSubjectRelations(countriesBlock: string): SubjectRelation[] {
       const subject = /\bsecond\s*=\s*"([A-Z][A-Z0-9]{2})"/.exec(body)?.[1];
       const autonomy = /\bautonomy_state\s*=\s*"([^"]+)"/.exec(body)?.[1];
       if (overlord && subject && autonomy) {
-        result.push({ overlord, subject, autonomy });
+        const subjectBlock = getDirectCountryBlock(countriesBlock, subject);
+        result.push({
+          overlord,
+          subject,
+          autonomy,
+          currentAutonomy: subjectBlock
+            ? parseCurrentAutonomyState(subjectBlock)
+            : null,
+        });
       }
     }
   }
@@ -769,7 +869,11 @@ function calculateSubjectMilitaryFactories(
     const subjectBlock =
       getDirectCountryBlock(countriesBlock, relation.subject) ?? '';
     const stateBase = availableMilitaryByTag[relation.subject] ?? 0;
-    const autonomy = autonomyIndustryTransfer(relation.autonomy);
+    const autonomy = autonomyIndustryTransfer(
+      legacyOverlords.has(relation.overlord)
+        ? relation.autonomy
+        : (relation.currentAutonomy ?? relation.autonomy),
+    );
     const saved = savedOverlordTransferFactor(subjectBlock, 'mic');
 
     if (legacyOverlords.has(relation.overlord)) {
@@ -792,13 +896,16 @@ function calculateSubjectMilitaryFactories(
     acc(
       rawByOverlord,
       relation.overlord,
-      base * (autonomy.militaryFactories + saved + modifier.militaryFactories),
+      Math.round(
+        base *
+          (autonomy.militaryFactories + saved + modifier.militaryFactories),
+      ),
     );
   }
 
   const result: Record<string, number> = { ...legacyByOverlord };
   for (const [overlord, raw] of Object.entries(rawByOverlord)) {
-    result[overlord] = Math.round(raw);
+    result[overlord] = raw;
   }
   for (const [overlord, raw] of Object.entries(targetedRawByOverlord)) {
     acc(result, overlord, Math.round(raw));
@@ -923,7 +1030,11 @@ function calculateSubjectCivilianFactories(
       getDirectCountryBlock(countriesBlock, relation.subject) ?? '';
     const stateBase = availableCivilianByTag[relation.subject] ?? 0;
 
-    const autonomy = autonomyIndustryTransfer(relation.autonomy);
+    const autonomy = autonomyIndustryTransfer(
+      legacyOverlords.has(relation.overlord)
+        ? relation.autonomy
+        : (relation.currentAutonomy ?? relation.autonomy),
+    );
     const saved = savedOverlordTransferFactor(subjectBlock, 'cic');
 
     if (legacyOverlords.has(relation.overlord)) {
@@ -952,13 +1063,16 @@ function calculateSubjectCivilianFactories(
     acc(
       rawByOverlord,
       relation.overlord,
-      base * (autonomy.civilianFactories + saved + modifier.civilianFactories),
+      Math.round(
+        base *
+          (autonomy.civilianFactories + saved + modifier.civilianFactories),
+      ),
     );
   }
 
   const result: Record<string, number> = { ...legacyByOverlord };
   for (const [overlord, raw] of Object.entries(rawByOverlord)) {
-    result[overlord] = Math.round(raw);
+    result[overlord] = raw;
   }
   return result;
 }
@@ -1025,6 +1139,7 @@ function parseCoresByTag(countriesBlock: string): Record<string, Set<number>> {
 function calculateOwnedCivilianFactoriesByController(
   industryStates: IndustryState[],
   countriesBlock: string,
+  health: 'level' | 'healthy' = 'level',
 ): Record<string, number> {
   const coresByTag = parseCoresByTag(countriesBlock);
   const occupationLaws = parseOccupationLawsByController(countriesBlock);
@@ -1032,9 +1147,11 @@ function calculateOwnedCivilianFactoriesByController(
   const result: Record<string, number> = {};
 
   for (const state of industryStates) {
-    if (state.healthyCivilianFactories <= 0) {
-      continue;
-    }
+    const factories =
+      health === 'level'
+        ? state.civilianFactories
+        : state.healthyCivilianFactories;
+    if (factories <= 0 || state.owner !== state.controller) continue;
 
     const controllerCores = coresByTag[state.controller];
 
@@ -1046,18 +1163,10 @@ function calculateOwnedCivilianFactoriesByController(
       occupationLaws[state.controller]?.get(state.id) ===
         'autonomous_occupation';
 
-    if (!isControllerCore && !isAutonomousOwnOccupation) {
-      continue;
-    }
-
-    const countsAsOwned =
-      state.owner === state.controller || state.occupiedTag === null;
-
-    if (!countsAsOwned) {
-      continue;
-    }
-
-    acc(result, state.controller, state.healthyCivilianFactories);
+    const countsAsOwned = state.occupiedTag
+      ? isControllerCore || isAutonomousOwnOccupation
+      : isControllerCore;
+    if (countsAsOwned) acc(result, state.controller, factories);
   }
 
   return result;
@@ -1065,9 +1174,11 @@ function calculateOwnedCivilianFactoriesByController(
 
 function calculateAvailableCivilianByController(
   industryStates: IndustryState[],
+  countriesBlock: string,
 ): Record<string, number> {
   const cleanByController: Record<string, number> = {};
   const occupiedRawByController: Record<string, number> = {};
+  const occupationLaws = parseOccupationLawsByController(countriesBlock);
 
   for (const state of industryStates) {
     if (state.civilianFactories <= 0) {
@@ -1080,10 +1191,7 @@ function calculateAvailableCivilianByController(
       continue;
     }
 
-    const compliance = state.compliancePercent ?? 0;
-
-    const factor =
-      0.25 + 0.65 * (compliance / 100) + (compliance >= 40 ? 0.1 : 0);
+    const factor = occupationLocalFactoryFactor(state, occupationLaws);
 
     acc(
       occupiedRawByController,
@@ -1111,119 +1219,28 @@ function calculateAvailableCivilianByController(
 function calculateEffectiveOwnMilitaryFactoriesByController(
   industryStates: IndustryState[],
   countriesBlock: string,
+  health: 'level' | 'healthy' = 'level',
 ): Record<string, number> {
   const result: Record<string, number> = {};
-  const coresByTag: Record<string, Set<number>> = {};
+  const coresByTag = parseCoresByTag(countriesBlock);
   const occupationLaws = parseOccupationLawsByController(countriesBlock);
-
-  // COUNTRY_TAG_RE matches direct country entries in countries={} (`\n\tTAG={`).
-  // Parse each country block once using neighbouring offsets instead of
-  // rescanning the entire countriesBlock for every tag.
-  const countryMatches = allMatches(COUNTRY_TAG_RE, countriesBlock);
-
-  for (let i = 0; i < countryMatches.length; i++) {
-    const tag = countryMatches[i][1];
-    const blockStart = countryMatches[i].index + countryMatches[i][0].length;
-    const blockEnd =
-      i + 1 < countryMatches.length
-        ? countryMatches[i + 1].index
-        : countriesBlock.length;
-
-    const countryBlock = countriesBlock.slice(blockStart, blockEnd);
-
-    const coresMatch = /\bcores\s*=\s*\{([^}]*)\}/.exec(countryBlock);
-
-    coresByTag[tag] = new Set(
-      coresMatch
-        ? coresMatch[1].trim().split(/\s+/).map(Number).filter(Number.isFinite)
-        : [],
-    );
-  }
-
-  const fullCoreMilitaryByTag: Record<string, number> = {};
-  const foreignOwnedOccupiedCoreGroups: Record<
-    string,
-    Record<
-      string,
-      {
-        physicalMilitaryFactories: number;
-        complianceWeightedMilitaryFactories: number;
-      }
-    >
-  > = {};
-
-  // Single pass over the already parsed state index.
   for (const state of industryStates) {
-    if (state.healthyMilitaryFactories <= 0) continue;
+    const factories =
+      health === 'level'
+        ? state.militaryFactories
+        : state.healthyMilitaryFactories;
+    if (factories <= 0 || state.owner !== state.controller) continue;
 
-    const cores = coresByTag[state.controller];
-    const isControllerCore = cores?.has(state.id) ?? false;
+    const isControllerCore =
+      coresByTag[state.controller]?.has(state.id) ?? false;
     const isAutonomousOwnOccupation =
-      state.owner === state.controller &&
       state.occupiedTag !== null &&
       occupationLaws[state.controller]?.get(state.id) ===
         'autonomous_occupation';
-    if (!isControllerCore && !isAutonomousOwnOccupation) continue;
-
-    // A core of the controller that is still foreign-owned and has active
-    // occupation mechanics contributes occupation-effective MIC instead of
-    // its full physical MIC to the own/core bucket.
-    if (
-      isControllerCore &&
-      state.owner !== state.controller &&
-      state.occupiedTag
-    ) {
-      const compliance = state.compliancePercent / 100;
-      const localFactoryFactor =
-        0.25 + 0.65 * compliance + (state.compliancePercent >= 40 ? 0.1 : 0);
-
-      foreignOwnedOccupiedCoreGroups[state.controller] ??= {};
-
-      const group = foreignOwnedOccupiedCoreGroups[state.controller][
-        state.occupiedTag
-      ] ?? {
-        physicalMilitaryFactories: 0,
-        complianceWeightedMilitaryFactories: 0,
-      };
-
-      group.physicalMilitaryFactories += state.healthyMilitaryFactories;
-      group.complianceWeightedMilitaryFactories +=
-        state.healthyMilitaryFactories * localFactoryFactor;
-
-      foreignOwnedOccupiedCoreGroups[state.controller][state.occupiedTag] =
-        group;
-
-      continue;
-    }
-
-    acc(
-      fullCoreMilitaryByTag,
-      state.controller,
-      state.healthyMilitaryFactories,
-    );
-  }
-
-  const tags = new Set([
-    ...Object.keys(fullCoreMilitaryByTag),
-    ...Object.keys(foreignOwnedOccupiedCoreGroups),
-  ]);
-
-  for (const tag of tags) {
-    let adjustedForeignOwnedCoreMilitary = 0;
-
-    for (const group of Object.values(
-      foreignOwnedOccupiedCoreGroups[tag] ?? {},
-    )) {
-      if (group.physicalMilitaryFactories <= 0) continue;
-
-      adjustedForeignOwnedCoreMilitary += Math.max(
-        1,
-        Math.round(group.complianceWeightedMilitaryFactories),
-      );
-    }
-
-    result[tag] =
-      (fullCoreMilitaryByTag[tag] ?? 0) + adjustedForeignOwnedCoreMilitary;
+    const countsAsOwned = state.occupiedTag
+      ? isControllerCore || isAutonomousOwnOccupation
+      : isControllerCore;
+    if (countsAsOwned) acc(result, state.controller, factories);
   }
 
   return result;
@@ -1494,6 +1511,12 @@ export function analyzeSave(filePath: string): AnalyzeResult {
   let occupiedMilFacByController: Record<string, number> = {};
   let occupiedCivByController: Record<string, number> = {};
   let ownedCivByController: Record<string, number> = {};
+  let healthyOccupiedMilByController: Record<string, number> = {};
+  let healthyOccupiedCivByController: Record<string, number> = {};
+  let healthyOwnedCivByController: Record<string, number> = {};
+  let healthyOwnMilByController: Record<string, number> = {};
+  let ownedOccupiedMilByController: Record<string, number> = {};
+  let healthyOwnedOccupiedMilByController: Record<string, number> = {};
   let tradeCivByTag: Record<string, number> = {};
   let governmentInExileFactoriesByTag: Record<string, number> = {};
   let countryIndustryByTag: Record<string, CountryIndustry> = {};
@@ -1590,8 +1613,36 @@ export function analyzeSave(filePath: string): AnalyzeResult {
       industryStates,
       countriesBlock,
     );
-    occupiedMilFacByController = occupiedIndustry.military;
-    occupiedCivByController = occupiedIndustry.civilian;
+    const healthyOccupiedIndustry = calculateOccupiedIndustryByController(
+      industryStates,
+      countriesBlock,
+      'healthy',
+    );
+    countryIndustryByTag = parseCountryIndustryByTag(countriesBlock);
+    occupiedMilFacByController = { ...occupiedIndustry.military };
+    occupiedCivByController = { ...occupiedIndustry.civilian };
+    healthyOccupiedMilByController = {
+      ...healthyOccupiedIndustry.military,
+    };
+    healthyOccupiedCivByController = {
+      ...healthyOccupiedIndustry.civilian,
+    };
+    ownedOccupiedMilByController = occupiedIndustry.ownedMilitary;
+    healthyOwnedOccupiedMilByController = healthyOccupiedIndustry.ownedMilitary;
+    for (const [tag, industry] of Object.entries(countryIndustryByTag)) {
+      acc(occupiedMilFacByController, tag, industry.militaryFactories);
+      acc(occupiedCivByController, tag, industry.civilianFactories);
+      acc(
+        healthyOccupiedMilByController,
+        tag,
+        industry.healthyMilitaryFactories ?? industry.militaryFactories,
+      );
+      acc(
+        healthyOccupiedCivByController,
+        tag,
+        industry.healthyCivilianFactories ?? industry.civilianFactories,
+      );
+    }
     availableMilitaryByTag = calculateAvailableMilitaryByController(
       industryStates,
       occupiedIndustry.transferableMilitary,
@@ -1601,10 +1652,24 @@ export function analyzeSave(filePath: string): AnalyzeResult {
       industryStates,
       countriesBlock,
     );
+    healthyOwnedCivByController = calculateOwnedCivilianFactoriesByController(
+      industryStates,
+      countriesBlock,
+      'healthy',
+    );
+    for (const [tag, factories] of Object.entries(
+      occupiedIndustry.ownedCivilian,
+    )) {
+      acc(ownedCivByController, tag, factories);
+    }
+    for (const [tag, factories] of Object.entries(
+      healthyOccupiedIndustry.ownedCivilian,
+    )) {
+      acc(healthyOwnedCivByController, tag, factories);
+    }
     tradeCivByTag = calculateTradeCivilianFactories(countriesBlock);
     governmentInExileFactoriesByTag =
       calculateGovernmentInExileFactories(countriesBlock);
-    countryIndustryByTag = parseCountryIndustryByTag(countriesBlock);
     rulingLeaderTraitsByTag = parseRulingLeaderTraitsByTag(
       content,
       countriesBlock,
@@ -1612,8 +1677,9 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     effectiveDockyardsByTag = calculateEffectiveDockyards(countriesBlock);
   }
 
-  const availableCivilianByTag =
-    calculateAvailableCivilianByController(industryStates);
+  const availableCivilianByTag = countriesBlock
+    ? calculateAvailableCivilianByController(industryStates, countriesBlock)
+    : {};
 
   const subjectCivByTag = countriesBlock
     ? calculateSubjectCivilianFactories(
@@ -1641,6 +1707,24 @@ export function analyzeSave(filePath: string): AnalyzeResult {
           countriesBlock,
         )
       : {};
+  if (countriesBlock && industryStates.length > 0) {
+    healthyOwnMilByController =
+      calculateEffectiveOwnMilitaryFactoriesByController(
+        industryStates,
+        countriesBlock,
+        'healthy',
+      );
+    for (const [tag, factories] of Object.entries(
+      ownedOccupiedMilByController,
+    )) {
+      acc(effectiveOwnMilByTag, tag, factories);
+    }
+    for (const [tag, factories] of Object.entries(
+      healthyOwnedOccupiedMilByController,
+    )) {
+      acc(healthyOwnMilByController, tag, factories);
+    }
+  }
 
   // ── Ships: fleet → task_force → logical_country ──
   for (const fm of allMatches(FLEET_RE, content)) {
@@ -1776,15 +1860,15 @@ export function analyzeSave(filePath: string): AnalyzeResult {
       ownedCivilianFactories: ownedCivByController[tag] ?? 0,
       tradeCivilianFactories: tradeCivByTag[tag] ?? 0,
       effectiveCivilianFactories:
-        (ownedCivByController[tag] ?? 0) +
-        (occupiedCivByController[tag] ?? 0) +
+        (healthyOwnedCivByController[tag] ?? 0) +
+        (healthyOccupiedCivByController[tag] ?? 0) +
         (subjectCivByTag[tag] ?? 0) +
         (tradeCivByTag[tag] ?? 0) +
         (governmentInExileFactoriesByTag[tag] ?? 0),
       effectiveOwnMilitaryFactories: effectiveOwnMilByTag[tag] ?? 0,
       effectiveMilitaryFactories:
-        (effectiveOwnMilByTag[tag] ?? 0) +
-        (occupiedMilFacByController[tag] ?? 0) +
+        (healthyOwnMilByController[tag] ?? 0) +
+        (healthyOccupiedMilByController[tag] ?? 0) +
         (subjectMilByTag[tag] ?? 0) +
         (governmentInExileFactoriesByTag[tag] ?? 0),
     };
