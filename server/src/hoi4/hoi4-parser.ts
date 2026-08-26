@@ -47,7 +47,11 @@ import {
   type PublicEquipmentDefinition,
 } from './division/division.public';
 import { linkArmyHierarchy, parseArmyHierarchy } from './division/army.parser';
-import { buildCountryProductionIndex } from './country-production.index';
+import {
+  buildCountryBlockByTag,
+  buildCountryProductionIndex,
+  type CountryProductionIndex,
+} from './country-production.index';
 
 // ── Core model (single source of truth) ─────────────────────────────────────
 
@@ -547,38 +551,6 @@ function calculateOccupiedIndustryByController(
   };
 }
 
-function getDirectCountryBlock(
-  countriesBlock: string,
-  tag: string,
-): string | null {
-  let depth = 0;
-
-  for (let i = 0; i < countriesBlock.length; i++) {
-    const ch = countriesBlock[i];
-
-    if (ch === '{') {
-      depth++;
-      continue;
-    }
-
-    if (ch === '}') {
-      depth--;
-      continue;
-    }
-
-    if (ch !== '\n' || depth !== 0) continue;
-
-    const rest = countriesBlock.slice(i + 1);
-    const match = new RegExp(`^[\\t ]*${tag}\\s*=\\s*\\{`).exec(rest);
-
-    if (!match) continue;
-
-    return extractBlock(rest, match.index + match[0].length)[0];
-  }
-
-  return null;
-}
-
 function getDirectNamedBlock(text: string, name: string): string | null {
   let depth = 0;
 
@@ -757,6 +729,7 @@ type SubjectRelation = {
   subject: string;
   autonomy: string;
   currentAutonomy: string | null;
+  subjectBlock: string | null;
 };
 
 function parseCurrentAutonomyState(countryBlock: string): string | null {
@@ -769,17 +742,35 @@ function parseCurrentAutonomyState(countryBlock: string): string | null {
   return /\bcurrent_state\s*=\s*"([^"]+)"/.exec(autonomyBlock)?.[1] ?? null;
 }
 
-function parseSubjectRelations(countriesBlock: string): SubjectRelation[] {
+function parseSubjectRelations(
+  saveText: string,
+  countryProductionIndex: CountryProductionIndex,
+  countryBlockByTag: ReadonlyMap<
+    string,
+    CountryProductionIndex[number]['countryBlock']
+  >,
+): SubjectRelation[] {
   const result: SubjectRelation[] = [];
-  const countryMatches = allMatches(COUNTRY_TAG_RE, countriesBlock);
+  const subjectBlockTextByTag = new Map<string, string | null>();
 
-  for (let i = 0; i < countryMatches.length; i++) {
-    const blockStart = countryMatches[i].index + countryMatches[i][0].length;
-    const blockEnd =
-      i + 1 < countryMatches.length
-        ? countryMatches[i + 1].index
-        : countriesBlock.length;
-    const countryBlock = countriesBlock.slice(blockStart, blockEnd);
+  const resolveCountryBlock = (tag: string): string | null => {
+    if (subjectBlockTextByTag.has(tag)) {
+      return subjectBlockTextByTag.get(tag) ?? null;
+    }
+
+    const locatedBlock = countryBlockByTag.get(tag);
+    const countryBlock = locatedBlock
+      ? saveText.slice(locatedBlock.bodyStart, locatedBlock.bodyEnd)
+      : null;
+    subjectBlockTextByTag.set(tag, countryBlock);
+    return countryBlock;
+  };
+
+  for (const { countryBlock: locatedCountryBlock } of countryProductionIndex) {
+    const countryBlock = saveText.slice(
+      locatedCountryBlock.bodyStart,
+      locatedCountryBlock.bodyEnd,
+    );
     const puppetRe = /\bpuppet\s*=\s*\{([^}]*)\}/g;
 
     for (const match of countryBlock.matchAll(puppetRe)) {
@@ -788,14 +779,16 @@ function parseSubjectRelations(countriesBlock: string): SubjectRelation[] {
       const subject = /\bsecond\s*=\s*"([A-Z][A-Z0-9]{2})"/.exec(body)?.[1];
       const autonomy = /\bautonomy_state\s*=\s*"([^"]+)"/.exec(body)?.[1];
       if (overlord && subject && autonomy) {
-        const subjectBlock = getDirectCountryBlock(countriesBlock, subject);
+        const subjectBlock = resolveCountryBlock(subject);
+        const currentAutonomy = subjectBlock
+          ? parseCurrentAutonomyState(subjectBlock)
+          : null;
         result.push({
           overlord,
           subject,
           autonomy,
-          currentAutonomy: subjectBlock
-            ? parseCurrentAutonomyState(subjectBlock)
-            : null,
+          currentAutonomy,
+          subjectBlock,
         });
       }
     }
@@ -847,7 +840,7 @@ function normalIndustryTransferModifier(
 }
 
 function calculateSubjectMilitaryFactories(
-  countriesBlock: string,
+  relations: readonly SubjectRelation[],
   availableMilitaryByTag: Record<string, number>,
   countryIndustryByTag: Record<string, CountryIndustry>,
   rulingLeaderTraitsByTag: Record<string, string[]>,
@@ -855,20 +848,16 @@ function calculateSubjectMilitaryFactories(
   const rawByOverlord: Record<string, number> = {};
   const legacyByOverlord: Record<string, number> = {};
   const targetedRawByOverlord: Record<string, number> = {};
-  const relations = parseSubjectRelations(countriesBlock);
   const legacyOverlords = new Set(
     relations
       .filter((relation) =>
-        LEGACY_TARGETED_INDUSTRY_IDEA_RE.test(
-          getDirectCountryBlock(countriesBlock, relation.subject) ?? '',
-        ),
+        LEGACY_TARGETED_INDUSTRY_IDEA_RE.test(relation.subjectBlock ?? ''),
       )
       .map((relation) => relation.overlord),
   );
 
   for (const relation of relations) {
-    const subjectBlock =
-      getDirectCountryBlock(countriesBlock, relation.subject) ?? '';
+    const subjectBlock = relation.subjectBlock ?? '';
     const stateBase = availableMilitaryByTag[relation.subject] ?? 0;
     const autonomy = autonomyIndustryTransfer(
       legacyOverlords.has(relation.overlord)
@@ -1007,7 +996,7 @@ function calculateGovernmentInExileFactories(
 }
 
 function calculateSubjectCivilianFactories(
-  countriesBlock: string,
+  relations: readonly SubjectRelation[],
   availableCivilianByTag: Record<string, number>,
   countryIndustryByTag: Record<string, CountryIndustry>,
   tradeCivilianByTag: Record<string, number>,
@@ -1015,20 +1004,16 @@ function calculateSubjectCivilianFactories(
 ): Record<string, number> {
   const rawByOverlord: Record<string, number> = {};
   const legacyByOverlord: Record<string, number> = {};
-  const relations = parseSubjectRelations(countriesBlock);
   const legacyOverlords = new Set(
     relations
       .filter((relation) =>
-        LEGACY_TARGETED_INDUSTRY_IDEA_RE.test(
-          getDirectCountryBlock(countriesBlock, relation.subject) ?? '',
-        ),
+        LEGACY_TARGETED_INDUSTRY_IDEA_RE.test(relation.subjectBlock ?? ''),
       )
       .map((relation) => relation.overlord),
   );
 
   for (const relation of relations) {
-    const subjectBlock =
-      getDirectCountryBlock(countriesBlock, relation.subject) ?? '';
+    const subjectBlock = relation.subjectBlock ?? '';
     const stateBase = availableCivilianByTag[relation.subject] ?? 0;
 
     const autonomy = autonomyIndustryTransfer(
@@ -1385,6 +1370,12 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     content,
     topLevelBlocks,
   );
+  const countryBlockByTag = buildCountryBlockByTag(countryProductionIndex);
+  const subjectRelations = parseSubjectRelations(
+    content,
+    countryProductionIndex,
+    countryBlockByTag,
+  );
   const stockpileRecords = parseNationalStockpile(
     content,
     equipmentRegistry,
@@ -1419,7 +1410,10 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     toPublicArmyHierarchySummaries(linkedArmyHierarchy);
 
   const globalNavalLosses = parseGlobalNavalLossHistory(content);
-  const shipHistoryNavalLosses = parseShipHistoryNavalLosses(content);
+  const shipHistoryNavalLosses = parseShipHistoryNavalLosses(
+    content,
+    countryProductionIndex,
+  );
   const navalLosses = deduplicateNavalLosses(
     [...globalNavalLosses, ...shipHistoryNavalLosses.records],
     shipHistoryNavalLosses.parentContexts,
@@ -1686,7 +1680,7 @@ export function analyzeSave(filePath: string): AnalyzeResult {
 
   const subjectCivByTag = countriesBlock
     ? calculateSubjectCivilianFactories(
-        countriesBlock,
+        subjectRelations,
         availableCivilianByTag,
         countryIndustryByTag,
         tradeCivByTag,
@@ -1696,7 +1690,7 @@ export function analyzeSave(filePath: string): AnalyzeResult {
 
   const subjectMilByTag = countriesBlock
     ? calculateSubjectMilitaryFactories(
-        countriesBlock,
+        subjectRelations,
         availableMilitaryByTag,
         countryIndustryByTag,
         rulingLeaderTraitsByTag,

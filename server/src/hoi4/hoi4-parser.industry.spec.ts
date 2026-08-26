@@ -253,6 +253,49 @@ countries={
     expect(result?.subjectMilitaryFactories).toBe(2);
   });
 
+  test('preserves a relation whose subject country block is missing', () => {
+    const result = country(
+      `states={
+\t1={ buildings={ arms_factory={ level=1 healthy_levels=1 } } owner="AAA" }
+}
+countries={
+\tAAA={
+\t\tcores={ 1 }
+\t\tpuppet={ first="AAA" second="BBB" autonomy_state="autonomy_integrated_puppet" }
+\t}
+}`,
+      'AAA',
+    );
+
+    expect(result?.subjectCivilianFactories).toBe(0);
+    expect(result?.subjectMilitaryFactories).toBe(0);
+  });
+
+  test('preserves duplicate subject relations and their source order semantics', () => {
+    const result = country(
+      `states={
+\t2={
+\t\tbuildings={
+\t\t\tarms_factory={ level=8 healthy_levels=8 }
+\t\t\tindustrial_complex={ level=4 healthy_levels=4 }
+\t\t}
+\t\towner="BBB"
+\t}
+}
+countries={
+\tAAA={
+\t\tpuppet={ first="AAA" second="BBB" autonomy_state="autonomy_integrated_puppet" }
+\t\tpuppet={ first="AAA" second="BBB" autonomy_state="autonomy_integrated_puppet" }
+\t}
+\tBBB={ cores={ 2 } }
+}`,
+      'AAA',
+    );
+
+    expect(result?.subjectCivilianFactories).toBe(2);
+    expect(result?.subjectMilitaryFactories).toBe(12);
+  });
+
   test('applies the selected occupation-law local factory modifier', () => {
     const result = country(
       `states={

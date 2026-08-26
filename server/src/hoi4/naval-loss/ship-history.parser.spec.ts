@@ -8,9 +8,42 @@ import {
   historyQueue,
   shipHistoryFixture,
 } from './fixtures/ship-history.fixture';
+import { buildCountryProductionIndex } from '../country-production.index';
 import { parseShipHistoryNavalLosses } from './ship-history.parser';
 
 describe('parseShipHistoryNavalLosses', () => {
+  test('produces identical output with precomputed country blocks', () => {
+    const text = `${shipHistoryFixture({
+      countryTag: 'ENG',
+      ships: [
+        {
+          id: '{ id=1 type=51 }',
+          entries: [historyQueue(sunkShipWith({ name: '"First"' }))],
+        },
+      ],
+    })}
+    ${shipHistoryFixture({
+      countryTag: 'USA',
+      ships: [
+        {
+          id: '{ id=2 type=51 }',
+          entries: [historyQueue(sunkShipWith({ name: '"Second"' }))],
+        },
+      ],
+    })}`;
+
+    const precomputedResult = parseShipHistoryNavalLosses(
+      text,
+      buildCountryProductionIndex(text),
+    );
+    const fallbackResult = parseShipHistoryNavalLosses(text);
+
+    expect(precomputedResult).toEqual(fallbackResult);
+    expect(
+      precomputedResult.records.map(({ sunkShip }) => sunkShip.name),
+    ).toEqual(['First', 'Second']);
+  });
+
   test('parses a normal credited-killer copy without inferring its role', () => {
     const { records } = parseShipHistoryNavalLosses(shipHistoryFixture());
 
@@ -171,6 +204,26 @@ describe('parseShipHistoryNavalLosses', () => {
     );
   });
 
+  test('preserves shared parent ID warnings on every affected ship record', () => {
+    const result = parseShipHistoryNavalLosses(
+      shipHistoryFixture({
+        fleetId: null,
+        taskForceId: null,
+        ships: [{ id: '{ id=31 type=51 }' }, { id: '{ id=32 type=51 }' }],
+      }),
+    );
+
+    expect(result.records).toHaveLength(2);
+    for (const record of result.records) {
+      expect(record.warnings).toEqual(
+        expect.arrayContaining([
+          'missing parent fleet id',
+          'missing parent task-force id',
+        ]),
+      );
+    }
+  });
+
   test('ignores the dummy history_queue wrapper date', () => {
     const result = parseShipHistoryNavalLosses(
       shipHistoryFixture({
@@ -282,5 +335,50 @@ describe('parseShipHistoryNavalLosses', () => {
     expect(result.records[0].sourcePath).toBe(
       'countries.TAG.units.fleet.task_force.ship.history.army_history.history_queue.sunk_ship',
     );
+  });
+
+  test('preserves source order across direct and units-derived fleets', () => {
+    const unitsSource = shipHistoryFixture({
+      unitsWrapper: true,
+      ships: [
+        {
+          id: '{ id=1 type=51 }',
+          entries: [historyQueue(sunkShipWith({ name: '"Units first"' }))],
+        },
+      ],
+    });
+    const directSource = shipHistoryFixture({
+      ships: [
+        {
+          id: '{ id=2 type=51 }',
+          entries: [historyQueue(sunkShipWith({ name: '"Direct second"' }))],
+        },
+      ],
+    });
+    const countryBody = (text: string): string => {
+      const [entry] = buildCountryProductionIndex(text);
+      return text.slice(
+        entry.countryBlock.bodyStart,
+        entry.countryBlock.bodyEnd,
+      );
+    };
+    const text = `countries={ ENG={
+      ${countryBody(unitsSource)}
+      ${countryBody(directSource)}
+    } }`;
+
+    const result = parseShipHistoryNavalLosses(
+      text,
+      buildCountryProductionIndex(text),
+    );
+
+    expect(result.records.map(({ sunkShip }) => sunkShip.name)).toEqual([
+      'Units first',
+      'Direct second',
+    ]);
+    expect(result.records.map(({ sourcePath }) => sourcePath)).toEqual([
+      'countries.TAG.units.fleet.task_force.ship.history.army_history.history_queue.sunk_ship',
+      'countries.TAG.fleet.task_force.ship.history.army_history.history_queue.sunk_ship',
+    ]);
   });
 });

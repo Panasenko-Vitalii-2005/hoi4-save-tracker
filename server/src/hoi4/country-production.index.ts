@@ -9,9 +9,25 @@ export interface CountryProductionBlockEntry {
   countryTag: string;
   countryBlock: LocatedBlock;
   productionBlocks: readonly LocatedBlock[];
+  fleetBlocks: readonly LocatedBlock[];
+  unitsBlocks: readonly LocatedBlock[];
 }
 
 export type CountryProductionIndex = readonly CountryProductionBlockEntry[];
+
+export function buildCountryBlockByTag(
+  index: CountryProductionIndex,
+): ReadonlyMap<string, LocatedBlock> {
+  const countryBlockByTag = new Map<string, LocatedBlock>();
+
+  for (const entry of index) {
+    if (!countryBlockByTag.has(entry.countryTag)) {
+      countryBlockByTag.set(entry.countryTag, entry.countryBlock);
+    }
+  }
+
+  return countryBlockByTag;
+}
 
 export function buildCountryProductionIndex(
   saveText: string,
@@ -30,15 +46,29 @@ export function buildCountryProductionIndex(
     )) {
       if (!COUNTRY_TAG_PATTERN.test(countryBlock.key)) continue;
 
+      const productionBlocks: LocatedBlock[] = [];
+      const fleetBlocks: LocatedBlock[] = [];
+      const unitsBlocks: LocatedBlock[] = [];
+      for (const block of findDirectBlocks(
+        saveText,
+        countryBlock.bodyStart,
+        countryBlock.bodyEnd,
+      )) {
+        if (block.key === 'production') {
+          productionBlocks.push(block);
+        } else if (block.key === 'fleet') {
+          fleetBlocks.push(block);
+        } else if (block.key === 'units') {
+          unitsBlocks.push(block);
+        }
+      }
+
       entries.push({
         countryTag: countryBlock.key,
         countryBlock,
-        productionBlocks: findDirectBlocks(
-          saveText,
-          countryBlock.bodyStart,
-          countryBlock.bodyEnd,
-          'production',
-        ),
+        productionBlocks,
+        fleetBlocks,
+        unitsBlocks,
       });
     }
   }
