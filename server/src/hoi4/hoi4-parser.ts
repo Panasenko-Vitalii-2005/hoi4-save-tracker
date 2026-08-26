@@ -47,6 +47,7 @@ import {
   type PublicEquipmentDefinition,
 } from './division/division.public';
 import { linkArmyHierarchy, parseArmyHierarchy } from './division/army.parser';
+import { buildCountryProductionIndex } from './country-production.index';
 
 // ── Core model (single source of truth) ─────────────────────────────────────
 
@@ -1377,29 +1378,31 @@ export function analyzeSave(filePath: string): AnalyzeResult {
 
   const sizeMb =
     Math.round((fs.statSync(filePath).size / 1_048_576) * 100) / 100;
-
   const topLevelBlocks = findDirectBlocks(content, 0, content.length);
 
   const equipmentRegistry = parseEquipmentRegistry(content, topLevelBlocks);
+  const countryProductionIndex = buildCountryProductionIndex(
+    content,
+    topLevelBlocks,
+  );
   const stockpileRecords = parseNationalStockpile(
     content,
     equipmentRegistry,
     topLevelBlocks,
+    countryProductionIndex,
   );
   const stockpileSummaries = aggregateNationalStockpile(stockpileRecords);
-
   const militaryProductionRecords = parseMilitaryProductionLines(
     content,
     equipmentRegistry,
     topLevelBlocks,
+    countryProductionIndex,
   );
 
   const militaryProductionSummaries = aggregateMilitaryProduction(
     militaryProductionRecords,
   );
-
   const divisions = parseDivisions(content, equipmentRegistry, topLevelBlocks);
-
   const divisionTemplates = parseDivisionTemplates(content, topLevelBlocks);
   const resolvedDivisions = aggregateDivisions(divisions, divisionTemplates);
   const armyHierarchy = parseArmyHierarchy(content, topLevelBlocks);

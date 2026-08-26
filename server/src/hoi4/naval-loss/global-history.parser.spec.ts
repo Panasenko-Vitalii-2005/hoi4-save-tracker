@@ -3,7 +3,45 @@ import {
   sunkShipWith,
   topLevelHistory,
 } from './fixtures/global-history.fixture';
-import { parseGlobalNavalLossHistory } from './global-history.parser';
+import {
+  parseGlobalNavalLossHistory,
+  readDirectScalar,
+  readDirectScalars,
+} from './global-history.parser';
+
+describe('readDirectScalars', () => {
+  test('indexes direct quoted, unquoted, and empty scalar values in one pass', () => {
+    const body = 'name="Hawaiian Division" strength=87.5 empty=""';
+    const scalars = readDirectScalars(body, 0, body.length);
+
+    expect([...scalars]).toEqual([
+      ['name', 'Hawaiian Division'],
+      ['strength', '87.5'],
+      ['empty', ''],
+    ]);
+  });
+
+  test('ignores nested fields and identifier-like text inside quoted strings', () => {
+    const body =
+      'direct=yes nested={ direct=no nested_only=1 } note="fake=value { direct=no }"';
+    const scalars = readDirectScalars(body, 0, body.length);
+
+    expect(scalars.get('direct')).toBe('yes');
+    expect(scalars.get('note')).toBe('fake=value { direct=no }');
+    expect(scalars.has('nested_only')).toBe(false);
+    expect(scalars.has('fake')).toBe(false);
+  });
+
+  test('preserves readDirectScalar first-occurrence semantics', () => {
+    const body = 'value=first value=second nested={ value=third }';
+    const scalars = readDirectScalars(body, 0, body.length);
+
+    expect(scalars.get('value')).toBe('first');
+    expect(scalars.get('value')).toBe(
+      readDirectScalar(body, 0, body.length, 'value'),
+    );
+  });
+});
 
 describe('parseGlobalNavalLossHistory', () => {
   test('parses a complete normal event', () => {

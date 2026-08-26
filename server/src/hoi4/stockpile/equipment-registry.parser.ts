@@ -1,6 +1,8 @@
 import {
   findDirectBlocks,
   readDirectScalar,
+  readDirectScalars,
+  type DirectScalarMap,
   type LocatedBlock,
 } from '../naval-loss/global-history.parser';
 import {
@@ -11,12 +13,11 @@ import {
 } from './stockpile.types';
 
 function readOptionalNumber(
-  saveText: string,
-  block: LocatedBlock,
+  scalars: DirectScalarMap,
   field: string,
   warnings: string[],
 ): number | null {
-  const raw = readDirectScalar(saveText, block.bodyStart, block.bodyEnd, field);
+  const raw = scalars.get(field) ?? null;
   if (raw === null) return null;
 
   const value = Number(raw);
@@ -28,12 +29,11 @@ function readOptionalNumber(
 }
 
 function readOptionalBoolean(
-  saveText: string,
-  block: LocatedBlock,
+  scalars: DirectScalarMap,
   field: string,
   warnings: string[],
 ): boolean | null {
-  const raw = readDirectScalar(saveText, block.bodyStart, block.bodyEnd, field);
+  const raw = scalars.get(field) ?? null;
   if (raw === null) return null;
   if (raw === 'yes') return true;
   if (raw === 'no') return false;
@@ -60,19 +60,30 @@ export function readEquipmentRef(
   }
   if (!referenceBlock.complete) warnings.push(`unterminated ${field}`);
 
-  const idRaw = readDirectScalar(
-    saveText,
-    referenceBlock.bodyStart,
-    referenceBlock.bodyEnd,
-    'id',
+  return parseEquipmentRefValues(
+    readDirectScalar(
+      saveText,
+      referenceBlock.bodyStart,
+      referenceBlock.bodyEnd,
+      'id',
+    ),
+    readDirectScalar(
+      saveText,
+      referenceBlock.bodyStart,
+      referenceBlock.bodyEnd,
+      'type',
+    ),
+    field,
+    warnings,
   );
-  const typeRaw = readDirectScalar(
-    saveText,
-    referenceBlock.bodyStart,
-    referenceBlock.bodyEnd,
-    'type',
-  );
+}
 
+function parseEquipmentRefValues(
+  idRaw: string | null,
+  typeRaw: string | null,
+  field: string,
+  warnings: string[],
+): EquipmentRef | null {
   let id: number | null = null;
   let type: number | null = null;
   if (idRaw === null) {
@@ -93,44 +104,72 @@ export function readEquipmentRef(
   return id === null || type === null ? null : { id, type };
 }
 
+function readIndexedEquipmentRef(
+  saveText: string,
+  parentBlock: LocatedBlock,
+  field: string,
+  warnings: string[],
+  required: boolean,
+): EquipmentRef | null {
+  const referenceBlock = findDirectBlocks(
+    saveText,
+    parentBlock.bodyStart,
+    parentBlock.bodyEnd,
+    field,
+  )[0];
+  if (!referenceBlock) {
+    if (required) warnings.push(`missing ${field}`);
+    return null;
+  }
+  if (!referenceBlock.complete) warnings.push(`unterminated ${field}`);
+
+  const scalars = readDirectScalars(
+    saveText,
+    referenceBlock.bodyStart,
+    referenceBlock.bodyEnd,
+  );
+  return parseEquipmentRefValues(
+    scalars.get('id') ?? null,
+    scalars.get('type') ?? null,
+    field,
+    warnings,
+  );
+}
+
 function parseDefinition(
   saveText: string,
   block: LocatedBlock,
 ): EquipmentDefinitionRecord | null {
   const warnings: string[] = [];
   if (!block.complete) warnings.push('unterminated equipment definition');
-  const equipmentRef = readEquipmentRef(saveText, block, 'id', warnings, true);
+  const scalars = readDirectScalars(saveText, block.bodyStart, block.bodyEnd);
+  const equipmentRef = readIndexedEquipmentRef(
+    saveText,
+    block,
+    'id',
+    warnings,
+    true,
+  );
   if (!equipmentRef) return null;
 
   return {
     equipmentRef,
     definition: block.key,
-    name: readDirectScalar(saveText, block.bodyStart, block.bodyEnd, 'name'),
-    version: readOptionalNumber(saveText, block, 'version', warnings),
-    maxVersion: readOptionalNumber(saveText, block, 'max_version', warnings),
-    parentEquipmentRef: readEquipmentRef(
+    name: scalars.get('name') ?? null,
+    version: readOptionalNumber(scalars, 'version', warnings),
+    maxVersion: readOptionalNumber(scalars, 'max_version', warnings),
+    parentEquipmentRef: readIndexedEquipmentRef(
       saveText,
       block,
       'parent_id',
       warnings,
       false,
     ),
-    creatorTag: readDirectScalar(
-      saveText,
-      block.bodyStart,
-      block.bodyEnd,
-      'creator',
-    ),
-    originTag: readDirectScalar(
-      saveText,
-      block.bodyStart,
-      block.bodyEnd,
-      'origin',
-    ),
-    obsolete:
-      readOptionalBoolean(saveText, block, 'obsolete', warnings) ?? false,
-    isFrame: readOptionalBoolean(saveText, block, 'is_frame', warnings),
-    designTeamRef: readEquipmentRef(
+    creatorTag: scalars.get('creator') ?? null,
+    originTag: scalars.get('origin') ?? null,
+    obsolete: readOptionalBoolean(scalars, 'obsolete', warnings) ?? false,
+    isFrame: readOptionalBoolean(scalars, 'is_frame', warnings),
+    designTeamRef: readIndexedEquipmentRef(
       saveText,
       block,
       'design_team',

@@ -3,6 +3,10 @@ import {
   readDirectScalar,
   type LocatedBlock,
 } from '../naval-loss/global-history.parser';
+import {
+  buildCountryProductionIndex,
+  type CountryProductionIndex,
+} from '../country-production.index';
 import { readEquipmentRef } from '../stockpile/equipment-registry.parser';
 import {
   equipmentRefKey,
@@ -13,8 +17,6 @@ import type {
   ParsedMilitaryProductionLine,
   ProductionResourceRecord,
 } from './production.types';
-
-const COUNTRY_TAG_PATTERN = /^[A-Z][A-Z0-9]{2}$/;
 
 interface AnonymousBlock {
   bodyStart: number;
@@ -341,46 +343,36 @@ export function parseMilitaryProductionLines(
   saveText: string,
   registry: EquipmentRegistryParseResult,
   topLevelBlocks?: readonly LocatedBlock[],
+  countryProductionIndex?: CountryProductionIndex,
 ): ParsedMilitaryProductionLine[] {
   const records: ParsedMilitaryProductionLine[] = [];
   const registryLookup = createRegistryLookup(registry);
   const duplicateRegistryReferences = new Set(
     registry.duplicateReferences.map(equipmentRefKey),
   );
-  const countriesBlocks = topLevelBlocks
-    ? topLevelBlocks.filter(({ key }) => key === 'countries')
-    : findDirectBlocks(saveText, 0, saveText.length, 'countries');
+  const countryEntries =
+    countryProductionIndex ??
+    buildCountryProductionIndex(saveText, topLevelBlocks);
 
-  for (const countriesBlock of countriesBlocks) {
-    for (const countryBlock of findDirectBlocks(
-      saveText,
-      countriesBlock.bodyStart,
-      countriesBlock.bodyEnd,
-    )) {
-      if (!COUNTRY_TAG_PATTERN.test(countryBlock.key)) continue;
-
-      for (const productionBlock of findDirectBlocks(
+  for (const { countryTag, productionBlocks } of countryEntries) {
+    for (const productionBlock of productionBlocks) {
+      const lineBlocks = findDirectBlocks(
         saveText,
-        countryBlock.bodyStart,
-        countryBlock.bodyEnd,
-        'production',
-      )) {
-        for (const lineBlock of findDirectBlocks(
-          saveText,
-          productionBlock.bodyStart,
-          productionBlock.bodyEnd,
-          'military_lines',
-        )) {
-          records.push(
-            parseMilitaryLine(
-              saveText,
-              countryBlock.key,
-              lineBlock,
-              registryLookup,
-              duplicateRegistryReferences,
-            ),
-          );
-        }
+        productionBlock.bodyStart,
+        productionBlock.bodyEnd,
+        'military_lines',
+      );
+
+      for (const lineBlock of lineBlocks) {
+        records.push(
+          parseMilitaryLine(
+            saveText,
+            countryTag,
+            lineBlock,
+            registryLookup,
+            duplicateRegistryReferences,
+          ),
+        );
       }
     }
   }

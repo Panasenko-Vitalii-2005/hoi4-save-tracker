@@ -88,4 +88,24 @@ describe('parseEquipmentRegistry', () => {
       ),
     ).toBe(false);
   });
+
+  test('indexes only direct metadata and preserves first-match semantics', () => {
+    const result = parseEquipmentRegistry(`
+      equipments={
+        test_equipment={
+          id={ id=1 type=70 }
+          name="First"
+          nested={ name="Nested" creator=BAD }
+          name="Second"
+          creator=GER
+        }
+      }
+    `);
+
+    expect(result.records).toHaveLength(1);
+    expect(result.records[0]).toMatchObject({
+      name: 'First',
+      creatorTag: 'GER',
+    });
+  });
 });

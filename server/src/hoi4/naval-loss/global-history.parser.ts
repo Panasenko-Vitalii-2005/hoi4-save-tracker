@@ -154,6 +154,64 @@ export function readDirectScalar(
   return null;
 }
 
+export type DirectScalarMap = ReadonlyMap<string, string>;
+
+export function readDirectScalars(
+  text: string,
+  start: number,
+  end: number,
+): DirectScalarMap {
+  const scalars = new Map<string, string>();
+  let offset = start;
+
+  while (offset < end) {
+    if (text[offset] === '"') {
+      offset = skipQuotedString(text, offset, end);
+      continue;
+    }
+    if (text[offset] === '{') {
+      offset = readBracedBlock(text, offset, end).nextOffset;
+      continue;
+    }
+    if (!isIdentifierCharacter(text[offset])) {
+      offset++;
+      continue;
+    }
+
+    const keyOffset = offset;
+    while (offset < end && isIdentifierCharacter(text[offset])) offset++;
+    const key = text.slice(keyOffset, offset);
+    while (offset < end && /\s/.test(text[offset])) offset++;
+    if (text[offset] !== '=') continue;
+    offset++;
+    while (offset < end && /\s/.test(text[offset])) offset++;
+
+    if (text[offset] === '{') {
+      offset = readBracedBlock(text, offset, end).nextOffset;
+      continue;
+    }
+
+    if (text[offset] === '"') {
+      const valueEnd = skipQuotedString(text, offset, end);
+      if (!scalars.has(key)) {
+        scalars.set(
+          key,
+          text.slice(offset + 1, Math.max(offset + 1, valueEnd - 1)),
+        );
+      }
+      offset = valueEnd;
+      continue;
+    }
+
+    const valueStart = offset;
+    while (offset < end && !/[\s{}]/.test(text[offset])) offset++;
+    const value = text.slice(valueStart, offset);
+    if (value && !scalars.has(key)) scalars.set(key, value);
+  }
+
+  return scalars;
+}
+
 function readScalar(body: string, field: string): string | null {
   const pattern = new RegExp(
     `\\b${field}\\s*=\\s*(?:"((?:\\\\.|[^"\\\\])*)"|([^\\s{}]+))`,

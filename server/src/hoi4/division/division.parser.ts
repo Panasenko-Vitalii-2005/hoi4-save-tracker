@@ -1,9 +1,9 @@
 import {
   findDirectBlocks,
-  readDirectScalar,
+  readDirectScalars,
+  type DirectScalarMap,
   type LocatedBlock,
 } from '../naval-loss/global-history.parser';
-import { readEquipmentRef } from '../stockpile/equipment-registry.parser';
 import {
   equipmentRefKey,
   type EquipmentDefinitionRecord,
@@ -20,14 +20,13 @@ import type {
 const COUNTRY_TAG_PATTERN = /^[A-Z][A-Z0-9]{2}$/;
 
 function readNumber(
-  saveText: string,
-  block: LocatedBlock,
+  scalars: DirectScalarMap,
   field: string,
   warnings: string[],
   required: boolean,
   warningField = field,
 ): number | null {
-  const raw = readDirectScalar(saveText, block.bodyStart, block.bodyEnd, field);
+  const raw = scalars.get(field) ?? null;
   if (raw === null) {
     if (required) warnings.push(`missing ${warningField}`);
     return null;
@@ -42,12 +41,11 @@ function readNumber(
 }
 
 function readOptionalBoolean(
-  saveText: string,
-  block: LocatedBlock,
+  scalars: DirectScalarMap,
   field: string,
   warnings: string[],
 ): boolean | null {
-  const raw = readDirectScalar(saveText, block.bodyStart, block.bodyEnd, field);
+  const raw = scalars.get(field) ?? null;
   if (raw === null) return null;
   if (raw === 'yes') return true;
   if (raw === 'no') return false;
@@ -62,19 +60,9 @@ function readReferenceBlock(
   warnings: string[],
 ): EquipmentRef | null {
   if (!block.complete) warnings.push(`unterminated ${warningField}`);
-
-  const idRaw = readDirectScalar(
-    saveText,
-    block.bodyStart,
-    block.bodyEnd,
-    'id',
-  );
-  const typeRaw = readDirectScalar(
-    saveText,
-    block.bodyStart,
-    block.bodyEnd,
-    'type',
-  );
+  const scalars = readDirectScalars(saveText, block.bodyStart, block.bodyEnd);
+  const idRaw = scalars.get('id') ?? null;
+  const typeRaw = scalars.get('type') ?? null;
   let id: number | null = null;
   let type: number | null = null;
 
@@ -95,6 +83,27 @@ function readReferenceBlock(
   }
 
   return id === null || type === null ? null : { id, type };
+}
+
+function readReference(
+  saveText: string,
+  parentBlock: LocatedBlock,
+  field: string,
+  warnings: string[],
+  required: boolean,
+): EquipmentRef | null {
+  const referenceBlock = findDirectBlocks(
+    saveText,
+    parentBlock.bodyStart,
+    parentBlock.bodyEnd,
+    field,
+  )[0];
+  if (!referenceBlock) {
+    if (required) warnings.push(`missing ${field}`);
+    return null;
+  }
+
+  return readReferenceBlock(saveText, referenceBlock, field, warnings);
 }
 
 function readDivisionReference(
@@ -156,25 +165,17 @@ function parseNameDescriptor(
     return { overrideName: null, type: null, order: null };
   }
   if (!nameBlock.complete) warnings.push('unterminated division_name');
+  const scalars = readDirectScalars(
+    saveText,
+    nameBlock.bodyStart,
+    nameBlock.bodyEnd,
+  );
 
   return {
-    overrideName: readDirectScalar(
-      saveText,
-      nameBlock.bodyStart,
-      nameBlock.bodyEnd,
-      'override',
-    ),
-    type: readNumber(
-      saveText,
-      nameBlock,
-      'type',
-      warnings,
-      false,
-      'division_name.type',
-    ),
+    overrideName: scalars.get('override') ?? null,
+    type: readNumber(scalars, 'type', warnings, false, 'division_name.type'),
     order: readNumber(
-      saveText,
-      nameBlock,
+      scalars,
       'name_order',
       warnings,
       false,
@@ -221,23 +222,16 @@ function parseManpowerValue(
   }
 
   const valueBlock = values[0];
-  const tag = readDirectScalar(
+  const scalars = readDirectScalars(
     saveText,
     valueBlock.bodyStart,
     valueBlock.bodyEnd,
-    'tag',
   );
+  const tag = scalars.get('tag') ?? null;
   if (tag === null) warnings.push(`missing ${field}.value.tag`);
 
   return {
-    value: readNumber(
-      saveText,
-      valueBlock,
-      'value',
-      warnings,
-      true,
-      `${field}.value.value`,
-    ),
+    value: readNumber(scalars, 'value', warnings, true, `${field}.value.value`),
     tag,
   };
 }
@@ -324,20 +318,19 @@ function parseEquipment(
   ).map((equipmentBlock, index) => {
     const warnings: string[] = [];
     if (!equipmentBlock.complete) warnings.push('unterminated equipment entry');
-    const equipmentRef = readEquipmentRef(
+    const scalars = readDirectScalars(
+      saveText,
+      equipmentBlock.bodyStart,
+      equipmentBlock.bodyEnd,
+    );
+    const equipmentRef = readReference(
       saveText,
       equipmentBlock,
       'id',
       warnings,
       true,
     );
-    const amount = readNumber(
-      saveText,
-      equipmentBlock,
-      'amount',
-      warnings,
-      true,
-    );
+    const amount = readNumber(scalars, 'amount', warnings, true);
     let equipment: EquipmentDefinitionRecord | null = null;
 
     if (equipmentRef) {
@@ -371,20 +364,19 @@ function parseDivision(
 ): DivisionRecord {
   const warnings: string[] = [];
   if (!divisionBlock.complete) warnings.push('unterminated division');
-
-  const logicalCountryTag = readDirectScalar(
+  const scalars = readDirectScalars(
     saveText,
     divisionBlock.bodyStart,
     divisionBlock.bodyEnd,
-    'logical_country',
   );
+  const logicalCountryTag = scalars.get('logical_country') ?? null;
   if (logicalCountryTag !== null && logicalCountryTag !== countryTag) {
     warnings.push(
       `logical_country mismatch: expected ${countryTag}, got ${logicalCountryTag}`,
     );
   }
 
-  const divisionTemplateRef = readEquipmentRef(
+  const divisionTemplateRef = readReference(
     saveText,
     divisionBlock,
     'division_template_id',
@@ -398,90 +390,41 @@ function parseDivision(
     duplicateRegistryReferences,
     warnings,
   );
-
   const record: DivisionRecord = {
     countryTag,
     divisionRef: readDivisionReference(saveText, divisionBlock, warnings),
     logicalCountryTag,
-    expeditionaryOwnerTag: readDirectScalar(
-      saveText,
-      divisionBlock.bodyStart,
-      divisionBlock.bodyEnd,
-      'expeditionary_owner',
-    ),
+    expeditionaryOwnerTag: scalars.get('expeditionary_owner') ?? null,
     name: parseNameDescriptor(saveText, divisionBlock, warnings),
     divisionTemplateRef,
     manpower: parseManpower(saveText, divisionBlock, warnings),
-    strength: readNumber(saveText, divisionBlock, 'strength', warnings, true),
-    organization: readNumber(
-      saveText,
-      divisionBlock,
-      'organisation',
-      warnings,
-      true,
-    ),
-    experience: readNumber(
-      saveText,
-      divisionBlock,
-      'experience',
-      warnings,
-      true,
-    ),
+    strength: readNumber(scalars, 'strength', warnings, true),
+    organization: readNumber(scalars, 'organisation', warnings, true),
+    experience: readNumber(scalars, 'experience', warnings, true),
     equipment,
-    provinceId: readNumber(saveText, divisionBlock, 'location', warnings, true),
+    provinceId: readNumber(scalars, 'location', warnings, true),
     supply: {
-      current: readNumber(
-        saveText,
-        divisionBlock,
-        'army_current_supply_ratio',
-        warnings,
-        true,
-      ),
-      max: readNumber(saveText, divisionBlock, 'max_supply', warnings, true),
-      gain: readNumber(saveText, divisionBlock, 'supply_gain', warnings, true),
+      current: readNumber(scalars, 'army_current_supply_ratio', warnings, true),
+      max: readNumber(scalars, 'max_supply', warnings, true),
+      gain: readNumber(scalars, 'supply_gain', warnings, true),
       outOfSupplyDays: readNumber(
-        saveText,
-        divisionBlock,
+        scalars,
         'out_of_supply_days',
         warnings,
         false,
       ),
-      disrupted: readNumber(
-        saveText,
-        divisionBlock,
-        'disrupted_supply',
-        warnings,
-        false,
-      ),
+      disrupted: readNumber(scalars, 'disrupted_supply', warnings, false),
     },
-    fuel: readNumber(saveText, divisionBlock, 'fuel', warnings, false),
-    fuelRequested: readNumber(
-      saveText,
-      divisionBlock,
-      'fuel_requested',
-      warnings,
-      false,
-    ),
+    fuel: readNumber(scalars, 'fuel', warnings, false),
+    fuelRequested: readNumber(scalars, 'fuel_requested', warnings, false),
     status: {
       strategicRedeployment: readOptionalBoolean(
-        saveText,
-        divisionBlock,
+        scalars,
         'strategic_redeployment',
         warnings,
       ),
-      retreat: readOptionalBoolean(
-        saveText,
-        divisionBlock,
-        'retreat',
-        warnings,
-      ),
-      supportAttack: readNumber(
-        saveText,
-        divisionBlock,
-        'support_attack',
-        warnings,
-        false,
-      ),
+      retreat: readOptionalBoolean(scalars, 'retreat', warnings),
+      supportAttack: readNumber(scalars, 'support_attack', warnings, false),
     },
     sourceOffset: divisionBlock.keyOffset,
     complete: false,
