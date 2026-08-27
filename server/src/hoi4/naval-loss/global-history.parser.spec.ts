@@ -4,6 +4,7 @@ import {
   topLevelHistory,
 } from './fixtures/global-history.fixture';
 import {
+  findDirectBlocks,
   parseGlobalNavalLossHistory,
   readDirectScalar,
   readDirectScalars,
@@ -40,6 +41,153 @@ describe('readDirectScalars', () => {
     expect(scalars.get('value')).toBe(
       readDirectScalar(body, 0, body.length, 'value'),
     );
+  });
+});
+
+describe('parseGlobalNavalLossHistory with precomputed top-level blocks', () => {
+  const parseIndexed = (text: string) =>
+    parseGlobalNavalLossHistory(text, findDirectBlocks(text, 0, text.length));
+
+  test('matches every raw field from the standalone fallback', () => {
+    const text = topLevelHistory(COMPLETE_SUNK_SHIP);
+    const records = parseIndexed(text);
+
+    expect(records).toHaveLength(1);
+    expect(records).toEqual(parseGlobalNavalLossHistory(text));
+    expect(records[0].complete).toBe(true);
+  });
+
+  test('preserves source order across multiple direct history blocks', () => {
+    const text = [
+      topLevelHistory(sunkShipWith({ name: '"First"' })),
+      'unrelated={ value=1 }',
+      topLevelHistory(),
+      topLevelHistory(
+        sunkShipWith({ name: '"Second"' }),
+        sunkShipWith({ name: '"Third"' }),
+      ),
+    ].join('\n');
+    const records = parseIndexed(text);
+
+    expect(records).toEqual(parseGlobalNavalLossHistory(text));
+    expect(records.map(({ sunkShip }) => sunkShip.name)).toEqual([
+      'First',
+      'Second',
+      'Third',
+    ]);
+    expect(records.map(({ ordinal }) => ordinal)).toEqual([0, 1, 2]);
+    expect(records[0].sourceOffset).toBeLessThan(records[1].sourceOffset);
+    expect(records[1].sourceOffset).toBeLessThan(records[2].sourceOffset);
+  });
+
+  test('excludes nested history lookalikes and nested sunk_ship entries', () => {
+    const text = `wrapper={ ${topLevelHistory(COMPLETE_SUNK_SHIP)} }
+      country_history={ ${COMPLETE_SUNK_SHIP} }
+      history={
+        nested={ ${COMPLETE_SUNK_SHIP} }
+        ${sunkShipWith({ name: '"Direct only"' })}
+      }`;
+    const records = parseIndexed(text);
+
+    expect(records).toEqual(parseGlobalNavalLossHistory(text));
+    expect(records.map(({ sunkShip }) => sunkShip.name)).toEqual([
+      'Direct only',
+    ]);
+  });
+
+  test.each([
+    ['empty save', ''],
+    [
+      'only nested history',
+      `wrapper={ ${topLevelHistory(COMPLETE_SUNK_SHIP)} }`,
+    ],
+    ['empty history', topLevelHistory()],
+  ])('returns no events for %s', (_, text) => {
+    expect(parseIndexed(text)).toEqual([]);
+    expect(parseIndexed(text)).toEqual(parseGlobalNavalLossHistory(text));
+  });
+
+  test.each([
+    {
+      name: 'malformed field',
+      text: topLevelHistory(sunkShipWith({ level: 'bad' })),
+      complete: false,
+      warnings: ['invalid level: bad'],
+    },
+    {
+      name: 'unterminated sunk_ship and history',
+      text: `history={${COMPLETE_SUNK_SHIP.slice(0, -1)}`,
+      complete: false,
+      warnings: ['unterminated sunk_ship block'],
+    },
+    {
+      name: 'complete event inside unterminated history',
+      text: `history={${COMPLETE_SUNK_SHIP}`,
+      complete: true,
+      warnings: [],
+    },
+  ])('preserves legacy $name semantics', ({ text, complete, warnings }) => {
+    const records = parseIndexed(text);
+    expect(records).toEqual(parseGlobalNavalLossHistory(text));
+    expect(records).toHaveLength(1);
+    expect(records[0].complete).toBe(complete);
+    expect(records[0].warnings).toEqual(warnings);
+  });
+
+  test('does not mutate the supplied array or its LocatedBlock objects', () => {
+    const text = `${topLevelHistory(COMPLETE_SUNK_SHIP)}
+      unrelated={ value=1 }
+      ${topLevelHistory(sunkShipWith({ name: '"Second"' }))}`;
+    const blocks = Object.freeze(
+      findDirectBlocks(text, 0, text.length)
+        .reverse()
+        .map((block) => Object.freeze(block)),
+    );
+    const before = JSON.stringify(blocks);
+
+    expect(parseGlobalNavalLossHistory(text, blocks)).toEqual(
+      parseGlobalNavalLossHistory(text),
+    );
+    expect(JSON.stringify(blocks)).toBe(before);
+  });
+
+  test('preserves identical occurrences within and across history blocks', () => {
+    const text = `${topLevelHistory(COMPLETE_SUNK_SHIP, COMPLETE_SUNK_SHIP)}
+      ${topLevelHistory(COMPLETE_SUNK_SHIP)}`;
+    const records = parseIndexed(text);
+
+    expect(records).toEqual(parseGlobalNavalLossHistory(text));
+    expect(records).toHaveLength(3);
+    expect(new Set(records.map(({ recordId }) => recordId)).size).toBe(3);
+    expect(records.every(({ sunkShip }) => sunkShip.name === 'U-144')).toBe(
+      true,
+    );
+  });
+
+  test('preserves duplicate scalar keys, empty names, modded definitions and sentinels', () => {
+    const text = topLevelHistory(
+      sunkShipWith({
+        name: '""\n  name="Ignored second name"',
+        definition: 'modded_dreadnought',
+        battle: '{ id=0 type=0 }',
+      }),
+    );
+    const records = parseIndexed(text);
+
+    expect(records).toEqual(parseGlobalNavalLossHistory(text));
+    expect(records[0].sunkShip.name).toBe('');
+    expect(records[0].sunkShip.definition).toBe('modded_dreadnought');
+    expect(records[0].event.battle).toEqual({
+      id: 0,
+      type: 0,
+      status: 'zero_sentinel',
+    });
+  });
+
+  test('treats a supplied empty index as authoritative without falling back', () => {
+    const text = topLevelHistory(COMPLETE_SUNK_SHIP);
+    expect(parseGlobalNavalLossHistory(text, [])).toEqual([]);
+    expect(parseGlobalNavalLossHistory(text)).toHaveLength(1);
   });
 });
 

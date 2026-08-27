@@ -1440,7 +1440,10 @@ export function analyzeSave(filePath: string): AnalyzeResult {
   const armyHierarchySummaries =
     toPublicArmyHierarchySummaries(linkedArmyHierarchy);
 
-  const globalNavalLosses = parseGlobalNavalLossHistory(content);
+  const globalNavalLosses = parseGlobalNavalLossHistory(
+    content,
+    topLevelBlocks,
+  );
   const shipHistoryNavalLosses = parseShipHistoryNavalLosses(
     content,
     countryProductionIndex,

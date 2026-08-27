@@ -342,13 +342,11 @@ export function parseSunkShipBlock(
 
 export function parseGlobalNavalLossHistory(
   saveText: string,
+  topLevelBlocks?: readonly LocatedBlock[],
 ): ParsedNavalLoss[] {
-  const historyBlocks = findDirectBlocks(
-    saveText,
-    0,
-    saveText.length,
-    'history',
-  );
+  const historyBlocks = topLevelBlocks
+    ? topLevelBlocks.filter(({ key }) => key === 'history')
+    : findDirectBlocks(saveText, 0, saveText.length, 'history');
   const sunkShipBlocks = historyBlocks.flatMap((history) =>
     findDirectBlocks(saveText, history.bodyStart, history.bodyEnd, 'sunk_ship'),
   );
