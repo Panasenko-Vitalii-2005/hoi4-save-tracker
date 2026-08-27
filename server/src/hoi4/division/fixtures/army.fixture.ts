@@ -221,3 +221,51 @@ countries={
   }
 }
 `;
+
+export const COMMANDER_ROLE_EDGE_CASE_FIXTURE = `
+character_manager={
+  historical={
+    character={
+      id={ id=10 type=73 }
+      country="GER"
+      field_marshal={
+        id={ id=103 type=4713 }
+        name="Field Marshal First In Source"
+      }
+      corps_commander={
+        id={ id=101 type=4713 }
+        name="First Corps Commander"
+      }
+      wrapper={
+        corps_commander={
+          id={ id=999 type=4713 }
+          name="Nested Commander Lookalike"
+        }
+      }
+      corps_commander={
+        id={ id=102 type=4713 }
+        name="Second Corps Commander"
+      }
+    }
+    character={
+      id={ id=11 type=73 }
+      country="ENG"
+      corps_commander={
+        id={ id=101 type=4713 }
+        name="Duplicate Commander Reference"
+      }
+    }
+  }
+}
+`;
+
+export const MALFORMED_COMMANDER_ROLE_FIXTURE = `
+character_manager={
+  historical={
+    character={
+      id={ id=12 type=73 }
+      country="USA"
+      corps_commander={
+        id={ id=120 type=4713 }
+        name="Incomplete Commander"
+`;

@@ -3,6 +3,7 @@ import {
   readDirectScalar,
   type LocatedBlock,
 } from '../naval-loss/global-history.parser';
+import type { CountryProductionIndex } from '../country-production.index';
 import { readEquipmentRef } from '../stockpile/equipment-registry.parser';
 import {
   equipmentRefKey,
@@ -315,74 +316,91 @@ function markDuplicateCommanderReferences(records: CommanderRecord[]): void {
 export function parseArmyHierarchy(
   saveText: string,
   topLevelBlocks?: readonly LocatedBlock[],
+  countryProductionIndex?: CountryProductionIndex,
 ): ArmyHierarchyParseResult {
   const armies: ArmyRecord[] = [];
   const armyGroups: ArmyGroupRecord[] = [];
   const commanders: CommanderRecord[] = [];
   const top = topLevelBlocks ?? findDirectBlocks(saveText, 0, saveText.length);
 
-  for (const countriesBlock of top.filter(({ key }) => key === 'countries')) {
-    for (const countryBlock of findDirectBlocks(
-      saveText,
-      countriesBlock.bodyStart,
-      countriesBlock.bodyEnd,
-    )) {
-      if (!COUNTRY_TAG_PATTERN.test(countryBlock.key)) continue;
-      for (const theatersBlock of findDirectBlocks(
+  const parseTheatres = (
+    countryTag: string,
+    theatresBlocks: readonly LocatedBlock[],
+  ): void => {
+    for (const theatersBlock of theatresBlocks) {
+      for (const theaterBlock of findDirectBlocks(
         saveText,
-        countryBlock.bodyStart,
-        countryBlock.bodyEnd,
-        'theatres',
+        theatersBlock.bodyStart,
+        theatersBlock.bodyEnd,
+        'theatre',
       )) {
-        for (const theaterBlock of findDirectBlocks(
+        const theaterWarnings: string[] = [];
+        if (!theaterBlock.complete)
+          theaterWarnings.push('unterminated theatre');
+        const theaterRef = readEquipmentRef(
           saveText,
-          theatersBlock.bodyStart,
-          theatersBlock.bodyEnd,
-          'theatre',
+          theaterBlock,
+          'id',
+          theaterWarnings,
+          true,
+        );
+        for (const armyBlock of findDirectBlocks(
+          saveText,
+          theaterBlock.bodyStart,
+          theaterBlock.bodyEnd,
+          'orders_group',
         )) {
-          const theaterWarnings: string[] = [];
-          if (!theaterBlock.complete)
-            theaterWarnings.push('unterminated theatre');
-          const theaterRef = readEquipmentRef(
-            saveText,
-            theaterBlock,
-            'id',
-            theaterWarnings,
-            true,
+          armies.push(
+            parseArmy(
+              saveText,
+              countryTag,
+              theaterRef,
+              theaterWarnings,
+              armyBlock,
+            ),
           );
-          for (const armyBlock of findDirectBlocks(
-            saveText,
-            theaterBlock.bodyStart,
-            theaterBlock.bodyEnd,
-            'orders_group',
-          )) {
-            armies.push(
-              parseArmy(
-                saveText,
-                countryBlock.key,
-                theaterRef,
-                theaterWarnings,
-                armyBlock,
-              ),
-            );
-          }
-          for (const groupBlock of findDirectBlocks(
-            saveText,
-            theaterBlock.bodyStart,
-            theaterBlock.bodyEnd,
-            'field_marshal_group',
-          )) {
-            armyGroups.push(
-              parseArmyGroup(
-                saveText,
-                countryBlock.key,
-                theaterRef,
-                theaterWarnings,
-                groupBlock,
-              ),
-            );
-          }
         }
+        for (const groupBlock of findDirectBlocks(
+          saveText,
+          theaterBlock.bodyStart,
+          theaterBlock.bodyEnd,
+          'field_marshal_group',
+        )) {
+          armyGroups.push(
+            parseArmyGroup(
+              saveText,
+              countryTag,
+              theaterRef,
+              theaterWarnings,
+              groupBlock,
+            ),
+          );
+        }
+      }
+    }
+  };
+
+  if (countryProductionIndex) {
+    for (const entry of countryProductionIndex) {
+      parseTheatres(entry.countryTag, entry.theatresBlocks);
+    }
+  } else {
+    for (const countriesBlock of top.filter(({ key }) => key === 'countries')) {
+      for (const countryBlock of findDirectBlocks(
+        saveText,
+        countriesBlock.bodyStart,
+        countriesBlock.bodyEnd,
+      )) {
+        if (!COUNTRY_TAG_PATTERN.test(countryBlock.key)) continue;
+        parseTheatres(
+          countryBlock.key,
+          findDirectBlocks(
+            saveText,
+            countryBlock.bodyStart,
+            countryBlock.bodyEnd,
+            'theatres',
+          ),
+        );
       }
     }
   }
@@ -403,13 +421,24 @@ export function parseArmyHierarchy(
           sourceBlock.bodyEnd,
           'character',
         )) {
+          const roleBlocks = {
+            corps_commander: [] as LocatedBlock[],
+            field_marshal: [] as LocatedBlock[],
+          };
+          for (const roleBlock of findDirectBlocks(
+            saveText,
+            characterBlock.bodyStart,
+            characterBlock.bodyEnd,
+          )) {
+            if (
+              roleBlock.key === 'corps_commander' ||
+              roleBlock.key === 'field_marshal'
+            ) {
+              roleBlocks[roleBlock.key].push(roleBlock);
+            }
+          }
           for (const role of ['corps_commander', 'field_marshal'] as const) {
-            for (const roleBlock of findDirectBlocks(
-              saveText,
-              characterBlock.bodyStart,
-              characterBlock.bodyEnd,
-              role,
-            )) {
+            for (const roleBlock of roleBlocks[role]) {
               commanders.push(
                 parseCommander(
                   saveText,

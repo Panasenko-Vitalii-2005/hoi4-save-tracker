@@ -10,7 +10,11 @@ describe('buildCountryProductionIndex', () => {
       GER={
         production={ marker=first }
         fleet={ marker=direct_fleet }
-        units={ fleet={ marker=nested_fleet } }
+        units={
+          fleet={ marker=nested_fleet }
+          theatres={ marker=nested_theatres }
+        }
+        theatres={ marker=direct_theatres }
       }
       invalid={ production={ marker=ignored } }
       D04={
@@ -32,6 +36,9 @@ describe('buildCountryProductionIndex', () => {
     ).toEqual([1, 2]);
     expect(index.map(({ fleetBlocks }) => fleetBlocks.length)).toEqual([1, 0]);
     expect(index.map(({ unitsBlocks }) => unitsBlocks.length)).toEqual([1, 1]);
+    expect(index.map(({ theatresBlocks }) => theatresBlocks.length)).toEqual([
+      1, 0,
+    ]);
     expect(index[0].countryBlock.key).toBe('GER');
     expect(index[0].countryBlock.keyOffset).toBeLessThan(
       index[1].countryBlock.keyOffset,
@@ -46,6 +53,13 @@ describe('buildCountryProductionIndex', () => {
       ),
     ).toContain('marker=direct_fleet');
     expect(index[0].fleetBlocks).toHaveLength(1);
+    expect(
+      fixture.slice(
+        index[0].theatresBlocks[0].bodyStart,
+        index[0].theatresBlocks[0].bodyEnd,
+      ),
+    ).toContain('marker=direct_theatres');
+    expect(index[0].theatresBlocks).toHaveLength(1);
   });
 
   test('reuses a supplied top-level block index', () => {
@@ -66,12 +80,17 @@ describe('buildCountryProductionIndex', () => {
     expect(entry.productionBlocks[0].complete).toBe(false);
   });
 
-  test.each(['fleet', 'units'])(
+  test.each(['fleet', 'units', 'theatres'])(
     'preserves incomplete direct %s blocks',
     (key) => {
       const malformed = `countries={ GER={ ${key}={ marker=yes`;
       const [entry] = buildCountryProductionIndex(malformed);
-      const blocks = key === 'fleet' ? entry.fleetBlocks : entry.unitsBlocks;
+      const blocks =
+        key === 'fleet'
+          ? entry.fleetBlocks
+          : key === 'units'
+            ? entry.unitsBlocks
+            : entry.theatresBlocks;
 
       expect(entry.countryBlock.complete).toBe(false);
       expect(blocks).toHaveLength(1);

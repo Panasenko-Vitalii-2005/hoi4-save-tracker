@@ -1396,7 +1396,11 @@ export function analyzeSave(filePath: string): AnalyzeResult {
   const divisions = parseDivisions(content, equipmentRegistry, topLevelBlocks);
   const divisionTemplates = parseDivisionTemplates(content, topLevelBlocks);
   const resolvedDivisions = aggregateDivisions(divisions, divisionTemplates);
-  const armyHierarchy = parseArmyHierarchy(content, topLevelBlocks);
+  const armyHierarchy = parseArmyHierarchy(
+    content,
+    topLevelBlocks,
+    countryProductionIndex,
+  );
   const linkedArmyHierarchy = linkArmyHierarchy(
     armyHierarchy,
     resolvedDivisions,

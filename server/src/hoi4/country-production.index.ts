@@ -11,6 +11,7 @@ export interface CountryProductionBlockEntry {
   productionBlocks: readonly LocatedBlock[];
   fleetBlocks: readonly LocatedBlock[];
   unitsBlocks: readonly LocatedBlock[];
+  theatresBlocks: readonly LocatedBlock[];
 }
 
 export type CountryProductionIndex = readonly CountryProductionBlockEntry[];
@@ -49,6 +50,7 @@ export function buildCountryProductionIndex(
       const productionBlocks: LocatedBlock[] = [];
       const fleetBlocks: LocatedBlock[] = [];
       const unitsBlocks: LocatedBlock[] = [];
+      const theatresBlocks: LocatedBlock[] = [];
       for (const block of findDirectBlocks(
         saveText,
         countryBlock.bodyStart,
@@ -60,6 +62,8 @@ export function buildCountryProductionIndex(
           fleetBlocks.push(block);
         } else if (block.key === 'units') {
           unitsBlocks.push(block);
+        } else if (block.key === 'theatres') {
+          theatresBlocks.push(block);
         }
       }
 
@@ -69,6 +73,7 @@ export function buildCountryProductionIndex(
         productionBlocks,
         fleetBlocks,
         unitsBlocks,
+        theatresBlocks,
       });
     }
   }

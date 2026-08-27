@@ -1,11 +1,14 @@
 import { findDirectBlocks } from '../naval-loss/global-history.parser';
+import { buildCountryProductionIndex } from '../country-production.index';
 import { aggregateDivisions } from './division.aggregator';
 import { linkArmyHierarchy, parseArmyHierarchy } from './army.parser';
 import type { CountryDivisionSummary } from './division.types';
 import {
   ARMY_HIERARCHY_FIXTURE,
+  COMMANDER_ROLE_EDGE_CASE_FIXTURE,
   DUPLICATE_ARMY_HIERARCHY_FIXTURE,
   MALFORMED_ARMY_HIERARCHY_FIXTURE,
+  MALFORMED_COMMANDER_ROLE_FIXTURE,
 } from './fixtures/army.fixture';
 import {
   divisionRecord,
@@ -191,6 +194,63 @@ describe('parseArmyHierarchy', () => {
     );
   });
 
+  test('preserves final source order when role blocks are interleaved', () => {
+    const commanders = parseArmyHierarchy(
+      COMMANDER_ROLE_EDGE_CASE_FIXTURE,
+    ).commanders;
+
+    expect(commanders.map(({ name }) => name)).toEqual([
+      'Field Marshal First In Source',
+      'First Corps Commander',
+      'Second Corps Commander',
+      'Duplicate Commander Reference',
+    ]);
+    expect(commanders.map(({ role }) => role)).toEqual([
+      'field_marshal',
+      'corps_commander',
+      'corps_commander',
+      'corps_commander',
+    ]);
+  });
+
+  test('ignores nested commander-role lookalikes', () => {
+    expect(
+      parseArmyHierarchy(COMMANDER_ROLE_EDGE_CASE_FIXTURE).commanders.map(
+        ({ name }) => name,
+      ),
+    ).not.toContain('Nested Commander Lookalike');
+  });
+
+  test('preserves duplicate role blocks and existing duplicate-ref warnings', () => {
+    const commanders = parseArmyHierarchy(
+      COMMANDER_ROLE_EDGE_CASE_FIXTURE,
+    ).commanders;
+
+    expect(commanders).toHaveLength(4);
+    expect(commanders.at(-1)?.warnings).toContain(
+      'duplicate commander reference: 4713:101',
+    );
+  });
+
+  test('preserves partial malformed commander roles and warnings', () => {
+    const [commander] = parseArmyHierarchy(
+      MALFORMED_COMMANDER_ROLE_FIXTURE,
+    ).commanders;
+
+    expect(commander).toMatchObject({
+      commanderRef: { id: 120, type: 4713 },
+      name: 'Incomplete Commander',
+      role: 'corps_commander',
+      complete: false,
+    });
+    expect(commander.warnings).toEqual(
+      expect.arrayContaining([
+        'unterminated character',
+        'unterminated corps_commander',
+      ]),
+    );
+  });
+
   test('keeps duplicate commander names separate by exact ref', () => {
     const commanders = parseArmyHierarchy(
       ARMY_HIERARCHY_FIXTURE,
@@ -279,6 +339,50 @@ describe('parseArmyHierarchy', () => {
     expect(parseArmyHierarchy(ARMY_HIERARCHY_FIXTURE, topLevelBlocks)).toEqual(
       parseArmyHierarchy(ARMY_HIERARCHY_FIXTURE),
     );
+  });
+
+  test('matches standalone output when reusing the shared country index', () => {
+    const topLevelBlocks = findDirectBlocks(
+      ARMY_HIERARCHY_FIXTURE,
+      0,
+      ARMY_HIERARCHY_FIXTURE.length,
+    );
+    const countryIndex = buildCountryProductionIndex(
+      ARMY_HIERARCHY_FIXTURE,
+      topLevelBlocks,
+    );
+
+    expect(
+      parseArmyHierarchy(ARMY_HIERARCHY_FIXTURE, topLevelBlocks, countryIndex),
+    ).toEqual(parseArmyHierarchy(ARMY_HIERARCHY_FIXTURE));
+  });
+
+  test('shared country index preserves country, theatre and member source order', () => {
+    const topLevelBlocks = findDirectBlocks(
+      ARMY_HIERARCHY_FIXTURE,
+      0,
+      ARMY_HIERARCHY_FIXTURE.length,
+    );
+    const hierarchy = parseArmyHierarchy(
+      ARMY_HIERARCHY_FIXTURE,
+      topLevelBlocks,
+      buildCountryProductionIndex(ARMY_HIERARCHY_FIXTURE, topLevelBlocks),
+    );
+
+    expect(hierarchy.armies.map(({ countryTag }) => countryTag)).toEqual([
+      'GER',
+      'GER',
+      'SOV',
+      'D04',
+    ]);
+    expect(hierarchy.armies.map(({ armyRef }) => armyRef?.id)).toEqual([
+      100, 101, 300, 400,
+    ]);
+    expect(
+      hierarchy.armies[0].divisionMemberships.map(
+        ({ divisionRef }) => divisionRef?.id,
+      ),
+    ).toEqual([1, 2, 5]);
   });
 
   test('does not mutate decoded text or supplied top-level blocks', () => {
