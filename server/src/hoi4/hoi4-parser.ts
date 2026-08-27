@@ -1393,7 +1393,12 @@ export function analyzeSave(filePath: string): AnalyzeResult {
   const militaryProductionSummaries = aggregateMilitaryProduction(
     militaryProductionRecords,
   );
-  const divisions = parseDivisions(content, equipmentRegistry, topLevelBlocks);
+  const divisions = parseDivisions(
+    content,
+    equipmentRegistry,
+    topLevelBlocks,
+    countryProductionIndex,
+  );
   const divisionTemplates = parseDivisionTemplates(content, topLevelBlocks);
   const resolvedDivisions = aggregateDivisions(divisions, divisionTemplates);
   const armyHierarchy = parseArmyHierarchy(

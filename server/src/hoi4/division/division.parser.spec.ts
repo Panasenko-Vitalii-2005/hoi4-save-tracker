@@ -1,4 +1,6 @@
-import { findDirectBlocks } from '../naval-loss/global-history.parser';
+import { createHash } from 'crypto';
+import { buildCountryProductionIndex } from '../country-production.index';
+import * as blockParser from '../naval-loss/global-history.parser';
 import { parseEquipmentRegistry } from '../stockpile/equipment-registry.parser';
 import {
   DIVISION_FIXTURE,
@@ -11,6 +13,192 @@ function parseFixture(saveText: string) {
   const registry = parseEquipmentRegistry(saveText);
   return parseDivisions(saveText, registry);
 }
+
+describe('division direct-child semantics', () => {
+  test('discovers direct children once per division without changing scalar indexing', () => {
+    const saveText = DIVISION_FIXTURE;
+    const index = buildCountryProductionIndex(saveText);
+    const registry = parseEquipmentRegistry(saveText);
+    const divisionBlocks = index.flatMap(({ unitsBlocks }) =>
+      unitsBlocks.flatMap(({ bodyStart, bodyEnd }) =>
+        blockParser.findDirectBlocks(saveText, bodyStart, bodyEnd, 'division'),
+      ),
+    );
+    const scan = jest.spyOn(blockParser, 'findDirectBlocks');
+    const scalarScan = jest.spyOn(blockParser, 'readDirectScalars');
+
+    try {
+      expect(parseDivisions(saveText, registry, undefined, index)).toHaveLength(
+        3,
+      );
+      for (const { bodyStart, bodyEnd } of divisionBlocks) {
+        expect(
+          scan.mock.calls.filter(
+            ([, start, end]) => start === bodyStart && end === bodyEnd,
+          ),
+        ).toEqual([[saveText, bodyStart, bodyEnd]]);
+        expect(
+          scalarScan.mock.calls.filter(
+            ([, start, end]) => start === bodyStart && end === bodyEnd,
+          ),
+        ).toHaveLength(1);
+      }
+    } finally {
+      scan.mockRestore();
+      scalarScan.mockRestore();
+    }
+  });
+
+  // Captured from the five-scan implementation before consolidation.
+  test.each([
+    [
+      'normal',
+      DIVISION_FIXTURE,
+      'e875d22a6f199fd8d3e210087d5fcedb3e8ac460ff0968fa5f1b1ef60a5751af',
+    ],
+    [
+      'scope',
+      DIVISION_SCOPE_FIXTURE,
+      '98e2de1eda6c6eaff09c45500f1163c94a4fd4799e6d38f4fbefd8a25b0f7616',
+    ],
+    [
+      'malformed',
+      MALFORMED_DIVISION_FIXTURE,
+      '75f46fa04c780cf96c9f472f2a0d8551e5592eac48476ae70b9ca25c857cfcc5',
+    ],
+  ])(
+    'matches the legacy %s records, including warnings and offsets',
+    (_, fixture, digest) => {
+      expect(
+        createHash('sha256')
+          .update(JSON.stringify(parseFixture(fixture)))
+          .digest('hex'),
+      ).toBe(digest);
+    },
+  );
+
+  test('ignores nested lookalikes for all five relevant child keys', () => {
+    const fixture = DIVISION_SCOPE_FIXTURE.replace(
+      'logical_country="GER"',
+      `
+      history={
+        id={ id=999 type=51 }
+        division_template_id={ id=999 type=52 }
+        division_name={ override="Nested name" }
+        army_manpower={ }
+        equipment={ equipment={ amount=999 } }
+      }
+      logical_country="GER"`,
+    );
+
+    expect(parseFixture(fixture)).toEqual(parseFixture(DIVISION_SCOPE_FIXTURE));
+  });
+
+  test.each([
+    'division_template_id',
+    'division_name',
+    'army_manpower',
+    'equipment',
+  ])('ignores later malformed duplicate %s blocks', (field) => {
+    const fixture = DIVISION_SCOPE_FIXTURE.replace(
+      'supply_gain=0.15',
+      `supply_gain=0.15\n${field}={ id=bad type=bad }`,
+    );
+
+    expect(parseFixture(fixture)).toEqual(parseFixture(DIVISION_SCOPE_FIXTURE));
+  });
+
+  test.each([
+    ['division_template_id', 'divisionTemplateRef', null],
+    ['division_name', 'name', { overrideName: null, type: null, order: null }],
+    [
+      'army_manpower',
+      'manpower',
+      { current: null, required: null, currentTag: null, requiredTag: null },
+    ],
+    ['equipment', 'equipment', []],
+  ])(
+    'does not skip an empty first %s block for a populated duplicate',
+    (field, property, expected) => {
+      const fixture = DIVISION_SCOPE_FIXTURE.replace(
+        `${field}={`,
+        `${field}={ }\n${field}={`,
+      );
+
+      expect(parseFixture(fixture)[0]).toHaveProperty(property, expected);
+    },
+  );
+
+  test('retains all duplicate id blocks and warns in source order', () => {
+    const fixture = DIVISION_SCOPE_FIXTURE.replace(
+      'supply_gain=0.15',
+      'supply_gain=0.15\nid={ id=2 type=51 }',
+    );
+    const record = parseFixture(fixture)[0];
+
+    expect(record.divisionRef).toEqual({ id: 1, type: 51 });
+    expect(record.warnings).toEqual([
+      'expected two division id blocks, found 3',
+      'conflicting division id blocks: 51:1 vs 51:2',
+    ]);
+    expect(record.complete).toBe(false);
+  });
+
+  test.each([
+    ['id', 'division id[0]'],
+    ['division_template_id', 'division_template_id'],
+    ['division_name', 'division_name'],
+    ['army_manpower', 'army_manpower'],
+    ['equipment', 'equipment'],
+  ])(
+    'preserves an unterminated %s child and its warning',
+    (field, warningField) => {
+      const record = parseFixture(
+        `countries={ GER={ units={ division={ ${field}={`,
+      )[0];
+
+      expect(record.complete).toBe(false);
+      expect(record.warnings).toContain('unterminated division');
+      expect(record.warnings).toContain(`unterminated ${warningField}`);
+    },
+  );
+
+  test('keeps missing required-child warnings in their original order', () => {
+    const record = parseFixture(
+      'countries={ GER={ units={ division={} } } }',
+    )[0];
+
+    expect(record.warnings).toEqual([
+      'missing division_template_id',
+      'missing equipment',
+      'missing division id',
+      'missing division_name',
+      'missing army_manpower',
+      'missing strength',
+      'missing organisation',
+      'missing experience',
+      'missing location',
+      'missing army_current_supply_ratio',
+      'missing max_supply',
+      'missing supply_gain',
+    ]);
+    expect(record).toMatchObject({
+      divisionRef: null,
+      divisionTemplateRef: null,
+      name: { overrideName: null, type: null, order: null },
+      manpower: {
+        current: null,
+        required: null,
+        currentTag: null,
+        requiredTag: null,
+      },
+      equipment: [],
+      fuel: null,
+      fuelRequested: null,
+      complete: false,
+    });
+  });
+});
 
 describe('parseDivisions', () => {
   test('parses only direct countries.TAG.units.division records', () => {
@@ -359,7 +547,7 @@ describe('parseDivisions', () => {
   });
 
   test('accepts and reuses an existing top-level block index', () => {
-    const topLevelBlocks = findDirectBlocks(
+    const topLevelBlocks = blockParser.findDirectBlocks(
       DIVISION_FIXTURE,
       0,
       DIVISION_FIXTURE.length,
@@ -373,7 +561,7 @@ describe('parseDivisions', () => {
 
   test('does not mutate the save text, registry or supplied block index', () => {
     const originalText = DIVISION_FIXTURE;
-    const topLevelBlocks = findDirectBlocks(
+    const topLevelBlocks = blockParser.findDirectBlocks(
       originalText,
       0,
       originalText.length,
@@ -395,5 +583,169 @@ describe('parseDivisions', () => {
     expect(parseDivisions(DIVISION_FIXTURE, registry)).toEqual(
       parseDivisions(DIVISION_FIXTURE, registry),
     );
+  });
+});
+
+describe('parseDivisions shared country index', () => {
+  function comparePaths(saveText: string) {
+    const topLevelBlocks = blockParser.findDirectBlocks(
+      saveText,
+      0,
+      saveText.length,
+    );
+    const registry = parseEquipmentRegistry(saveText, topLevelBlocks);
+    const index = buildCountryProductionIndex(saveText, topLevelBlocks);
+    const inputsBefore = JSON.stringify({ registry, topLevelBlocks, index });
+    const standalone = parseDivisions(saveText, registry);
+    const indexed = parseDivisions(saveText, registry, topLevelBlocks, index);
+
+    expect(indexed).toEqual(standalone);
+    expect(indexed).toEqual(parseDivisions(saveText, registry, topLevelBlocks));
+    expect(JSON.stringify({ registry, topLevelBlocks, index })).toBe(
+      inputsBefore,
+    );
+    return indexed;
+  }
+
+  test('matches standalone output across countries, including dynamic tags', () => {
+    const records = comparePaths(DIVISION_FIXTURE);
+
+    expect(records.map(({ countryTag }) => countryTag)).toEqual([
+      'USA',
+      'USA',
+      'D04',
+    ]);
+    expect(records.map(({ divisionRef }) => divisionRef?.id)).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  test('preserves repeated countries/units blocks and ignores nested lookalikes', () => {
+    const records = comparePaths(`HOI4txt
+      history={ countries={ USA={ units={ division={} } } } }
+      countries={
+        USA={
+          history={ units={ division={ id={ id=99 type=51 } } } }
+          units={
+            division={ id={ id=3 type=51 } }
+            history={ division={ id={ id=98 type=51 } } }
+          }
+          units={ division={ id={ id=1 type=51 } } }
+        }
+        D04={ units={ division={ id={ id=2 type=51 } } } }
+        invalid={ units={ division={} } }
+      }
+      countries={ USA={ units={ division={ id={ id=4 type=51 } } } } }
+    `);
+
+    expect(records.map(({ divisionRef }) => divisionRef?.id)).toEqual([
+      3, 1, 2, 4,
+    ]);
+    expect(records.map(({ countryTag }) => countryTag)).toEqual([
+      'USA',
+      'USA',
+      'D04',
+      'USA',
+    ]);
+  });
+
+  test('retains the existing canonical hierarchy scope', () => {
+    expect(comparePaths(DIVISION_SCOPE_FIXTURE)).toHaveLength(1);
+  });
+
+  test('preserves malformed-field warnings and complete flags, then continues', () => {
+    const records = comparePaths(MALFORMED_DIVISION_FIXTURE);
+
+    expect(records).toHaveLength(4);
+    expect(records[2].complete).toBe(false);
+    expect(records[2].warnings).toContain('invalid strength: invalid');
+    expect(records[3]).toMatchObject({ complete: true, warnings: [] });
+  });
+
+  test.each([
+    [
+      'units',
+      DIVISION_FIXTURE.slice(0, DIVISION_FIXTURE.lastIndexOf('\n    }')),
+    ],
+    [
+      'division',
+      DIVISION_FIXTURE.slice(0, DIVISION_FIXTURE.lastIndexOf('supply_gain=')),
+    ],
+  ])('preserves partial records in an incomplete %s block', (_, saveText) => {
+    const records = comparePaths(saveText);
+
+    expect(records).toHaveLength(3);
+    expect(records[2].complete).toBe(false);
+    expect(records[2].warnings.length).toBeGreaterThan(0);
+  });
+
+  test('sorts by source offset even when supplied entries/units are reversed', () => {
+    const saveText = `countries={
+      USA={
+        units={ division={ id={ id=3 type=51 } } }
+        units={ division={ id={ id=1 type=51 } } }
+      }
+      D04={ units={ division={ id={ id=2 type=51 } } } }
+    }`;
+    const registry = parseEquipmentRegistry(saveText);
+    const index = [...buildCountryProductionIndex(saveText)]
+      .reverse()
+      .map((entry) => ({
+        ...entry,
+        unitsBlocks: [...entry.unitsBlocks].reverse(),
+      }));
+    const before = JSON.stringify(index);
+
+    expect(parseDivisions(saveText, registry, undefined, index)).toEqual(
+      parseDivisions(saveText, registry),
+    );
+    expect(JSON.stringify(index)).toBe(before);
+  });
+
+  test('does not rediscover countries or units when the shared index is supplied', () => {
+    const saveText = DIVISION_FIXTURE;
+    const registry = parseEquipmentRegistry(saveText);
+    const topLevelBlocks = blockParser.findDirectBlocks(
+      saveText,
+      0,
+      saveText.length,
+    );
+    const index = buildCountryProductionIndex(saveText, topLevelBlocks);
+    const forbiddenRanges = [
+      { bodyStart: 0, bodyEnd: saveText.length },
+      ...topLevelBlocks.filter(({ key }) => key === 'countries'),
+      ...index.map(({ countryBlock }) => countryBlock),
+    ];
+    const scan = jest.spyOn(blockParser, 'findDirectBlocks');
+
+    try {
+      expect(parseDivisions(saveText, registry, undefined, index)).toHaveLength(
+        3,
+      );
+      expect(scan).toHaveBeenCalled();
+      for (const { bodyStart, bodyEnd } of forbiddenRanges) {
+        expect(
+          scan.mock.calls.some(
+            ([, start, end]) => start === bodyStart && end === bodyEnd,
+          ),
+        ).toBe(false);
+      }
+    } finally {
+      scan.mockRestore();
+    }
+  });
+
+  test('treats an empty supplied index as authoritative without fallback scans', () => {
+    const registry = parseEquipmentRegistry(DIVISION_FIXTURE);
+    const scan = jest.spyOn(blockParser, 'findDirectBlocks');
+
+    try {
+      expect(parseDivisions(DIVISION_FIXTURE, registry, undefined, [])).toEqual(
+        [],
+      );
+      expect(scan).not.toHaveBeenCalled();
+    } finally {
+      scan.mockRestore();
+    }
   });
 });

@@ -1,3 +1,4 @@
+import type { CountryProductionIndex } from '../country-production.index';
 import {
   findDirectBlocks,
   readDirectScalars,
@@ -91,13 +92,16 @@ function readReference(
   field: string,
   warnings: string[],
   required: boolean,
+  directBlocks?: readonly LocatedBlock[],
 ): EquipmentRef | null {
-  const referenceBlock = findDirectBlocks(
-    saveText,
-    parentBlock.bodyStart,
-    parentBlock.bodyEnd,
-    field,
-  )[0];
+  const referenceBlock = directBlocks
+    ? directBlocks.find(({ key }) => key === field)
+    : findDirectBlocks(
+        saveText,
+        parentBlock.bodyStart,
+        parentBlock.bodyEnd,
+        field,
+      )[0];
   if (!referenceBlock) {
     if (required) warnings.push(`missing ${field}`);
     return null;
@@ -108,15 +112,10 @@ function readReference(
 
 function readDivisionReference(
   saveText: string,
-  divisionBlock: LocatedBlock,
+  directBlocks: readonly LocatedBlock[],
   warnings: string[],
 ): EquipmentRef | null {
-  const idBlocks = findDirectBlocks(
-    saveText,
-    divisionBlock.bodyStart,
-    divisionBlock.bodyEnd,
-    'id',
-  );
+  const idBlocks = directBlocks.filter(({ key }) => key === 'id');
   if (idBlocks.length === 0) {
     warnings.push('missing division id');
     return null;
@@ -151,15 +150,10 @@ function readDivisionReference(
 
 function parseNameDescriptor(
   saveText: string,
-  divisionBlock: LocatedBlock,
+  directBlocks: readonly LocatedBlock[],
   warnings: string[],
 ): DivisionNameDescriptor {
-  const nameBlock = findDirectBlocks(
-    saveText,
-    divisionBlock.bodyStart,
-    divisionBlock.bodyEnd,
-    'division_name',
-  )[0];
+  const nameBlock = directBlocks.find(({ key }) => key === 'division_name');
   if (!nameBlock) {
     warnings.push('missing division_name');
     return { overrideName: null, type: null, order: null };
@@ -238,15 +232,10 @@ function parseManpowerValue(
 
 function parseManpower(
   saveText: string,
-  divisionBlock: LocatedBlock,
+  directBlocks: readonly LocatedBlock[],
   warnings: string[],
 ): DivisionManpower {
-  const manpowerBlock = findDirectBlocks(
-    saveText,
-    divisionBlock.bodyStart,
-    divisionBlock.bodyEnd,
-    'army_manpower',
-  )[0];
+  const manpowerBlock = directBlocks.find(({ key }) => key === 'army_manpower');
   if (!manpowerBlock) {
     warnings.push('missing army_manpower');
     return {
@@ -291,17 +280,14 @@ function createRegistryLookup(
 
 function parseEquipment(
   saveText: string,
-  divisionBlock: LocatedBlock,
+  directBlocks: readonly LocatedBlock[],
   registryLookup: ReadonlyMap<string, EquipmentDefinitionRecord>,
   duplicateRegistryReferences: ReadonlySet<string>,
   divisionWarnings: string[],
 ): DivisionEquipmentRecord[] {
-  const equipmentContainer = findDirectBlocks(
-    saveText,
-    divisionBlock.bodyStart,
-    divisionBlock.bodyEnd,
-    'equipment',
-  )[0];
+  const equipmentContainer = directBlocks.find(
+    ({ key }) => key === 'equipment',
+  );
   if (!equipmentContainer) {
     divisionWarnings.push('missing equipment');
     return [];
@@ -376,28 +362,34 @@ function parseDivision(
     );
   }
 
+  const directBlocks = findDirectBlocks(
+    saveText,
+    divisionBlock.bodyStart,
+    divisionBlock.bodyEnd,
+  );
   const divisionTemplateRef = readReference(
     saveText,
     divisionBlock,
     'division_template_id',
     warnings,
     true,
+    directBlocks,
   );
   const equipment = parseEquipment(
     saveText,
-    divisionBlock,
+    directBlocks,
     registryLookup,
     duplicateRegistryReferences,
     warnings,
   );
   const record: DivisionRecord = {
     countryTag,
-    divisionRef: readDivisionReference(saveText, divisionBlock, warnings),
+    divisionRef: readDivisionReference(saveText, directBlocks, warnings),
     logicalCountryTag,
     expeditionaryOwnerTag: scalars.get('expeditionary_owner') ?? null,
-    name: parseNameDescriptor(saveText, divisionBlock, warnings),
+    name: parseNameDescriptor(saveText, directBlocks, warnings),
     divisionTemplateRef,
-    manpower: parseManpower(saveText, divisionBlock, warnings),
+    manpower: parseManpower(saveText, directBlocks, warnings),
     strength: readNumber(scalars, 'strength', warnings, true),
     organization: readNumber(scalars, 'organisation', warnings, true),
     experience: readNumber(scalars, 'experience', warnings, true),
@@ -438,46 +430,63 @@ export function parseDivisions(
   saveText: string,
   registry: EquipmentRegistryParseResult,
   topLevelBlocks?: readonly LocatedBlock[],
+  countryProductionIndex?: CountryProductionIndex,
 ): DivisionRecord[] {
   const registryLookup = createRegistryLookup(registry);
   const duplicateRegistryReferences = new Set(
     registry.duplicateReferences.map(equipmentRefKey),
   );
   const records: DivisionRecord[] = [];
-  const countriesBlocks = topLevelBlocks
-    ? topLevelBlocks.filter(({ key }) => key === 'countries')
-    : findDirectBlocks(saveText, 0, saveText.length, 'countries');
-
-  for (const countriesBlock of countriesBlocks) {
-    for (const countryBlock of findDirectBlocks(
-      saveText,
-      countriesBlock.bodyStart,
-      countriesBlock.bodyEnd,
-    )) {
-      if (!COUNTRY_TAG_PATTERN.test(countryBlock.key)) continue;
-
-      for (const unitsBlock of findDirectBlocks(
+  const parseUnits = (
+    countryTag: string,
+    unitsBlocks: readonly LocatedBlock[],
+  ): void => {
+    for (const unitsBlock of unitsBlocks) {
+      for (const divisionBlock of findDirectBlocks(
         saveText,
-        countryBlock.bodyStart,
-        countryBlock.bodyEnd,
-        'units',
+        unitsBlock.bodyStart,
+        unitsBlock.bodyEnd,
+        'division',
       )) {
-        for (const divisionBlock of findDirectBlocks(
-          saveText,
-          unitsBlock.bodyStart,
-          unitsBlock.bodyEnd,
-          'division',
-        )) {
-          records.push(
-            parseDivision(
-              saveText,
-              countryBlock.key,
-              divisionBlock,
-              registryLookup,
-              duplicateRegistryReferences,
-            ),
-          );
-        }
+        records.push(
+          parseDivision(
+            saveText,
+            countryTag,
+            divisionBlock,
+            registryLookup,
+            duplicateRegistryReferences,
+          ),
+        );
+      }
+    }
+  };
+
+  if (countryProductionIndex) {
+    for (const entry of countryProductionIndex) {
+      parseUnits(entry.countryTag, entry.unitsBlocks);
+    }
+  } else {
+    const countriesBlocks = topLevelBlocks
+      ? topLevelBlocks.filter(({ key }) => key === 'countries')
+      : findDirectBlocks(saveText, 0, saveText.length, 'countries');
+
+    for (const countriesBlock of countriesBlocks) {
+      for (const countryBlock of findDirectBlocks(
+        saveText,
+        countriesBlock.bodyStart,
+        countriesBlock.bodyEnd,
+      )) {
+        if (!COUNTRY_TAG_PATTERN.test(countryBlock.key)) continue;
+
+        parseUnits(
+          countryBlock.key,
+          findDirectBlocks(
+            saveText,
+            countryBlock.bodyStart,
+            countryBlock.bodyEnd,
+            'units',
+          ),
+        );
       }
     }
   }
