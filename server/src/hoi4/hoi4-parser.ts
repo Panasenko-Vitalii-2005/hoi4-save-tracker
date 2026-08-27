@@ -234,6 +234,13 @@ type IndustryState = {
   compliancePercent: number;
 };
 
+export interface IndustryAnalysisContext {
+  readonly coresByTag: Readonly<Record<string, ReadonlySet<number>>>;
+  readonly occupationLawsByController: Readonly<
+    Record<string, ReadonlyMap<number, string>>
+  >;
+}
+
 type CountryIndustry = {
   militaryFactories: number;
   civilianFactories: number;
@@ -272,7 +279,7 @@ const OCCUPATION_LAW_LOCAL_FACTORY_MODIFIERS: Record<string, number> = {
 
 function occupationLocalFactoryFactor(
   state: IndustryState,
-  occupationLaws: Record<string, Map<number, string>>,
+  occupationLaws: IndustryAnalysisContext['occupationLawsByController'],
 ): number {
   const compliance = state.compliancePercent / 100;
   const law = occupationLaws[state.controller]?.get(state.id);
@@ -366,10 +373,11 @@ type OccupiedIndustryGroup = {
   hasMilitaryDamage: boolean;
 };
 
-function calculateOccupiedIndustryByController(
+export function calculateOccupiedIndustryByController(
   industryStates: IndustryState[],
   countriesBlock: string,
   health: 'level' | 'healthy' = 'level',
+  industryContext?: IndustryAnalysisContext,
 ): {
   civilian: Record<string, number>;
   military: Record<string, number>;
@@ -377,8 +385,8 @@ function calculateOccupiedIndustryByController(
   ownedMilitary: Record<string, number>;
   transferableMilitary: Record<string, number>;
 } {
-  const coresByTag = parseCoresByTag(countriesBlock);
-  const occupationLaws = parseOccupationLawsByController(countriesBlock);
+  const { coresByTag, occupationLawsByController: occupationLaws } =
+    industryContext ?? buildIndustryAnalysisContext(countriesBlock);
   const groupsByController: Record<
     string,
     Record<string, OccupiedIndustryGroup>
@@ -1122,13 +1130,23 @@ function parseCoresByTag(countriesBlock: string): Record<string, Set<number>> {
 
   return result;
 }
-function calculateOwnedCivilianFactoriesByController(
+export function buildIndustryAnalysisContext(
+  countriesBlock: string,
+): IndustryAnalysisContext {
+  return {
+    coresByTag: parseCoresByTag(countriesBlock),
+    occupationLawsByController: parseOccupationLawsByController(countriesBlock),
+  };
+}
+
+export function calculateOwnedCivilianFactoriesByController(
   industryStates: IndustryState[],
   countriesBlock: string,
   health: 'level' | 'healthy' = 'level',
+  industryContext?: IndustryAnalysisContext,
 ): Record<string, number> {
-  const coresByTag = parseCoresByTag(countriesBlock);
-  const occupationLaws = parseOccupationLawsByController(countriesBlock);
+  const { coresByTag, occupationLawsByController: occupationLaws } =
+    industryContext ?? buildIndustryAnalysisContext(countriesBlock);
 
   const result: Record<string, number> = {};
 
@@ -1158,13 +1176,16 @@ function calculateOwnedCivilianFactoriesByController(
   return result;
 }
 
-function calculateAvailableCivilianByController(
+export function calculateAvailableCivilianByController(
   industryStates: IndustryState[],
   countriesBlock: string,
+  industryContext?: IndustryAnalysisContext,
 ): Record<string, number> {
   const cleanByController: Record<string, number> = {};
   const occupiedRawByController: Record<string, number> = {};
-  const occupationLaws = parseOccupationLawsByController(countriesBlock);
+  const occupationLaws =
+    industryContext?.occupationLawsByController ??
+    parseOccupationLawsByController(countriesBlock);
 
   for (const state of industryStates) {
     if (state.civilianFactories <= 0) {
@@ -1202,14 +1223,15 @@ function calculateAvailableCivilianByController(
   return result;
 }
 
-function calculateEffectiveOwnMilitaryFactoriesByController(
+export function calculateEffectiveOwnMilitaryFactoriesByController(
   industryStates: IndustryState[],
   countriesBlock: string,
   health: 'level' | 'healthy' = 'level',
+  industryContext?: IndustryAnalysisContext,
 ): Record<string, number> {
   const result: Record<string, number> = {};
-  const coresByTag = parseCoresByTag(countriesBlock);
-  const occupationLaws = parseOccupationLawsByController(countriesBlock);
+  const { coresByTag, occupationLawsByController: occupationLaws } =
+    industryContext ?? buildIndustryAnalysisContext(countriesBlock);
   for (const state of industryStates) {
     const factories =
       health === 'level'
@@ -1614,15 +1636,21 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     }
   }
 
+  const industryContext = countriesBlock
+    ? buildIndustryAnalysisContext(countriesBlock)
+    : undefined;
   if (countriesBlock) {
     const occupiedIndustry = calculateOccupiedIndustryByController(
       industryStates,
       countriesBlock,
+      'level',
+      industryContext,
     );
     const healthyOccupiedIndustry = calculateOccupiedIndustryByController(
       industryStates,
       countriesBlock,
       'healthy',
+      industryContext,
     );
     countryIndustryByTag = parseCountryIndustryByTag(countriesBlock);
     occupiedMilFacByController = { ...occupiedIndustry.military };
@@ -1657,11 +1685,14 @@ export function analyzeSave(filePath: string): AnalyzeResult {
     ownedCivByController = calculateOwnedCivilianFactoriesByController(
       industryStates,
       countriesBlock,
+      'level',
+      industryContext,
     );
     healthyOwnedCivByController = calculateOwnedCivilianFactoriesByController(
       industryStates,
       countriesBlock,
       'healthy',
+      industryContext,
     );
     for (const [tag, factories] of Object.entries(
       occupiedIndustry.ownedCivilian,
@@ -1684,7 +1715,11 @@ export function analyzeSave(filePath: string): AnalyzeResult {
   }
 
   const availableCivilianByTag = countriesBlock
-    ? calculateAvailableCivilianByController(industryStates, countriesBlock)
+    ? calculateAvailableCivilianByController(
+        industryStates,
+        countriesBlock,
+        industryContext,
+      )
     : {};
 
   const subjectCivByTag = countriesBlock
@@ -1711,6 +1746,8 @@ export function analyzeSave(filePath: string): AnalyzeResult {
       ? calculateEffectiveOwnMilitaryFactoriesByController(
           industryStates,
           countriesBlock,
+          'level',
+          industryContext,
         )
       : {};
   if (countriesBlock && industryStates.length > 0) {
@@ -1719,6 +1756,7 @@ export function analyzeSave(filePath: string): AnalyzeResult {
         industryStates,
         countriesBlock,
         'healthy',
+        industryContext,
       );
     for (const [tag, factories] of Object.entries(
       ownedOccupiedMilByController,
