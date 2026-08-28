@@ -2228,6 +2228,12 @@ button {
   cursor: pointer;
 }
 
+.analyzer-save-row[aria-disabled="true"],
+.analyzer-save-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .analyzer-save-meta {
   color: var(--muted);
   font-size: 12px;
@@ -2252,6 +2258,11 @@ button {
 }
 
 .analyzer-status.loading {
+  border-left-color: var(--accent) !important;
+  color: var(--ink);
+}
+
+.analyzer-status.busy {
   border-left-color: var(--accent) !important;
   color: var(--ink);
 }

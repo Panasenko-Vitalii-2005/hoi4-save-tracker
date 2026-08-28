@@ -4,6 +4,7 @@ import React, {
   useMemo,
   useEffect,
   useCallback,
+  useRef,
 } from "react";
 import type { AnalyzeResult, CountryStats } from "@/types";
 import { SummaryGrid } from "@/components/ui/SummaryGrid";
@@ -106,10 +107,13 @@ function AnalyzerViewContext({
 function SaveBrowser({
   onSelect,
   onUpload,
+  analyzing,
 }: {
   onSelect: (p: string, n: string) => void;
   onUpload: (file: File) => void;
+  analyzing: boolean;
 }) {
+  const fileInput = useRef<HTMLInputElement>(null);
   const [dir, setDir] = useState("");
   const [files, setFiles] = useState<SaveFile[]>([]);
   const [page, setPage] = useState(1);
@@ -145,24 +149,29 @@ function SaveBrowser({
   };
 
   return (
-    <section className="panel analyzer-save-browser">
+    <section className="panel analyzer-save-browser" aria-busy={analyzing}>
       <div className="panel-head analyzer-save-browser-head">
         <h2>Save Files</h2>
-        <label
+        <button
           className="button button-primary analyzer-save-action"
+          disabled={analyzing}
+          onClick={() => fileInput.current?.click()}
         >
           Upload .hoi4
-          <input
-            type="file"
-            accept=".hoi4"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onUpload(file);
-              event.target.value = "";
-            }}
-          />
-        </label>
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".hoi4"
+          aria-label="Upload .hoi4 save"
+          disabled={analyzing}
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file && !analyzing) onUpload(file);
+            event.target.value = "";
+          }}
+        />
         <button
           className="button button-secondary analyzer-save-action"
           onClick={loadDir}
@@ -242,13 +251,16 @@ function SaveBrowser({
                     <tr
                       key={f.path}
                       className="analyzer-save-row"
-                      onClick={() => onSelect(f.path, f.name)}
-                      tabIndex={0}
+                      onClick={() => {
+                        if (!analyzing) onSelect(f.path, f.name);
+                      }}
+                      tabIndex={analyzing ? -1 : 0}
+                      aria-disabled={analyzing}
                       aria-label={`Analyze ${f.name}`}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
-                          onSelect(f.path, f.name);
+                          if (!analyzing) onSelect(f.path, f.name);
                         }
                       }}
                     >
@@ -282,9 +294,10 @@ function SaveBrowser({
 export function AnalyzerTab() {
   const BASE = usePlotTheme();
   const [status, setStatus] = useState<{
-    type: "idle" | "loading" | "ok" | "error";
+    type: "idle" | "loading" | "ok" | "error" | "busy";
     msg: string;
   }>({ type: "idle", msg: "" });
+  const analysisInFlight = useRef(false);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [prevResult, setPrevResult] = useState<AnalyzeResult | null>(null);
   const [sortCol, setSortCol] = useState<SortCol>("manpowerInField");
@@ -318,8 +331,13 @@ export function AnalyzerTab() {
     fileName: string,
     uploadedFile?: File,
   ) => {
-    setStatus({ type: "loading", msg: `Parsing ${fileName}… 10–20 s` });
-    setResult(null);
+    // Guard synchronously: multiple events can arrive before React rerenders.
+    if (analysisInFlight.current) return;
+    analysisInFlight.current = true;
+    setStatus({
+      type: "loading",
+      msg: `${uploadedFile ? "Uploading and analyzing" : "Analyzing"} ${fileName}…${result ? " Previous results remain visible until the new analysis succeeds." : ""}`,
+    });
     try {
       const formData = new FormData();
       if (uploadedFile) formData.append("file", uploadedFile);
@@ -333,38 +351,47 @@ export function AnalyzerTab() {
               body: JSON.stringify({ path: filePath }),
             },
       );
-      const text = await resp.text();
-      let data: AnalyzeResult;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(
-          `Non-JSON (${resp.status}): ${text.slice(0, 200) || "(empty)"}`,
-        );
+      if (resp.status === 503) {
+        setStatus({
+          type: "busy",
+          msg: "The analyzer is busy with another save. Please try again in a few seconds.",
+        });
+        return;
       }
-      if (!resp.ok)
-        throw new Error(
-          (data as unknown as { error?: string }).error ??
-            `HTTP ${resp.status}`,
-        );
-      setPrevResult(result);
-      setResult(data);
-      setAnalysisView("overview");
+      if (!resp.ok) {
+        // Error bodies may contain server paths/stacks, so never render them.
+        setStatus({
+          type: "error",
+          msg:
+            resp.status === 413
+              ? "This save is too large to upload. Please choose a smaller file."
+              : resp.status === 404
+                ? "The selected save is no longer available. Refresh the list or upload it again."
+                : "Could not analyze the save. It may be unsupported or damaged. Please try again.",
+        });
+        return;
+      }
+      const data = (await resp.json()) as AnalyzeResult;
       const initialEqCountry =
         Object.keys(data.equipment_by_country).sort()[0] ??
         data.by_country[0]?.tag ??
         "";
+      setPrevResult(result);
+      setResult(data);
+      setAnalysisView("overview");
       setEqCountry(initialEqCountry);
       setShowEq(true);
       setStatus({
         type: "ok",
         msg: `✓ ${fileName}  —  ${data.parse_seconds}s · ${data.file_size_mb} MB · ${data.game_date}`,
       });
-    } catch (e) {
+    } catch {
       setStatus({
         type: "error",
-        msg: e instanceof Error ? e.message : String(e),
+        msg: "Could not analyze the save. Please try again.",
       });
+    } finally {
+      analysisInFlight.current = false;
     }
   };
 
@@ -622,19 +649,24 @@ export function AnalyzerTab() {
   return (
     <div className="analyzer-shell">
       <SaveBrowser
+        analyzing={status.type === "loading"}
         onSelect={analyze}
         onUpload={(file) => analyze("", file.name, file)}
       />
 
-      {status.type !== "idle" && (
-        <div
-          className={`panel analyzer-status ${status.type}`}
-          style={{ padding: "14px 20px" }}
-        >
-          {status.type === "loading" && <span className="spinner" />}
-          {status.msg}
-        </div>
-      )}
+      <div role="status" aria-live="polite" aria-atomic="true">
+        {status.type !== "idle" && (
+          <div
+            className={`panel analyzer-status ${status.type}`}
+            style={{ padding: "14px 20px" }}
+          >
+            {status.type === "loading" && (
+              <span className="spinner" aria-hidden="true" />
+            )}
+            {status.msg}
+          </div>
+        )}
+      </div>
 
       {result && (
         <>

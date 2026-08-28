@@ -29,6 +29,7 @@ function avg(vals: (number | null | undefined)[]) {
 
 export default function App() {
   const [tab, setTab] = useState<TabId>('chart')
+  const [analyzerOpened, setAnalyzerOpened] = useState(false)
   const { records, loading, reload } = useRecords()
   const [theme, toggleTheme] = useTheme()
   const latest = records.at(-1)
@@ -65,11 +66,18 @@ export default function App() {
           { label: 'Avg CPU', value: fmtNum(avg(records.map(r => r.cpu_avg))), sub: 'during save' },
         ]} />
 
-        <TabBar active={tab} onChange={setTab} />
+        <TabBar active={tab} onChange={(nextTab) => {
+          if (nextTab === 'analyzer') setAnalyzerOpened(true)
+          setTab(nextTab)
+        }} />
 
         {tab === 'chart'    && <ChartTab records={records} />}
         {tab === 'soldiers' && <SoldiersTab />}
-        {tab === 'analyzer' && <AnalyzerTab />}
+        {analyzerOpened && (
+          <div hidden={tab !== 'analyzer'}>
+            <AnalyzerTab />
+          </div>
+        )}
       </div>
     </>
   )

@@ -1,0 +1,290 @@
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { AnalyzerTab } from "../src/components/analyzer/AnalyzerTab";
+import App from "../src/App";
+
+// Test the actual request UI; plotting and the unrelated telemetry request are not needed.
+vi.mock("react-plotly.js", () => ({ default: () => null }));
+vi.mock("@/hooks/useRecords", () => ({
+  useRecords: () => ({ records: [], loading: false, reload: () => {} }),
+}));
+
+function snapshot(gameDate = "1944.5.1") {
+  return {
+    game_date: gameDate,
+    parse_seconds: 0.01,
+    file_size_mb: 1,
+    active_countries: 0,
+    totals: {
+      divisions: 0,
+      ships: 0,
+      aircraft: 0,
+      manpowerInField: 0,
+      effectiveMilitaryFactories: 0,
+      effectiveCivilianFactories: 0,
+      effectiveDockyards: 0,
+    },
+    by_country: [],
+    equipment_by_country: {},
+    world_equipment: {},
+    stockpileSummaries: [],
+    militaryProductionSummaries: [],
+    divisionSummaries: [],
+    divisionTemplateCatalog: [],
+    divisionEquipmentCatalog: [],
+    armyHierarchySummaries: [],
+    navalLosses: [],
+    navalLossSummaries: [],
+    navalKills: [],
+    navalKillSummaries: [],
+    navalKillerShipSummaries: [],
+  };
+}
+
+describe("analysis request lifecycle", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  let requests: Array<{
+    init?: RequestInit;
+    resolve: (response: Response) => void;
+    reject: (reason: Error) => void;
+  }>;
+
+  beforeEach(() => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    requests = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/saves")
+          return Promise.resolve(
+            Response.json({
+              dir: "/saves",
+              exists: true,
+              files: ["first.hoi4", "second.hoi4"].map((name) => ({
+                name,
+                path: `/saves/${name}`,
+                size_mb: 1,
+                modified: "2026-01-01T00:00:00Z",
+              })),
+            }),
+          );
+        expect(url).toBe("/api/analyze");
+        return new Promise<Response>((resolve, reject) =>
+          requests.push({ init, resolve, reject }),
+        );
+      }),
+    );
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  });
+
+  const render = async (app = false) => {
+    await act(async () => root.render(app ? <App /> : <AnalyzerTab />));
+  };
+  const row = (name = "first.hoi4") =>
+    container.querySelector<HTMLTableRowElement>(
+      `[aria-label="Analyze ${name}"]`,
+    )!;
+  const picker = () =>
+    container.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const button = (name: string) =>
+    [...container.querySelectorAll("button")].find(
+      (element) => element.textContent === name,
+    )!;
+  const status = () => container.querySelector('[role="status"]')!;
+  const date = () =>
+    container.querySelector(".analyzer-view-date strong")?.textContent;
+  const start = async () => {
+    await act(async () => row().click());
+  };
+  const respond = async (index: number, body: unknown, code = 201) => {
+    await act(async () =>
+      requests[index].resolve(Response.json(body, { status: code })),
+    );
+  };
+  const chooseFile = () => {
+    Object.defineProperty(picker(), "files", {
+      configurable: true,
+      value: [new File(["HOI4txt"], "upload.hoi4")],
+    });
+    picker().dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  test("starts idle with enabled controls and a persistent polite status region", async () => {
+    await render();
+    expect(status().textContent).toBe("");
+    expect(status().getAttribute("aria-live")).toBe("polite");
+    expect(button("Upload .hoi4").disabled).toBe(false);
+    expect(picker().disabled).toBe(false);
+    expect(row().tabIndex).toBe(0);
+    expect(requests).toHaveLength(0);
+  });
+
+  test("shows indeterminate analysis, disables input/rows and submits the path", async () => {
+    await render();
+    await start();
+    expect(status().textContent).toContain("Analyzing first.hoi4…");
+    expect(status().textContent).not.toMatch(/\d+\s*[–%-]/);
+    expect(
+      status().querySelector(".spinner")?.getAttribute("aria-hidden"),
+    ).toBe("true");
+    expect(button("Upload .hoi4").disabled).toBe(true);
+    expect(picker().disabled).toBe(true);
+    expect(row().getAttribute("aria-disabled")).toBe("true");
+    expect(row().tabIndex).toBe(-1);
+    expect(requests[0].init?.body).toBe(
+      JSON.stringify({ path: "/saves/first.hoi4" }),
+    );
+  });
+
+  test("guards rapid clicks, Enter, Space and upload events before rerender", async () => {
+    await render();
+    await act(async () => {
+      row().click();
+      row().click();
+      for (const key of ["Enter", " "])
+        row().dispatchEvent(
+          new KeyboardEvent("keydown", { key, bubbles: true }),
+        );
+      chooseFile();
+    });
+    expect(requests).toHaveLength(1);
+    await act(async () => {
+      row("second.hoi4").click();
+      chooseFile();
+    });
+    expect(requests).toHaveLength(1);
+  });
+
+  test.each(["Enter", " "])("keyboard %j starts one analysis", async (key) => {
+    await render();
+    await act(async () =>
+      row().dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })),
+    );
+    expect(requests).toHaveLength(1);
+  });
+
+  test("uploads multipart, prevents replacement and permits retry of the same file", async () => {
+    await render();
+    await act(async () => chooseFile());
+    expect(status().textContent).toContain(
+      "Uploading and analyzing upload.hoi4",
+    );
+    const form = requests[0].init?.body as FormData;
+    expect((form.get("file") as File).name).toBe("upload.hoi4");
+    await act(async () => chooseFile());
+    expect(requests).toHaveLength(1);
+    await respond(0, {}, 503);
+    await act(async () => chooseFile());
+    expect(requests).toHaveLength(2);
+    await respond(1, snapshot());
+    expect(date()).toBe("1944.5.1");
+    expect(picker().disabled).toBe(false);
+  });
+
+  test("success clears loading, renders the result and reenables controls", async () => {
+    await render();
+    await start();
+    await respond(0, snapshot());
+    expect(date()).toBe("1944.5.1");
+    expect(status().textContent).toContain("✓ first.hoi4");
+    expect(status().querySelector(".spinner")).toBeNull();
+    expect(button("Upload .hoi4").disabled).toBe(false);
+    expect(row().getAttribute("aria-disabled")).toBe("false");
+  });
+
+  test("retains previous results while pending and replaces them only on success", async () => {
+    await render();
+    await start();
+    await respond(0, snapshot());
+    await start();
+    expect(date()).toBe("1944.5.1");
+    expect(status().textContent).toContain("Previous results remain visible");
+    await respond(1, snapshot("1944.6.1"));
+    expect(date()).toBe("1944.6.1");
+    expect(container.textContent).toContain("vs previous save");
+    expect(status().textContent).not.toContain(
+      "Previous results remain visible",
+    );
+  });
+
+  test("503 uses a dedicated message even for a non-JSON body and allows retry", async () => {
+    await render();
+    await start();
+    await act(async () =>
+      requests[0].resolve(
+        new Response("Worker C:/private/save", { status: 503 }),
+      ),
+    );
+    expect(status().textContent).toContain("busy with another save");
+    expect(status().textContent).not.toMatch(/Worker|private/);
+    expect(button("Upload .hoi4").disabled).toBe(false);
+    await start();
+    expect(status().textContent).not.toContain("busy");
+    await respond(1, snapshot());
+    expect(status().textContent).toContain("✓");
+  });
+
+  test.each(["server", "network", "non-json"])(
+    "%s failure is safe, retains results and allows retry",
+    async (kind) => {
+      await render();
+      await start();
+      await respond(0, snapshot());
+      await start();
+      await act(async () => {
+        const secret = "Worker crashed at C:/private/tmp/save.hoi4\nSTACK";
+        if (kind === "network") requests[1].reject(new Error(secret));
+        else if (kind === "non-json") requests[1].resolve(new Response(secret));
+        else
+          requests[1].resolve(
+            Response.json({ message: secret }, { status: 500 }),
+          );
+      });
+      expect(status().textContent).toContain("Could not analyze the save.");
+      expect(status().textContent).not.toMatch(/Worker|private|STACK/);
+      expect(date()).toBe("1944.5.1");
+      expect(button("Upload .hoi4").disabled).toBe(false);
+      await start();
+      await respond(2, snapshot("1944.6.1"));
+      expect(date()).toBe("1944.6.1");
+      expect(status().textContent).not.toContain("Could not");
+    },
+  );
+
+  test.each([
+    [404, "no longer available"],
+    [413, "too large"],
+  ])("HTTP %i has safe specific wording", async (code, text) => {
+    await render();
+    await start();
+    await respond(0, { message: "private path" }, code as number);
+    expect(status().textContent).toContain(text);
+    expect(status().textContent).not.toContain("private path");
+  });
+
+  test("switching app tabs cannot reset an in-flight analysis or its guard", async () => {
+    await render(true);
+    await act(async () => button("Save Analyzer").click());
+    await start();
+    await act(async () => button("Chart").click());
+    expect(
+      container.querySelector(".analyzer-shell")?.parentElement?.hidden,
+    ).toBe(true);
+    await act(async () => button("Save Analyzer").click());
+    await act(async () => row().click());
+    expect(requests).toHaveLength(1);
+    expect(button("Upload .hoi4").disabled).toBe(true);
+    await respond(0, snapshot());
+    expect(date()).toBe("1944.5.1");
+  });
+});
