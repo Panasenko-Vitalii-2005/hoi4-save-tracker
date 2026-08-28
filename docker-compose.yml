@@ -7,6 +7,7 @@ services:
       PORT: 3001
       HOI4_SAVES_DIR: /app/saves
       HOI4_RECENT_ANALYSES_FILE: /app/data/recent-analyses.json
+      HOI4_ANALYSIS_RESULTS_DIR: /app/data/analysis-results
     volumes:
       - ./saves:/app/saves:ro
       - analysis-history:/app/data

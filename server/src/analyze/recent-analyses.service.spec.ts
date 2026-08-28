@@ -5,14 +5,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
 import { RecentAnalysesService } from './recent-analyses.service';
+import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
 
 describe('RecentAnalysesService', () => {
   const originalFile = process.env.HOI4_RECENT_ANALYSES_FILE;
   const originalLimit = process.env.HOI4_RECENT_ANALYSES_LIMIT;
+  const originalResults = process.env.HOI4_ANALYSIS_RESULTS_DIR;
+  const originalBytes = process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
   let directory: string;
   let file: string;
   let result: AnalyzeResult;
   let history: RecentAnalysesService;
+  let results: PersistedAnalysisResultService;
   let warn: jest.SpyInstance;
   const input = (name: string, fileName = `${name}.hoi4`) => ({
     hash: createHash('sha256').update(name).digest('hex'),
@@ -24,12 +28,15 @@ describe('RecentAnalysesService', () => {
     directory = await files.mkdtemp(join(tmpdir(), 'hoi4-recent-'));
     file = join(directory, 'data', 'recent.json');
     process.env.HOI4_RECENT_ANALYSES_FILE = file;
+    process.env.HOI4_ANALYSIS_RESULTS_DIR = join(directory, 'results');
+    delete process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
     delete process.env.HOI4_RECENT_ANALYSES_LIMIT;
     const save = join(directory, 'fixture.hoi4');
     await files.writeFile(save, 'HOI4txt\ndate="1944.5.1.2"\ncountries={}');
     result = analyzeSave(save);
     warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
-    history = new RecentAnalysesService();
+    results = new PersistedAnalysisResultService();
+    history = new RecentAnalysesService(results);
     await history.list();
   });
 
@@ -42,6 +49,12 @@ describe('RecentAnalysesService', () => {
     if (originalLimit === undefined)
       delete process.env.HOI4_RECENT_ANALYSES_LIMIT;
     else process.env.HOI4_RECENT_ANALYSES_LIMIT = originalLimit;
+    if (originalResults === undefined)
+      delete process.env.HOI4_ANALYSIS_RESULTS_DIR;
+    else process.env.HOI4_ANALYSIS_RESULTS_DIR = originalResults;
+    if (originalBytes === undefined)
+      delete process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
+    else process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = originalBytes;
   });
 
   test('starts quietly empty when no persistence file exists', async () => {
@@ -64,6 +77,7 @@ describe('RecentAnalysesService', () => {
         divisionCount: 0,
         shipCount: 0,
         navalLossCount: 0,
+        hasPersistedResult: true,
       },
     ]);
     expect(new Date(items[0].analyzedAt).toISOString()).toBe(
@@ -74,7 +88,16 @@ describe('RecentAnalysesService', () => {
     expect(stored).not.toMatch(
       /private|upload|sourceOffset|parse_seconds|by_country|navalLosses|worker|stack|HOI4txt/,
     );
-    expect(await new RecentAnalysesService().list()).toEqual(items);
+    expect(
+      await new RecentAnalysesService(
+        new PersistedAnalysisResultService(),
+      ).list(),
+    ).toEqual(items);
+    expect(
+      await new RecentAnalysesService(
+        new PersistedAnalysisResultService(),
+      ).getResult(input('a').hash),
+    ).toEqual(result);
     expect(await files.readdir(join(directory, 'data'))).toEqual([
       'recent.json',
     ]);
@@ -114,7 +137,7 @@ describe('RecentAnalysesService', () => {
 
   test('configured limit keeps newest entries, also on reload', async () => {
     process.env.HOI4_RECENT_ANALYSES_LIMIT = '2';
-    history = new RecentAnalysesService();
+    history = new RecentAnalysesService(results);
     for (const name of ['a', 'b', 'c'])
       await history.record(input(name), result);
     expect((await history.list()).map((item) => item.hash)).toEqual([
@@ -122,14 +145,16 @@ describe('RecentAnalysesService', () => {
       input('b').hash,
     ]);
     process.env.HOI4_RECENT_ANALYSES_LIMIT = '1';
-    expect(await new RecentAnalysesService().list()).toHaveLength(1);
+    expect(await results.exists(input('a').hash)).toBe(false);
+    expect(await new RecentAnalysesService(results).list()).toHaveLength(1);
+    expect(await results.exists(input('b').hash)).toBe(false);
   });
 
   test.each([undefined, '', '0', '-1', '1.5', 'abc', 'Infinity'])(
     'uses bounded default 20 for missing/invalid limit %j',
     async (limit) => {
       if (limit !== undefined) process.env.HOI4_RECENT_ANALYSES_LIMIT = limit;
-      history = new RecentAnalysesService();
+      history = new RecentAnalysesService(results);
       await Promise.all(
         Array.from({ length: 22 }, (_, i) =>
           history.record(input(String(i)), result),
@@ -147,12 +172,12 @@ describe('RecentAnalysesService', () => {
     async (contents) => {
       await files.mkdir(join(directory, 'data'));
       await files.writeFile(file, contents);
-      history = new RecentAnalysesService();
+      history = new RecentAnalysesService(results);
       expect(await history.list()).toEqual([]);
       expect(await history.list()).toEqual([]);
       expect(warn).toHaveBeenCalledTimes(1);
       await history.record(input('a'), result);
-      expect(await new RecentAnalysesService().list()).toHaveLength(1);
+      expect(await new RecentAnalysesService(results).list()).toHaveLength(1);
     },
   );
 
@@ -163,7 +188,7 @@ describe('RecentAnalysesService', () => {
       file,
       JSON.stringify({ items: [{ ...item, temporaryPath: 'SECRET', result }] }),
     );
-    history = new RecentAnalysesService();
+    history = new RecentAnalysesService(results);
     const items = await history.list();
     expect(items[0]).toEqual(item);
     items[0].fileName = 'mutated';
@@ -179,19 +204,27 @@ describe('RecentAnalysesService', () => {
     expect(items.map((item) => item.hash)).toEqual(
       ['d', 'c', 'b', 'a'].map((name) => input(name).hash),
     );
-    expect(await new RecentAnalysesService().list()).toEqual(items);
+    expect(await new RecentAnalysesService(results).list()).toEqual(items);
   });
 
   test('failed atomic replacement leaves old store intact and does not poison later writes', async () => {
     await history.record(input('a'), result);
     const before = await files.readFile(file, 'utf8');
+    const rename = files.rename;
     const replace = jest
       .spyOn(files, 'rename')
-      .mockRejectedValue(new Error('Disk unavailable'));
+      .mockImplementation((from, to) =>
+        to === file
+          ? Promise.reject(new Error('Disk unavailable'))
+          : rename(from, to),
+      );
     await expect(history.record(input('b'), result)).resolves.toBeUndefined();
     await history.record(input('c'), result);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(await files.readFile(file, 'utf8')).toBe(before);
+    expect(await files.readdir(join(directory, 'results'))).toEqual([
+      `${input('a').hash}.json.gz`,
+    ]);
     expect(await files.readdir(join(directory, 'data'))).toEqual([
       'recent.json',
     ]);
@@ -206,8 +239,85 @@ describe('RecentAnalysesService', () => {
   test('clear persists an empty history and subsequent analysis can add metadata', async () => {
     await history.record(input('a'), result);
     await history.clear();
-    expect(await new RecentAnalysesService().list()).toEqual([]);
+    expect(await new RecentAnalysesService(results).list()).toEqual([]);
+    expect(await files.readdir(join(directory, 'results'))).toEqual([]);
     await history.record(input('b'), result);
     expect(await history.list()).toHaveLength(1);
+  });
+
+  test('legacy metadata stays visible without Open until re-analysis', async () => {
+    await history.record(input('a'), result);
+    const legacy = { ...(await history.list())[0] } as Record<string, unknown>;
+    delete legacy.hasPersistedResult;
+    await results.delete(input('a').hash);
+    await files.writeFile(file, JSON.stringify({ items: [legacy] }));
+    history = new RecentAnalysesService(results);
+    expect((await history.list())[0]).toMatchObject({
+      hash: input('a').hash,
+      hasPersistedResult: false,
+    });
+    expect(await history.getResult(input('a').hash)).toBeNull();
+    await history.record(input('a'), result);
+    expect((await history.list())[0].hasPersistedResult).toBe(true);
+  });
+
+  test('missing results reconcile on load and list without removing metadata', async () => {
+    await history.record(input('a'), result);
+    await history.record(input('b'), result);
+    await results.delete(input('a').hash);
+    history = new RecentAnalysesService(results);
+    expect(
+      (await history.list()).find((item) => item.hash === input('a').hash)
+        ?.hasPersistedResult,
+    ).toBe(false);
+    await results.delete(input('b').hash);
+    expect(
+      (await history.list()).every((item) => !item.hasPersistedResult),
+    ).toBe(true);
+    expect(await history.list()).toHaveLength(2);
+  });
+
+  test('corrupt result becomes unavailable and metadata remains false after restart', async () => {
+    await history.record(input('a'), result);
+    await files.writeFile(
+      join(directory, 'results', `${input('a').hash}.json.gz`),
+      'corrupt',
+    );
+    expect(await history.getResult(input('a').hash)).toBeNull();
+    expect((await history.list())[0].hasPersistedResult).toBe(false);
+    expect(
+      (
+        await new RecentAnalysesService(
+          new PersistedAnalysisResultService(),
+        ).list()
+      )[0].hasPersistedResult,
+    ).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  test('byte eviction masks availability but retains recent metadata', async () => {
+    await history.record(input('a'), result);
+    const size = (
+      await files.stat(join(directory, 'results', `${input('a').hash}.json.gz`))
+    ).size;
+    process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
+    results = new PersistedAnalysisResultService();
+    history = new RecentAnalysesService(results);
+    await history.record(input('b'), result);
+    expect(
+      (await history.list()).map((item) => item.hasPersistedResult),
+    ).toEqual([true, false]);
+    expect(await results.exists(input('a').hash)).toBe(false);
+  });
+
+  test('unavailable result directory does not prevent recording metadata with false availability', async () => {
+    await files.writeFile(join(directory, 'results'), 'not a directory');
+    await expect(history.record(input('a'), result)).resolves.toBeUndefined();
+    expect(await history.list()).toEqual([
+      expect.objectContaining({
+        hash: input('a').hash,
+        hasPersistedResult: false,
+      }),
+    ]);
   });
 });

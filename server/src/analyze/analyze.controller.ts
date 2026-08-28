@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
   Post,
+  Param,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -18,6 +19,7 @@ import { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.servic
 import { LocalSavePathError, resolveLocalSavePath } from '../saves/local-saves';
 import { RecentAnalysesService } from './recent-analyses.service';
 import type { Response } from 'express';
+import { normalizeAnalysisHash } from './persisted-analysis-result.service';
 
 interface AnalyzeRequest {
   path: string;
@@ -57,6 +59,20 @@ export class AnalyzeController {
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
+  }
+
+  @Get('recent/:hash/result')
+  async openResult(@Param('hash') hash: string) {
+    const key = normalizeAnalysisHash(hash);
+    if (!key)
+      throw new HttpException('Invalid analysis hash', HttpStatus.BAD_REQUEST);
+    const result = await this.history.getResult(key);
+    if (!result)
+      throw new HttpException(
+        'Saved analysis result is unavailable',
+        HttpStatus.NOT_FOUND,
+      );
+    return result;
   }
 
   @Post()

@@ -6,7 +6,7 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import type { AnalyzeResult, CountryStats } from "@/types";
+import type { AnalyzeResult, CountryStats, RecentAnalysis } from "@/types";
 import { SummaryGrid } from "@/components/ui/SummaryGrid";
 import {
   countryFullName,
@@ -299,6 +299,10 @@ export function AnalyzerTab() {
     msg: string;
   }>({ type: "idle", msg: "" });
   const analysisInFlight = useRef(false);
+  const resultRequestVersion = useRef(0);
+  const openingRequest = useRef<AbortController | null>(null);
+  const [openingHash, setOpeningHash] = useState<string | null>(null);
+  const [openError, setOpenError] = useState("");
   const [historyVersion, setHistoryVersion] = useState(0);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [prevResult, setPrevResult] = useState<AnalyzeResult | null>(null);
@@ -328,6 +332,65 @@ export function AnalyzerTab() {
     string | null
   >(null);
 
+  useEffect(
+    () => () => {
+      resultRequestVersion.current++;
+      openingRequest.current?.abort();
+      openingRequest.current = null;
+    },
+    [],
+  );
+
+  const applyResult = (data: AnalyzeResult) => {
+    const initialEqCountry =
+      Object.keys(data.equipment_by_country).sort()[0] ??
+      data.by_country[0]?.tag ??
+      "";
+    setPrevResult(result);
+    setResult(data);
+    setAnalysisView("overview");
+    setEqCountry(initialEqCountry);
+    setShowEq(true);
+  };
+
+  const openResult = async (item: RecentAnalysis) => {
+    // Separate from the upload lock; a newer analysis can supersede this read.
+    if (openingRequest.current || analysisInFlight.current) return;
+    const controller = new AbortController();
+    openingRequest.current = controller;
+    const version = ++resultRequestVersion.current;
+    setOpeningHash(item.hash);
+    setOpenError("");
+    try {
+      const response = await fetch(
+        `/api/analyze/recent/${encodeURIComponent(item.hash)}/result`,
+        { signal: controller.signal },
+      );
+      if (version !== resultRequestVersion.current) return;
+      if (response.status === 404 || response.status === 410) {
+        setOpenError("The saved analysis result is no longer available.");
+        setHistoryVersion((value) => value + 1);
+        return;
+      }
+      if (!response.ok) throw new Error("Result unavailable");
+      const data = (await response.json()) as AnalyzeResult;
+      if (version !== resultRequestVersion.current) return;
+      applyResult(data);
+      setStatus({
+        type: "ok",
+        msg: `✓ Opened analysis: ${item.fileName} — ${data.game_date} · Original parse: ${data.parse_seconds}s`,
+      });
+    } catch {
+      if (version === resultRequestVersion.current)
+        setOpenError("Could not open the saved analysis. Please try again.");
+    } finally {
+      if (openingRequest.current === controller) {
+        openingRequest.current = null;
+        setOpeningHash(null);
+      }
+    }
+  };
+
   const analyze = async (
     filePath: string,
     fileName: string,
@@ -336,6 +399,11 @@ export function AnalyzerTab() {
     // Guard synchronously: multiple events can arrive before React rerenders.
     if (analysisInFlight.current) return;
     analysisInFlight.current = true;
+    resultRequestVersion.current++;
+    openingRequest.current?.abort();
+    openingRequest.current = null;
+    setOpeningHash(null);
+    setOpenError("");
     setStatus({
       type: "loading",
       msg: `${uploadedFile ? "Uploading and analyzing" : "Analyzing"} ${fileName}…${result ? " Previous results remain visible until the new analysis succeeds." : ""}`,
@@ -374,16 +442,8 @@ export function AnalyzerTab() {
         return;
       }
       const data = (await resp.json()) as AnalyzeResult;
-      const initialEqCountry =
-        Object.keys(data.equipment_by_country).sort()[0] ??
-        data.by_country[0]?.tag ??
-        "";
-      setPrevResult(result);
-      setResult(data);
+      applyResult(data);
       setHistoryVersion((value) => value + 1);
-      setAnalysisView("overview");
-      setEqCountry(initialEqCountry);
-      setShowEq(true);
       setStatus({
         type: "ok",
         msg: `✓ ${fileName}  —  ${data.parse_seconds}s · ${data.file_size_mb} MB · ${data.game_date}`,
@@ -671,7 +731,13 @@ export function AnalyzerTab() {
         )}
       </div>
 
-      <RecentAnalyses refreshVersion={historyVersion} />
+      <RecentAnalyses
+        refreshVersion={historyVersion}
+        onOpen={(item) => void openResult(item)}
+        openingHash={openingHash}
+        openError={openError}
+        analyzing={status.type === "loading"}
+      />
 
       {result && (
         <>

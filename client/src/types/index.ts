@@ -8,6 +8,7 @@ export interface RecentAnalysis {
   divisionCount: number;
   shipCount: number;
   navalLossCount: number;
+  hasPersistedResult: boolean;
 }
 
 export interface SaveRecord {

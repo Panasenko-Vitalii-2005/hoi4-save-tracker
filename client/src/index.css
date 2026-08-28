@@ -441,12 +441,21 @@ select {
 }
 
 .analyzer-recent-table {
-  min-width: 680px;
+  min-width: 800px;
   table-layout: fixed;
 }
 
 .analyzer-recent-table th:first-child {
-  width: 30%;
+  width: 26%;
+}
+
+.analyzer-recent-table .analyzer-recent-action {
+  width: 130px;
+}
+
+.analyzer-recent-action .button {
+  padding: 6px 10px;
+  white-space: nowrap;
 }
 
 .analyzer-recent-table td:first-child {

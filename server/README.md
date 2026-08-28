@@ -115,13 +115,15 @@ The existing analysis response and `parse_seconds` are unchanged.
   This is independent of `HOI4_ANALYSIS_CACHE_ENTRIES`.
 - `GET /api/analyze/recent` returns `{ "items": [...] }` with hash, basename, exact
   byte size, UTC ISO `analyzedAt`, game date, active-country count, division count,
-  ship count and naval-loss count. A typical item is about 300 bytes.
-- `DELETE /api/analyze/recent` clears metadata only. It does not remove saves or
-  evict cached results. A later successful analysis can add an entry again.
+  ship count, naval-loss count and `hasPersistedResult` availability.
+- `DELETE /api/analyze/recent` clears metadata **and durable result files**. It
+  does not remove original saves or evict the independent RAM cache. A later
+  successful analysis (including a cache hit) can add a persisted entry again.
 
-No raw saves, decoded text, full analysis results, temporary paths, stack traces
-or Worker details are persisted. Filenames and campaign counters are local user
-data: keep the configured file private. The current deployment has one shared
+No raw saves, decoded save text, temporary upload paths, stack traces or Worker
+details are persisted. Full analysis results are stored separately as described
+below. Filenames and campaign data are local user data: keep storage private.
+The current deployment has one shared
 local history, not per-user ownership or authentication.
 
 Writes are serialized within one backend process, written to a unique adjacent
@@ -137,16 +139,70 @@ and callers disconnected before successful completion do not create entries.
 Request-specific temporary-file cleanup and shared in-flight analysis remain
 unchanged. A disconnect does not cancel another caller's analysis.
 
-The Analyzer's **Recent Analyses** section is informational, loads independently,
-and refreshes after success. It shows filenames, game dates, locally formatted
-analysis timestamps, divisions and ships. It has no reopen action: select or
-upload the original save to analyze again. History survives process restart;
-full results still disappear with the process-local cache.
+The Analyzer's **Recent Analyses** section loads independently and refreshes after
+success. It shows filenames, game dates, locally formatted timestamps, divisions
+and ships. **Open result** loads a saved analysis without the original save or a
+Worker. Opening has its own loading/error state, guards duplicate clicks and
+replaces the current result only after success. A new upload supersedes a pending
+Open. An unavailable result refreshes history; legacy entries without availability
+remain visible with no Open action until re-analysis.
 
 Compose stores history in the `analysis-history` named volume at
-`/app/data/recent-analyses.json`, surviving container recreation. Removing that
-volume (for example, `docker compose down -v`) removes history. Runtime data is
+`/app/data/recent-analyses.json` and results at `/app/data/analysis-results`, surviving
+container recreation. Removing that volume (for example, `docker compose down -v`)
+removes both history and results. Runtime data is
 excluded from Git and Docker build context; no history is baked into images.
+
+### Durable analysis results
+
+Successful analyses, including RAM-cache hits, persist full JSON-compatible
+`AnalyzeResult` values as gzip-compressed UTF-8 JSON using Node's **async** zlib
+APIs with default compression. One file per validated raw-save SHA-256:
+`<hash>.json.gz`. The versioned envelope is
+`{ formatVersion: 1, hash, savedAt, result }`; the result shape and original
+`parse_seconds` are unchanged. Future incompatible formats must use a new version.
+Raw `.hoi4` files are **not** retained.
+
+- `HOI4_ANALYSIS_RESULTS_DIR`: defaults to `data/analysis-results` relative to the
+  backend working directory (`server/data/analysis-results` in local development).
+  Compose sets `/app/data/analysis-results` in the existing named data volume.
+- `HOI4_ANALYSIS_RESULTS_MAX_BYTES`: positive safe integer, default **134217728**
+  (128 MiB); invalid values fall back to that default. This bounds retained
+  compressed result files independently of the history-count limit. The control
+  result is about 6.55 MiB JSON / 481 KiB gzip; 20 such results need about 9.4 MiB,
+  leaving headroom for larger saves. One in-progress atomic replacement can
+  temporarily add one file. A separate 512 MiB uncompressed envelope safety ceiling
+  bounds gzip expansion; an oversized result is still returned by POST but not
+  persisted. No arbitrary-size result is assumed to fit.
+- `GET /api/analyze/recent/:hash/result`: returns the unchanged `AnalyzeResult`.
+  Hashes must be exactly 64 hexadecimal characters (uppercase is normalized).
+  Malformed hashes return **400**. Missing, corrupt, incompatible or unrecorded
+  results return **404**, with a generic message and no storage paths.
+
+Writes are serialized per process: JSON → async gzip → exclusive temporary file →
+fsync → close → atomic rename. Re-analyzing the same hash atomically replaces its
+one file. Storage failure never fails a successful analysis; metadata advertises
+`hasPersistedResult: false`. A failed metadata write is reconciled to avoid orphans.
+No cross-process locking is provided: use one backend per storage directory.
+
+The oldest analysis timestamps are evicted first to reserve space within the byte
+budget. History-count eviction deletes the corresponding files too; disk eviction
+keeps metadata but removes its Open availability. Loading/listing history reconciles
+missing files, lowered limits, orphan result files and stale managed temporary
+files. Only recognized regular files are deleted; unrelated files/directories and
+symlinks are not followed. Crash leftovers are cleaned at reconciliation.
+
+Read validation checks the envelope version, hash, timestamp and required result
+shape. Invalid gzip/JSON or incompatible data is unavailable, produces one generic
+read warning per service lifetime, and clears availability. Re-analysis can repair
+it. Legacy metadata requires no migration or original save on startup.
+
+Reopen always reads/decompresses the durable file; it does **not** populate or
+change the upload result cache, preserving its existing semantics. No Worker or
+original save read occurs. `parse_seconds` is the original parse duration, not
+reopen latency. JSON stringify/parse and HTTP serialization still run on the main
+thread; gzip/gunzip are asynchronous. This remains local single-user storage,
+without authentication, encryption or multi-user access isolation.
 
 ## Run tests
 

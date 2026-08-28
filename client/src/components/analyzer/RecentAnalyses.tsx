@@ -1,7 +1,19 @@
 import { useEffect, useState } from "react";
 import type { RecentAnalysis } from "@/types";
 
-export function RecentAnalyses({ refreshVersion }: { refreshVersion: number }) {
+export function RecentAnalyses({
+  refreshVersion,
+  onOpen,
+  openingHash = null,
+  openError = "",
+  analyzing = false,
+}: {
+  refreshVersion: number;
+  onOpen: (item: RecentAnalysis) => void;
+  openingHash?: string | null;
+  openError?: string;
+  analyzing?: boolean;
+}) {
   const [items, setItems] = useState<RecentAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -52,7 +64,8 @@ export function RecentAnalyses({ refreshVersion }: { refreshVersion: number }) {
         )}
       </div>
       <p className="micro-copy">
-        Metadata only. Select or upload the original save to analyze it again.
+        Reopen a saved analysis without uploading again. Original save files are
+        not stored.
       </p>
       <div className="micro-copy" role="status" aria-live="polite">
         {loading
@@ -62,6 +75,9 @@ export function RecentAnalyses({ refreshVersion }: { refreshVersion: number }) {
             : items.length === 0
               ? "No recent analyses yet."
               : ""}
+      </div>
+      <div className="micro-copy" role="status" aria-live="polite">
+        {openingHash ? "Opening saved analysis…" : openError}
       </div>
       {items.length > 0 && (
         <div className="table-wrap analyzer-recent-scroll">
@@ -73,11 +89,12 @@ export function RecentAnalyses({ refreshVersion }: { refreshVersion: number }) {
                 <th>Analyzed</th>
                 <th className="numeric-cell">Divisions</th>
                 <th className="numeric-cell">Ships</th>
+                <th className="analyzer-recent-action">Result</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.hash}>
+                <tr key={item.hash} aria-busy={openingHash === item.hash}>
                   <td>{item.fileName}</td>
                   <td>{item.gameDate}</td>
                   <td>
@@ -96,6 +113,20 @@ export function RecentAnalyses({ refreshVersion }: { refreshVersion: number }) {
                   </td>
                   <td className="numeric-cell">
                     {item.shipCount.toLocaleString()}
+                  </td>
+                  <td className="analyzer-recent-action">
+                    {item.hasPersistedResult === true ? (
+                      <button
+                        className="button button-secondary"
+                        aria-label={`Open analysis ${item.fileName}`}
+                        disabled={openingHash !== null || analyzing}
+                        onClick={() => onOpen(item)}
+                      >
+                        {openingHash === item.hash ? "Opening…" : "Open result"}
+                      </button>
+                    ) : (
+                      <span className="micro-copy">Not saved</span>
+                    )}
                   </td>
                 </tr>
               ))}

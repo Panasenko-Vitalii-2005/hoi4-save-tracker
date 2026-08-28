@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, resolve, win32 } from 'node:path';
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
+import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
 
 export interface RecentAnalysis {
   hash: string;
@@ -14,6 +15,7 @@ export interface RecentAnalysis {
   divisionCount: number;
   shipCount: number;
   navalLossCount: number;
+  hasPersistedResult: boolean;
 }
 
 function safeFileName(name: string): string {
@@ -55,6 +57,7 @@ function readItem(value: unknown): RecentAnalysis {
     divisionCount: count('divisionCount'),
     shipCount: count('shipCount'),
     navalLossCount: count('navalLossCount'),
+    hasPersistedResult: item.hasPersistedResult === true,
   };
 }
 
@@ -69,7 +72,7 @@ export class RecentAnalysesService {
   private pending: Promise<void>;
   private warnedWrite = false;
 
-  constructor() {
+  constructor(private readonly results: PersistedAnalysisResultService) {
     const configured = Number(process.env.HOI4_RECENT_ANALYSES_LIMIT ?? 20);
     this.limit =
       Number.isSafeInteger(configured) && configured > 0 ? configured : 20;
@@ -103,18 +106,33 @@ export class RecentAnalysesService {
         );
       }
     }
+    await this.reconcile();
   }
 
-  async list(): Promise<RecentAnalysis[]> {
-    await this.pending;
-    return this.items.map((item) => ({ ...item }));
+  list(): Promise<RecentAnalysis[]> {
+    return this.enqueue(async () => {
+      await this.reconcile();
+      return this.items.map((item) => ({ ...item }));
+    });
+  }
+
+  getResult(hash: string): Promise<AnalyzeResult | null> {
+    return this.enqueue(async () => {
+      const item = this.items.find((item) => item.hash === hash);
+      if (!item?.hasPersistedResult) return null;
+      const result = await this.results.get(hash);
+      if (!result) {
+        item.hasPersistedResult = false;
+        await this.persist(this.items).catch(() => this.warnWrite());
+      }
+      return result;
+    });
   }
 
   async record(
     input: Pick<RecentAnalysis, 'hash' | 'fileName' | 'fileSizeBytes'>,
     result: AnalyzeResult,
   ): Promise<void> {
-    // Do not retain result in the write queue: metadata is the only stored data.
     const item: RecentAnalysis = {
       hash: input.hash,
       fileName: safeFileName(input.fileName),
@@ -125,37 +143,78 @@ export class RecentAnalysesService {
       divisionCount: result.totals.divisions,
       shipCount: result.totals.ships,
       navalLossCount: result.navalLosses.length,
+      hasPersistedResult: false,
     };
     try {
-      await this.enqueue(() =>
-        [item, ...this.items.filter((old) => old.hash !== item.hash)].slice(
-          0,
-          this.limit,
-        ),
-      );
-    } catch {
-      if (!this.warnedWrite) {
-        this.warnedWrite = true;
-        this.logger.warn(
-          'Could not save recent analyses; analysis results remain available. Check history storage permissions and free space.',
+      await this.enqueue(async () => {
+        const next = [
+          item,
+          ...this.items.filter((old) => old.hash !== item.hash),
+        ].slice(0, this.limit);
+        item.hasPersistedResult = await this.results.save(
+          item.hash,
+          result,
+          next,
         );
-      }
+        const available = await this.results.reconcile(next).catch(() => {
+          this.warnWrite();
+          return new Set<string>();
+        });
+        for (const entry of next)
+          entry.hasPersistedResult &&= available.has(entry.hash);
+        await this.persist(next);
+        this.items = next;
+      });
+    } catch {
+      this.warnWrite();
+      // A result written before a failed metadata commit must not become an orphan.
+      await this.enqueue(() => this.reconcile());
     }
   }
 
   clear(): Promise<void> {
-    return this.enqueue(() => []);
+    return this.enqueue(async () => {
+      await this.results.reconcile([]);
+      await this.persist([]);
+      this.items = [];
+    });
   }
 
-  private enqueue(next: () => RecentAnalysis[]): Promise<void> {
-    const write = this.pending.then(async () => {
-      const items = next();
-      await this.persist(items);
-      this.items = items;
-    });
+  private enqueue<T>(work: () => Promise<T>): Promise<T> {
+    const write = this.pending.then(work);
     // A failed write must not poison subsequent writes or reads.
-    this.pending = write.catch(() => {});
+    this.pending = write.then(
+      () => {},
+      () => {},
+    );
     return write;
+  }
+
+  private warnWrite(): void {
+    if (!this.warnedWrite) {
+      this.warnedWrite = true;
+      this.logger.warn(
+        'Could not update recent analysis storage; current analysis remains available. Check storage permissions, space and configured limits.',
+      );
+    }
+  }
+
+  private async reconcile(): Promise<void> {
+    try {
+      const available = await this.results.reconcile(this.items);
+      let changed = false;
+      for (const item of this.items) {
+        if (item.hasPersistedResult && !available.has(item.hash)) {
+          item.hasPersistedResult = false;
+          changed = true;
+        }
+      }
+      if (changed) await this.persist(this.items);
+    } catch {
+      // Do not advertise unavailable storage, even if metadata cannot be updated.
+      for (const item of this.items) item.hasPersistedResult = false;
+      this.warnWrite();
+    }
   }
 
   private async persist(items: RecentAnalysis[]): Promise<void> {

@@ -22,6 +22,7 @@ import { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.servic
 import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
 import { Worker } from 'node:worker_threads';
 import { RecentAnalysesService } from './recent-analyses.service';
+import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
@@ -85,7 +86,10 @@ describe('AnalyzeController uploads', () => {
   let analysis: TrackedWorkerService;
   let cache: AnalysisResultCacheService;
   let history: RecentAnalysesService;
+  let results: PersistedAnalysisResultService;
   const originalHistoryFile = process.env.HOI4_RECENT_ANALYSES_FILE;
+  const originalResultsDir = process.env.HOI4_ANALYSIS_RESULTS_DIR;
+  const originalResultsBytes = process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
   const originalRoot = process.env.HOI4_SAVES_DIR;
   const originalCacheLimit = process.env.HOI4_ANALYSIS_CACHE_ENTRIES;
   const originalWorkerLimit = process.env.HOI4_ANALYSIS_WORKERS;
@@ -96,17 +100,21 @@ describe('AnalyzeController uploads', () => {
     process.env.HOI4_ANALYSIS_CACHE_ENTRIES = '3';
     process.env.HOI4_ANALYSIS_WORKERS = '1';
     process.env.HOI4_RECENT_ANALYSES_FILE = join(localSaveRoot, 'recent.json');
+    process.env.HOI4_ANALYSIS_RESULTS_DIR = join(localSaveRoot, 'results');
+    delete process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
     const moduleRef = await Test.createTestingModule({
       controllers: [AnalyzeController],
       providers: [
         { provide: Hoi4AnalysisWorkerService, useClass: TrackedWorkerService },
         AnalysisResultCacheService,
         RecentAnalysesService,
+        PersistedAnalysisResultService,
       ],
     }).compile();
     analysis = moduleRef.get(Hoi4AnalysisWorkerService);
     cache = moduleRef.get(AnalysisResultCacheService);
     history = moduleRef.get(RecentAnalysesService);
+    results = moduleRef.get(PersistedAnalysisResultService);
     app = moduleRef.createNestApplication();
     await app.init();
   });
@@ -129,6 +137,12 @@ describe('AnalyzeController uploads', () => {
     if (originalHistoryFile === undefined)
       delete process.env.HOI4_RECENT_ANALYSES_FILE;
     else process.env.HOI4_RECENT_ANALYSES_FILE = originalHistoryFile;
+    if (originalResultsDir === undefined)
+      delete process.env.HOI4_ANALYSIS_RESULTS_DIR;
+    else process.env.HOI4_ANALYSIS_RESULTS_DIR = originalResultsDir;
+    if (originalResultsBytes === undefined)
+      delete process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
+    else process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = originalResultsBytes;
   });
 
   test.each([
@@ -170,12 +184,19 @@ describe('AnalyzeController uploads', () => {
         fileSizeBytes: payload.length,
         gameDate: '1944.5.1',
         navalLossCount: 1,
+        hasPersistedResult: true,
       });
+      expect(await results.get(firstItem.hash)).toEqual(response.body);
       const cached = await request(app.getHttpServer())
         .post('/api/analyze')
         .attach('file', payload, 'renamed.hoi4')
         .expect(201);
       expect(cached.body).toEqual(response.body);
+      expect(analysis.created).toBe(before + 1);
+      const reopened = await request(app.getHttpServer())
+        .get(`/api/analyze/recent/${firstItem.hash.toUpperCase()}/result`)
+        .expect(200);
+      expect(reopened.body).toEqual(response.body);
       expect(analysis.created).toBe(before + 1);
       const recent = await request(app.getHttpServer())
         .get('/api/analyze/recent')
@@ -415,7 +436,7 @@ describe('AnalyzeController uploads', () => {
     },
   );
 
-  test('clear endpoint removes only metadata; cached analysis and local save survive', async () => {
+  test('clear endpoint removes metadata and durable results; cache and local save survive', async () => {
     const savePath = join(localSaveRoot, 'clear.hoi4');
     writeFileSync(savePath, navalSave('Clear fixture'));
     await request(app.getHttpServer())
@@ -427,6 +448,7 @@ describe('AnalyzeController uploads', () => {
       .delete('/api/analyze/recent')
       .expect(200, { items: [] });
     expect(await history.list()).toEqual([]);
+    expect(readdirSync(join(localSaveRoot, 'results'))).toEqual([]);
     expect(existsSync(savePath)).toBe(true);
     await request(app.getHttpServer())
       .post('/api/analyze')
@@ -434,6 +456,91 @@ describe('AnalyzeController uploads', () => {
       .expect(201);
     expect(analysis.created).toBe(workers);
     expect(await history.list()).toHaveLength(1);
+  });
+
+  test('result persistence failure leaves successful POST and metadata with unavailable result', async () => {
+    const save = jest.spyOn(results, 'save').mockResolvedValueOnce(false);
+    try {
+      const response = await request(app.getHttpServer())
+        .post('/api/analyze')
+        .attach(
+          'file',
+          Buffer.from(navalSave('Result write failure')),
+          'failure.hoi4',
+        )
+        .expect(201);
+      expect((response.body as AnalyzeResponse).game_date).toBe('1944.5.1');
+      const item = (await history.list())[0];
+      expect(item.hasPersistedResult).toBe(false);
+      await request(app.getHttpServer())
+        .get(`/api/analyze/recent/${item.hash}/result`)
+        .expect(404);
+    } finally {
+      save.mockRestore();
+    }
+  });
+
+  test.each(['missing', 'corrupt'])(
+    'reopen of a %s result is safe, updates availability and never starts Worker',
+    async (kind) => {
+      await request(app.getHttpServer())
+        .post('/api/analyze')
+        .attach(
+          'file',
+          Buffer.from(navalSave(`Unavailable ${kind}`)),
+          'fixture.hoi4',
+        )
+        .expect(201);
+      const item = (await history.list())[0];
+      if (kind === 'missing') await results.delete(item.hash);
+      else
+        writeFileSync(
+          join(localSaveRoot, 'results', `${item.hash}.json.gz`),
+          'not gzip',
+        );
+      const before = analysis.created;
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => {});
+      try {
+        const response = await request(app.getHttpServer())
+          .get(`/api/analyze/recent/${item.hash}/result`)
+          .expect(404);
+        expect((response.body as { message: string }).message).toBe(
+          'Saved analysis result is unavailable',
+        );
+        expect((await history.list())[0].hasPersistedResult).toBe(false);
+        expect(analysis.created).toBe(before);
+      } finally {
+        warn.mockRestore();
+      }
+    },
+  );
+
+  test.each([
+    'invalid',
+    'a'.repeat(63),
+    'g'.repeat(64),
+    '..%2F..%2Fsecret',
+    '..%5C..%5Csecret',
+  ])('rejects unsafe result hash %s before storage access', async (hash) => {
+    const get = jest.spyOn(results, 'get');
+    try {
+      await request(app.getHttpServer())
+        .get(`/api/analyze/recent/${hash}/result`)
+        .expect(400);
+      expect(get).not.toHaveBeenCalled();
+    } finally {
+      get.mockRestore();
+    }
+  });
+
+  test('unknown valid hash returns unavailable without Worker execution', async () => {
+    const before = analysis.created;
+    await request(app.getHttpServer())
+      .get(`/api/analyze/recent/${'0'.repeat(64)}/result`)
+      .expect(404);
+    expect(analysis.created).toBe(before);
   });
 
   test('hash failure creates no history and still cleans the upload', async () => {
