@@ -24,6 +24,7 @@ export interface PersistedAnalysisResultV1 {
 interface ResultReference {
   hash: string;
   analyzedAt: string;
+  pinned?: boolean;
 }
 interface ResultFile {
   hash: string;
@@ -213,10 +214,11 @@ export class PersistedAnalysisResultService {
         await this.checkDirectory(true);
         const files = await this.inventory();
         // Reserve space before writing. Failed cleanup must not allow growth.
-        await this.enforceBudget(files, recent, {
+        const admitted = await this.enforceBudget(files, recent, {
           hash: key,
           bytes: bytes.length,
         });
+        if (!admitted) return false;
         const destination = this.path(key);
         try {
           const previous = await lstat(destination);
@@ -294,26 +296,32 @@ export class PersistedAnalysisResultService {
     files: ResultFile[],
     recent: readonly ResultReference[],
     incoming?: { hash: string; bytes: number },
-  ): Promise<void> {
-    const timestamps = new Map(
-      recent.map((entry) => [entry.hash, Date.parse(entry.analyzedAt)]),
-    );
-    let total = files.reduce(
-      (sum, file) => sum + (file.hash === incoming?.hash ? 0 : file.bytes),
-      incoming?.bytes ?? 0,
-    );
-    const oldest = [...files].sort(
+  ): Promise<boolean> {
+    const metadata = new Map(recent.map((entry) => [entry.hash, entry]));
+    const candidates = files.filter((file) => file.hash !== incoming?.hash);
+    if (incoming) candidates.push({ ...incoming, modified: Date.now() });
+    let total = candidates.reduce((sum, file) => sum + file.bytes, 0);
+    const timestamp = (file: ResultFile) => {
+      const entry = metadata.get(file.hash);
+      return entry ? Date.parse(entry.analyzedAt) : file.modified;
+    };
+    const oldest = candidates.sort(
       (a, b) =>
-        (timestamps.get(a.hash) ?? a.modified) -
-          (timestamps.get(b.hash) ?? b.modified) ||
+        Number(metadata.get(a.hash)?.pinned === true) -
+          Number(metadata.get(b.hash)?.pinned === true) ||
+        timestamp(a) - timestamp(b) ||
         a.hash.localeCompare(b.hash),
     );
+    const evicted: ResultFile[] = [];
     for (const file of oldest) {
       if (total <= this.maxBytes) break;
-      if (file.hash === incoming?.hash) continue;
-      await this.remove(file.hash);
+      // A new unpinned result cannot displace protected pins. Decide before deleting.
+      if (file.hash === incoming?.hash) return false;
+      evicted.push(file);
       total -= file.bytes;
     }
+    for (const file of evicted) await this.remove(file.hash);
+    return true;
   }
 
   /** Reconcile only this service's regular files, never arbitrary files or links. */

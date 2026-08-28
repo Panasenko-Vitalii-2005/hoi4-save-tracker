@@ -17,6 +17,7 @@ const entry = {
   shipCount: 1539,
   navalLossCount: 993,
   hasPersistedResult: false,
+  pinned: false,
 };
 const snapshot = {
   game_date: "1944.5.1",
@@ -51,12 +52,18 @@ describe("Recent Analyses", () => {
     resolve: (response: Response) => void;
     reject: (error: Error) => void;
   }>;
+  let managementRequests: typeof openRequests;
 
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     historyRequests = [];
     analyzeRequests = [];
     openRequests = [];
+    managementRequests = [];
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
@@ -71,6 +78,13 @@ describe("Recent Analyses", () => {
         if (url.startsWith("/api/analyze/recent/") && url.endsWith("/result"))
           return new Promise<Response>((resolve, reject) =>
             openRequests.push({ url, init, resolve, reject }),
+          );
+        if (
+          url.startsWith("/api/analyze/recent/") &&
+          (init?.method === "DELETE" || init?.method === "PATCH")
+        )
+          return new Promise<Response>((resolve, reject) =>
+            managementRequests.push({ url, init, resolve, reject }),
           );
         if (url === "/api/saves")
           return Promise.resolve(
@@ -138,7 +152,7 @@ describe("Recent Analyses", () => {
     expect(section().textContent).toContain((1539).toLocaleString());
     expect(section().innerHTML).not.toContain(entry.hash);
     expect(section().querySelector("time")?.dateTime).toBe(entry.analyzedAt);
-    expect(section().querySelector("button, a, [tabindex]")).toBeNull();
+    expect(section().querySelector('[aria-label^="Open analysis"]')).toBeNull();
     expect(section().textContent).toContain(
       "Original save files are not stored",
     );
@@ -239,7 +253,9 @@ describe("Recent Analyses", () => {
       { ...entry, hash: "b".repeat(64) },
       { ...entry, hash: "c".repeat(64), hasPersistedResult: undefined },
     ]);
-    expect(section().querySelectorAll("tbody button")).toHaveLength(1);
+    expect(
+      section().querySelectorAll('[aria-label^="Open analysis"]'),
+    ).toHaveLength(1);
     expect(openButton().textContent).toBe("Open result");
     expect(openButton().disabled).toBe(false);
     expect(section().innerHTML).not.toContain(entry.hash);
@@ -369,5 +385,310 @@ describe("Recent Analyses", () => {
     expect(openRequests[0].init?.signal?.aborted).toBe(true);
     await act(async () => openRequests[0].resolve(Response.json(snapshot)));
     expect(container.textContent).toBe("");
+  });
+
+  const names = () =>
+    [...section().querySelectorAll(".analyzer-recent-name")].map(
+      (element) => element.textContent,
+    );
+  const changeSearch = async (text: string) => {
+    const input = section().querySelector<HTMLInputElement>(
+      'input[type="search"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const changeSort = async (value: string) => {
+    await act(async () => {
+      const select = section().querySelector("select")!;
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  };
+  const managedButton = (action: string, name = entry.fileName) =>
+    section().querySelector<HTMLButtonElement>(
+      `[aria-label="${action} analysis ${name}"]`,
+    )!;
+  const options = [
+    {
+      ...entry,
+      fileName: "Zulu.hoi4",
+      gameDate: "1944.2.1",
+      analyzedAt: "2026-08-01T00:00:00Z",
+    },
+    {
+      ...entry,
+      hash: "b".repeat(64),
+      fileName: "alpha.hoi4",
+      gameDate: "1944.10.1",
+      analyzedAt: "2026-08-03T00:00:00Z",
+    },
+    {
+      ...entry,
+      hash: "c".repeat(64),
+      fileName: "Beta.hoi4",
+      gameDate: "1943.12.31",
+      analyzedAt: "2026-08-02T00:00:00Z",
+    },
+  ];
+
+  test("search matches filename case-insensitively and game date, never hash, with a safe empty state", async () => {
+    await render();
+    await respond(0, options);
+    await changeSearch("ALPHA");
+    expect(names()).toEqual(["alpha.hoi4"]);
+    await changeSearch("1944.2");
+    expect(names()).toEqual(["Zulu.hoi4"]);
+    await changeSearch(entry.hash);
+    expect(names()).toEqual([]);
+    expect(section().textContent).toContain("No analyses found.");
+    expect(section().querySelector("table")).toBeNull();
+    await changeSearch("");
+    expect(names()).toHaveLength(3);
+    expect(historyRequests).toHaveLength(1);
+  });
+
+  test("default newest and all six sort options order numerically without mutating fetched order", async () => {
+    await render();
+    await respond(0, options);
+    expect(names()).toEqual(["alpha.hoi4", "Beta.hoi4", "Zulu.hoi4"]);
+    await changeSort("oldest");
+    expect(names()).toEqual(["Zulu.hoi4", "Beta.hoi4", "alpha.hoi4"]);
+    await changeSort("name-asc");
+    expect(names()).toEqual(["alpha.hoi4", "Beta.hoi4", "Zulu.hoi4"]);
+    await changeSort("name-desc");
+    expect(names()).toEqual(["Zulu.hoi4", "Beta.hoi4", "alpha.hoi4"]);
+    await changeSort("game-newest");
+    expect(names()).toEqual(["alpha.hoi4", "Zulu.hoi4", "Beta.hoi4"]);
+    await changeSort("game-oldest");
+    expect(names()).toEqual(["Beta.hoi4", "Zulu.hoi4", "alpha.hoi4"]);
+    await changeSort("newest");
+    expect(names()).toEqual(["alpha.hoi4", "Beta.hoi4", "Zulu.hoi4"]);
+    expect(options.map((i) => i.fileName)).toEqual([
+      "Zulu.hoi4",
+      "alpha.hoi4",
+      "Beta.hoi4",
+    ]);
+  });
+
+  test("missing/malformed game dates stay last deterministically in both directions", async () => {
+    await render();
+    await respond(0, [
+      options[0],
+      ...["", "bad", "1944.13.1", "1943.2.29", undefined].map(
+        (date, index) => ({
+          ...entry,
+          hash: String(index).repeat(64),
+          fileName: `bad-${index}.hoi4`,
+          gameDate: date,
+        }),
+      ),
+      options[1],
+    ]);
+    await changeSort("game-newest");
+    expect(names()).toEqual([
+      "alpha.hoi4",
+      "Zulu.hoi4",
+      "bad-0.hoi4",
+      "bad-1.hoi4",
+      "bad-2.hoi4",
+      "bad-3.hoi4",
+      "bad-4.hoi4",
+    ]);
+    await changeSort("game-oldest");
+    expect(names()).toEqual([
+      "Zulu.hoi4",
+      "alpha.hoi4",
+      "bad-0.hoi4",
+      "bad-1.hoi4",
+      "bad-2.hoi4",
+      "bad-3.hoi4",
+      "bad-4.hoi4",
+    ]);
+  });
+
+  test("pins precede unpinned entries, with chosen sorting within each group", async () => {
+    await render();
+    await respond(0, [
+      options[1],
+      { ...options[0], pinned: true },
+      { ...options[2], pinned: true },
+    ]);
+    expect(names()).toEqual(["Beta.hoi4", "Zulu.hoi4", "alpha.hoi4"]);
+    await changeSort("name-desc");
+    expect(names()).toEqual(["Zulu.hoi4", "Beta.hoi4", "alpha.hoi4"]);
+    expect(
+      managedButton("Unpin", "Zulu.hoi4").getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      managedButton("Pin", "alpha.hoi4").getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
+
+  test("metadata, availability, labelled controls and focusable scrolling stay accessible", async () => {
+    await render();
+    await respond(0, [
+      { ...entry, hasPersistedResult: true },
+      { ...options[1], fileSizeBytes: 1024 },
+    ]);
+    expect(section().textContent).toContain("Available");
+    expect(section().textContent).toContain("Unavailable");
+    expect(section().textContent).toContain("MiB");
+    expect(section().textContent).toContain("1 KiB");
+    expect(section().textContent).toContain((993).toLocaleString());
+    expect(
+      section().querySelector('label[for="recent-analysis-search"]')
+        ?.textContent,
+    ).toContain("Search analyses");
+    expect(
+      section().querySelector('label[for="recent-analysis-sort"]')?.textContent,
+    ).toContain("Sort analyses");
+    expect(
+      section()
+        .querySelector('[aria-label="Recent analyses table"]')
+        ?.getAttribute("tabindex"),
+    ).toBe("0");
+    expect(section().innerHTML).not.toContain(entry.hash);
+    expect(section().textContent).not.toMatch(/gzip|Worker|SHA-256|cache|disk/);
+    expect(managedButton("Open", "alpha.hoi4")).toBeNull();
+  });
+
+  test("cancelled delete confirmation sends no request and leaves the row", async () => {
+    await render();
+    await respond(0, [entry]);
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    await act(async () => managedButton("Delete").click());
+    expect(window.confirm).toHaveBeenCalledWith(
+      expect.stringContaining(entry.fileName),
+    );
+    expect(managementRequests).toHaveLength(0);
+    expect(names()).toEqual([entry.fileName]);
+  });
+
+  test("confirmed delete is guarded, removes only its row, and then refreshes history", async () => {
+    await render();
+    await respond(0, [entry, options[1]]);
+    await act(async () => {
+      managedButton("Delete").click();
+      managedButton("Delete").click();
+    });
+    expect(managementRequests).toHaveLength(1);
+    expect(managementRequests[0].url).toBe(`/api/analyze/recent/${entry.hash}`);
+    expect(managementRequests[0].init?.method).toBe("DELETE");
+    expect(managedButton("Delete").disabled).toBe(true);
+    expect(section().getAttribute("aria-busy")).toBe("true");
+    await act(async () =>
+      managementRequests[0].resolve(Response.json({ items: [options[1]] })),
+    );
+    expect(names()).toEqual(["alpha.hoi4"]);
+    expect(section().textContent).toContain("Saved analysis deleted.");
+    expect(historyRequests).toHaveLength(2);
+    await respond(1, [options[1]]);
+    expect(section().getAttribute("aria-busy")).toBe("false");
+  });
+
+  test.each(["delete", "pin"])(
+    "failed %s preserves the row and reports a safe local message",
+    async (action) => {
+      await render();
+      await respond(0, [entry]);
+      await act(async () =>
+        managedButton(action === "delete" ? "Delete" : "Pin").click(),
+      );
+      await act(async () =>
+        managementRequests[0].resolve(
+          new Response("C:/private/stack", { status: 503 }),
+        ),
+      );
+      expect(names()).toEqual([entry.fileName]);
+      expect(managedButton("Pin").getAttribute("aria-pressed")).toBe("false");
+      expect(section().textContent).toContain(
+        action === "delete" ? "Could not delete" : "Could not update the pin",
+      );
+      expect(section().textContent).not.toMatch(/private|stack/);
+      await respond(1, [entry]);
+      expect(managedButton("Delete").disabled).toBe(false);
+    },
+  );
+
+  test("pin and unpin send narrow boolean updates with loading guard and update row state", async () => {
+    await render();
+    await respond(0, [entry, options[1]]);
+    await act(async () => {
+      managedButton("Pin").click();
+      managedButton("Pin").click();
+    });
+    expect(managementRequests).toHaveLength(1);
+    expect(managementRequests[0].init?.method).toBe("PATCH");
+    expect(managementRequests[0].init?.body).toBe(
+      JSON.stringify({ pinned: true }),
+    );
+    const pinned = { ...entry, pinned: true };
+    await act(async () =>
+      managementRequests[0].resolve(
+        Response.json({ items: [pinned, options[1]] }),
+      ),
+    );
+    expect(names()[0]).toBe(entry.fileName);
+    expect(managedButton("Unpin").getAttribute("aria-pressed")).toBe("true");
+    await respond(1, [pinned, options[1]]);
+    await act(async () => managedButton("Unpin").click());
+    expect(managementRequests[1].init?.body).toBe(
+      JSON.stringify({ pinned: false }),
+    );
+    await act(async () =>
+      managementRequests[1].resolve(
+        Response.json({ items: [entry, options[1]] }),
+      ),
+    );
+    expect(managedButton("Pin").getAttribute("aria-pressed")).toBe("false");
+    expect(window.confirm).not.toHaveBeenCalled();
+  });
+
+  test("Open still works after search/sort and deleting its pinned row leaves the rendered result", async () => {
+    await withAvailableResult();
+    await changeSearch("AUTO");
+    await changeSort("game-oldest");
+    await act(async () => openButton().click());
+    await act(async () => openRequests[0].resolve(Response.json(snapshot)));
+    await act(async () => managedButton("Pin").click());
+    const pinned = { ...entry, pinned: true, hasPersistedResult: true };
+    await act(async () =>
+      managementRequests[0].resolve(Response.json({ items: [pinned] })),
+    );
+    await respond(1, [pinned]);
+    await act(async () => managedButton("Delete").click());
+    await act(async () =>
+      managementRequests[1].resolve(Response.json({ items: [] })),
+    );
+    await respond(2, []);
+    expect(openButton()).toBeNull();
+    expect(resultDate()).toBe(snapshot.game_date);
+    expect(analyzeRequests).toHaveLength(0);
+  });
+
+  test("stale GET cannot undo mutation, and analysis completion during mutation is refreshed afterward", async () => {
+    await withAvailableResult();
+    await upload();
+    await act(async () => analyzeRequests[0](Response.json(snapshot)));
+    expect(historyRequests).toHaveLength(2);
+    await act(async () => managedButton("Pin").click());
+    await respond(1, [entry]); // cancelled stale response must not overwrite the mutation
+    await upload();
+    await act(async () => analyzeRequests[1](Response.json(snapshot)));
+    expect(historyRequests).toHaveLength(2); // suppressed while mutation runs
+    const pinned = { ...entry, pinned: true, hasPersistedResult: true };
+    await act(async () =>
+      managementRequests[0].resolve(Response.json({ items: [pinned] })),
+    );
+    expect(managedButton("Unpin").getAttribute("aria-pressed")).toBe("true");
+    await respond(2, [pinned, options[1]]);
+    expect(names()).toHaveLength(2);
+    expect(managedButton("Unpin").getAttribute("aria-pressed")).toBe("true");
   });
 });

@@ -437,20 +437,56 @@ select {
 }
 
 .analyzer-recent-scroll {
-  max-height: 260px;
+  max-height: 360px;
 }
 
 .analyzer-recent-table {
-  min-width: 800px;
+  min-width: 1160px;
   table-layout: fixed;
 }
 
 .analyzer-recent-table th:first-child {
-  width: 26%;
+  width: 220px;
 }
 
 .analyzer-recent-table .analyzer-recent-action {
-  width: 130px;
+  width: 240px;
+}
+
+.analyzer-recent-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.analyzer-recent-controls label {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.analyzer-recent-controls input,
+.analyzer-recent-controls select {
+  width: 100%;
+  min-width: 0;
+}
+
+.analyzer-recent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.analyzer-recent-action .analyzer-recent-delete {
+  color: var(--muted);
+}
+
+.analyzer-recent-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .analyzer-recent-action .button {

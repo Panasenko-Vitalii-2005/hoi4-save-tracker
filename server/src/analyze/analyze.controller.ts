@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Post,
   Param,
+  Patch,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -73,6 +74,57 @@ export class AnalyzeController {
         HttpStatus.NOT_FOUND,
       );
     return result;
+  }
+
+  @Delete('recent/:hash')
+  async deleteRecent(@Param('hash') hash: string) {
+    const key = normalizeAnalysisHash(hash);
+    if (!key)
+      throw new HttpException('Invalid analysis hash', HttpStatus.BAD_REQUEST);
+    try {
+      await this.history.delete(key);
+      this.analysis.delete(key);
+      return { items: await this.history.list() };
+    } catch {
+      throw new HttpException(
+        'Could not delete the saved analysis',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  @Patch('recent/:hash')
+  async pinRecent(@Param('hash') hash: string, @Body() body: unknown) {
+    const key = normalizeAnalysisHash(hash);
+    if (!key)
+      throw new HttpException('Invalid analysis hash', HttpStatus.BAD_REQUEST);
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      Array.isArray(body) ||
+      Object.keys(body).length !== 1 ||
+      !('pinned' in body) ||
+      typeof body.pinned !== 'boolean'
+    )
+      throw new HttpException(
+        'Provide only a boolean pinned field',
+        HttpStatus.BAD_REQUEST,
+      );
+    let found: boolean;
+    try {
+      found = await this.history.setPinned(key, body.pinned);
+    } catch {
+      throw new HttpException(
+        'Could not update the saved analysis',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    if (!found)
+      throw new HttpException(
+        'Recent analysis was not found',
+        HttpStatus.NOT_FOUND,
+      );
+    return { items: await this.history.list() };
   }
 
   @Post()

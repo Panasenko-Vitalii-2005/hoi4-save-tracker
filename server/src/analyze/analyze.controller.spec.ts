@@ -543,6 +543,157 @@ describe('AnalyzeController uploads', () => {
     expect(analysis.created).toBe(before);
   });
 
+  test('pin/unpin/refresh/delete API preserves unrelated entries and evicts the deleted RAM result', async () => {
+    const savePath = join(localSaveRoot, 'managed.hoi4');
+    writeFileSync(savePath, navalSave('Managed fixture'));
+    const original = await request(app.getHttpServer())
+      .post('/api/analyze')
+      .send({ path: savePath })
+      .expect(201);
+    const item = (await history.list())[0];
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from(navalSave('Keep fixture')), 'keep.hoi4')
+      .expect(201);
+    const other = (await history.list())[0];
+    await request(app.getHttpServer())
+      .patch(`/api/analyze/recent/${item.hash.toUpperCase()}`)
+      .send({ pinned: true })
+      .expect(200);
+    expect((await history.list())[0]).toEqual({ ...item, pinned: true });
+    await request(app.getHttpServer())
+      .patch(`/api/analyze/recent/${item.hash}`)
+      .send({ pinned: false })
+      .expect(200);
+    expect(
+      (await history.list()).find((i) => i.hash === item.hash)?.pinned,
+    ).toBe(false);
+    await request(app.getHttpServer())
+      .patch(`/api/analyze/recent/${item.hash}`)
+      .send({ pinned: true })
+      .expect(200);
+    const workers = analysis.created;
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .send({ path: savePath })
+      .expect(201);
+    expect((await history.list())[0].pinned).toBe(true);
+    expect(analysis.created).toBe(workers);
+    const reopened = await request(app.getHttpServer())
+      .get(`/api/analyze/recent/${item.hash}/result`)
+      .expect(200);
+    expect(reopened.body).toEqual(original.body);
+    await request(app.getHttpServer())
+      .delete(`/api/analyze/recent/${item.hash.toUpperCase()}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .delete(`/api/analyze/recent/${item.hash}`)
+      .expect(200);
+    expect(await results.exists(item.hash)).toBe(false);
+    expect(cache['completed'].has(item.hash)).toBe(false);
+    expect(cache['completed'].has(other.hash)).toBe(true);
+    expect(await history.list()).toEqual([other]);
+    expect(existsSync(savePath)).toBe(true);
+    await request(app.getHttpServer())
+      .get(`/api/analyze/recent/${item.hash}/result`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .send({ path: savePath })
+      .expect(201);
+    expect(analysis.created).toBe(workers + 1);
+  });
+
+  test.each([
+    'invalid',
+    '..%2F..%2Fsecret',
+    '..%5C..%5Csecret',
+    'f'.repeat(63),
+  ])('both management endpoints reject unsafe hash %s', async (hash) => {
+    await request(app.getHttpServer())
+      .delete(`/api/analyze/recent/${hash}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch(`/api/analyze/recent/${hash}`)
+      .send({ pinned: true })
+      .expect(400);
+  });
+
+  test.each([
+    {},
+    { pinned: 'true' },
+    { pinned: 1 },
+    { pinned: null },
+    { pinned: true, fileName: 'renamed' },
+    [{ pinned: true }],
+  ])('pin endpoint rejects non-narrow body %j', async (body) => {
+    await request(app.getHttpServer())
+      .patch(`/api/analyze/recent/${'0'.repeat(64)}`)
+      .send(body)
+      .expect(400);
+  });
+
+  test('unknown pin returns 404 while delete is idempotently successful', async () => {
+    await request(app.getHttpServer())
+      .patch(`/api/analyze/recent/${'0'.repeat(64)}`)
+      .send({ pinned: true })
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete(`/api/analyze/recent/${'0'.repeat(64)}`)
+      .expect(200, { items: [] });
+  });
+
+  test('management write errors stay generic and preserve history', async () => {
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach(
+        'file',
+        Buffer.from(navalSave('Management errors')),
+        'fixture.hoi4',
+      )
+      .expect(201);
+    const item = (await history.list())[0];
+    const pin = jest
+      .spyOn(history, 'setPinned')
+      .mockRejectedValueOnce(new Error('C:/private/storage'));
+    const remove = jest
+      .spyOn(history, 'delete')
+      .mockRejectedValueOnce(new Error('C:/private/storage'));
+    try {
+      const pinned = await request(app.getHttpServer())
+        .patch(`/api/analyze/recent/${item.hash}`)
+        .send({ pinned: true })
+        .expect(503);
+      const deleted = await request(app.getHttpServer())
+        .delete(`/api/analyze/recent/${item.hash}`)
+        .expect(503);
+      expect(JSON.stringify([pinned.body, deleted.body])).not.toContain(
+        'private',
+      );
+      expect(await history.list()).toEqual([item]);
+    } finally {
+      pin.mockRestore();
+      remove.mockRestore();
+    }
+  });
+
+  test('clear explicitly removes pinned and unpinned entries and results', async () => {
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from(navalSave('Clear pinned')), 'pinned.hoi4')
+      .expect(201);
+    await history.setPinned((await history.list())[0].hash, true);
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from(navalSave('Clear unpinned')), 'unpinned.hoi4')
+      .expect(201);
+    expect(await history.list()).toHaveLength(2);
+    await request(app.getHttpServer())
+      .delete('/api/analyze/recent')
+      .expect(200, { items: [] });
+    expect(readdirSync(join(localSaveRoot, 'results'))).toEqual([]);
+  });
+
   test('hash failure creates no history and still cleans the upload', async () => {
     const before = readdirSync(UPLOAD_DIRECTORY).sort();
     const hashFailure = jest

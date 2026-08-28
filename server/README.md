@@ -111,14 +111,29 @@ The existing analysis response and `parse_seconds` are unchanged.
   the backend working directory (`server/data/recent-analyses.json` when started
   from `server/`). An absolute path is recommended for deployments.
 - `HOI4_RECENT_ANALYSES_LIMIT`: positive integer, default **20**; invalid values
-  fall back to 20. Newest interactions are kept first, oldest entries evicted.
+  fall back to 20. The total includes pinned entries. Pins are retained first,
+  then newest unpinned entries. Oldest unpinned entries are evicted first; if
+  pinned entries alone exceed a lowered limit, oldest pins are evicted too.
+  If pins already fill the count limit, a new unpinned analysis is returned
+  normally but is not added to history or durable storage.
   This is independent of `HOI4_ANALYSIS_CACHE_ENTRIES`.
 - `GET /api/analyze/recent` returns `{ "items": [...] }` with hash, basename, exact
   byte size, UTC ISO `analyzedAt`, game date, active-country count, division count,
-  ship count, naval-loss count and `hasPersistedResult` availability.
+  ship count, naval-loss count, `hasPersistedResult` availability and `pinned`.
 - `DELETE /api/analyze/recent` clears metadata **and durable result files**. It
   does not remove original saves or evict the independent RAM cache. A later
   successful analysis (including a cache hit) can add a persisted entry again.
+- `DELETE /api/analyze/recent/:hash` deletes one metadata entry, its durable
+  result and its completed RAM-cache entry, including when pinned. It is
+  idempotent: an unknown valid hash also returns **200**, with `{ "items": [...] }`.
+  Original saves and unrelated entries are untouched. Already rendered frontend
+  results remain visible. In-flight analyses are not cancelled: a subsequently
+  completing analysis can create a fresh history/cache entry again.
+- `PATCH /api/analyze/recent/:hash` accepts only `{ "pinned": true }` or
+  `{ "pinned": false }`, returning `{ "items": [...] }`. Unknown hashes return
+  **404**; malformed hashes or extra/non-boolean fields return **400**. Both
+  management endpoints reuse SHA-256 validation and return generic **503** errors
+  for failed writes, without storage paths. Pinning does not change analysis time.
 
 No raw saves, decoded save text, temporary upload paths, stack traces or Worker
 details are persisted. Full analysis results are stored separately as described
@@ -146,6 +161,25 @@ Worker. Opening has its own loading/error state, guards duplicate clicks and
 replaces the current result only after success. A new upload supersedes a pending
 Open. An unavailable result refreshes history; legacy entries without availability
 remain visible with no Open action until re-analysis.
+
+Search matches filename (case-insensitive) or game date locally, never SHA-256.
+Sort by newest/oldest analysis, filename A–Z/Z–A, or newest/oldest game date. Game
+dates are compared as numeric year/month/day, not strings; missing/invalid dates
+stay last. Pinned entries lead in every sort mode, sorted within their group.
+Rows also show human-readable original file size, naval losses and explicit
+Available/Unavailable status. Search and sort have labels; actions use native
+buttons, async status announcements and a keyboard-focusable scrolling table.
+
+**Delete** requires confirmation and has a local failure message. **Pin/Unpin**
+is guarded while pending and updates only on success. Mutations cancel stale
+history-list reads and refetch afterward, so concurrent analysis completion is
+not lost. No Clear All UI was added; the existing DELETE collection API still
+clears pinned and unpinned entries. Missing `pinned` in old metadata defaults to
+false without requiring migration or rewriting just for the missing field.
+
+Delete, pin/unpin, analysis completion and clear share the existing serialized
+history mutation queue. A same-hash re-analysis reads the latest pin state inside
+that queue and preserves it. No database or cross-process synchronization is added.
 
 Compose stores history in the `analysis-history` named volume at
 `/app/data/recent-analyses.json` and results at `/app/data/analysis-results`, surviving
@@ -185,8 +219,12 @@ one file. Storage failure never fails a successful analysis; metadata advertises
 `hasPersistedResult: false`. A failed metadata write is reconciled to avoid orphans.
 No cross-process locking is provided: use one backend per storage directory.
 
-The oldest analysis timestamps are evicted first to reserve space within the byte
-budget. History-count eviction deletes the corresponding files too; disk eviction
+Unpinned results are evicted by oldest analysis timestamp first to reserve space
+within the byte budget. Pins are protected when possible, but the hard byte cap
+still wins: oldest pinned results are removed if necessary, with metadata retained
+and `hasPersistedResult: false`. A new unpinned result is declined if retaining it
+would displace protected pins; its analysis still succeeds with unavailable reopen.
+History-count eviction deletes the corresponding files too; disk eviction
 keeps metadata but removes its Open availability. Loading/listing history reconciles
 missing files, lowered limits, orphan result files and stale managed temporary
 files. Only recognized regular files are deleted; unrelated files/directories and

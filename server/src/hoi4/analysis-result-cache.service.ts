@@ -28,6 +28,11 @@ export class AnalysisResultCacheService {
     return (await this.analyzeWithHash(filePath)).result;
   }
 
+  /** Forget a completed result only; an explicit new/in-flight analysis may add it again. */
+  delete(hash: string): void {
+    this.completed.delete(hash);
+  }
+
   async analyzeWithHash(
     filePath: string,
   ): Promise<{ hash: string; result: AnalyzeResult }> {

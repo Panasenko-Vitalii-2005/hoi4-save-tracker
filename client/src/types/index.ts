@@ -9,6 +9,7 @@ export interface RecentAnalysis {
   shipCount: number;
   navalLossCount: number;
   hasPersistedResult: boolean;
+  pinned: boolean;
 }
 
 export interface SaveRecord {

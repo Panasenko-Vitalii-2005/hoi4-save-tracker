@@ -111,6 +111,31 @@ describe('AnalysisResultCacheService', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  test('explicit deletion forgets only the requested completed result and is idempotent', async () => {
+    const { hash } = await cache.analyzeWithHash(paths[0]);
+    await cache.analyze(paths[1]);
+    cache.delete(hash);
+    cache.delete(hash);
+    await cache.analyze(paths[1]);
+    expect(execute).toHaveBeenCalledTimes(2);
+    await cache.analyze(paths[0]);
+    expect(execute).toHaveBeenCalledTimes(3);
+  });
+
+  test('deletion does not cancel shared in-flight work, whose later completion can repopulate', async () => {
+    const pending = deferred<AnalyzeResult>();
+    execute.mockReturnValueOnce(pending.promise);
+    const hash = await hashSaveContents(paths[0]);
+    const running = cache.analyze(paths[0]);
+    await waitFor(() => execute.mock.calls.length === 1);
+    cache.delete(hash);
+    expect(cache['inFlight'].size).toBe(1);
+    pending.resolve(result);
+    expect(await running).toEqual(result);
+    expect(await cache.analyze(paths[0])).toEqual(result);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   test('different bytes under the same filename do not hit an old entry', async () => {
     const path = join(directory, 'changing.hoi4');
     writeFileSync(path, 'first');

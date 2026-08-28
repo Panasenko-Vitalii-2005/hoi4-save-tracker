@@ -78,6 +78,7 @@ describe('RecentAnalysesService', () => {
         shipCount: 0,
         navalLossCount: 0,
         hasPersistedResult: true,
+        pinned: false,
       },
     ]);
     expect(new Date(items[0].analyzedAt).toISOString()).toBe(
@@ -249,12 +250,14 @@ describe('RecentAnalysesService', () => {
     await history.record(input('a'), result);
     const legacy = { ...(await history.list())[0] } as Record<string, unknown>;
     delete legacy.hasPersistedResult;
+    delete legacy.pinned;
     await results.delete(input('a').hash);
     await files.writeFile(file, JSON.stringify({ items: [legacy] }));
     history = new RecentAnalysesService(results);
     expect((await history.list())[0]).toMatchObject({
       hash: input('a').hash,
       hasPersistedResult: false,
+      pinned: false,
     });
     expect(await history.getResult(input('a').hash)).toBeNull();
     await history.record(input('a'), result);
@@ -319,5 +322,132 @@ describe('RecentAnalysesService', () => {
         hasPersistedResult: false,
       }),
     ]);
+  });
+
+  test('delete removes only the chosen metadata and result, is idempotent, and survives restart', async () => {
+    await history.record(input('a'), result);
+    await history.record(input('b'), result);
+    await history.setPinned(input('a').hash, true);
+    await history.delete(input('a').hash);
+    await history.delete(input('a').hash);
+    expect(await results.exists(input('a').hash)).toBe(false);
+    expect(await results.get(input('b').hash)).toEqual(result);
+    expect(
+      (await new RecentAnalysesService(results).list()).map(
+        (item) => item.hash,
+      ),
+    ).toEqual([input('b').hash]);
+  });
+
+  test('pin and unpin persist without changing analysis time or result', async () => {
+    await history.record(input('a'), result);
+    const before = (await history.list())[0];
+    expect(await history.setPinned(input('a').hash, true)).toBe(true);
+    history = new RecentAnalysesService(results);
+    expect((await history.list())[0]).toEqual({ ...before, pinned: true });
+    expect(await history.getResult(input('a').hash)).toEqual(result);
+    expect(await history.setPinned(input('a').hash, false)).toBe(true);
+    expect((await new RecentAnalysesService(results).list())[0]).toEqual(
+      before,
+    );
+    expect(await history.setPinned(input('missing').hash, true)).toBe(false);
+  });
+
+  test('count eviction protects old pins and deletes the oldest unpinned result', async () => {
+    process.env.HOI4_RECENT_ANALYSES_LIMIT = '2';
+    history = new RecentAnalysesService(results);
+    await history.record(input('a'), result);
+    await history.setPinned(input('a').hash, true);
+    await history.record(input('b'), result);
+    await history.record(input('c'), result);
+    expect((await history.list()).map((item) => item.hash)).toEqual([
+      input('a').hash,
+      input('c').hash,
+    ]);
+    expect(await results.exists(input('b').hash)).toBe(false);
+    expect(await results.exists(input('a').hash)).toBe(true);
+  });
+
+  test('all-pinned history stays bounded: new unpinned entries are omitted, lowering limit evicts oldest pin', async () => {
+    process.env.HOI4_RECENT_ANALYSES_LIMIT = '2';
+    history = new RecentAnalysesService(results);
+    await history.record(input('a'), result);
+    await history.setPinned(input('a').hash, true);
+    await history.record(input('b'), result);
+    await history.setPinned(input('b').hash, true);
+    await history.record(input('c'), result);
+    expect(await history.list()).toHaveLength(2);
+    expect(await results.exists(input('c').hash)).toBe(false);
+    process.env.HOI4_RECENT_ANALYSES_LIMIT = '1';
+    history = new RecentAnalysesService(results);
+    expect((await history.list()).map((item) => item.hash)).toEqual([
+      input('b').hash,
+    ]);
+    expect(await results.exists(input('a').hash)).toBe(false);
+  });
+
+  test('same-hash refresh and queued pin/delete/record mutations use the latest state', async () => {
+    await history.record(input('a'), result);
+    await history.record(input('b'), result);
+    await Promise.all([
+      history.setPinned(input('a').hash, true),
+      history.record(input('a', 'renamed.hoi4'), result),
+      history.delete(input('b').hash),
+      history.record(input('c'), result),
+    ]);
+    expect(
+      (await history.list()).map(({ hash, pinned, fileName }) => ({
+        hash,
+        pinned,
+        fileName,
+      })),
+    ).toEqual([
+      { hash: input('a').hash, pinned: true, fileName: 'renamed.hoi4' },
+      { hash: input('c').hash, pinned: false, fileName: 'c.hoi4' },
+    ]);
+    await Promise.all([history.clear(), history.record(input('d'), result)]);
+    expect((await history.list()).map((item) => item.hash)).toEqual([
+      input('d').hash,
+    ]);
+    expect(await results.exists(input('a').hash)).toBe(false);
+    expect(await results.exists(input('c').hash)).toBe(false);
+  });
+
+  test('failed pin/delete metadata commit keeps entries and allows retry', async () => {
+    await history.record(input('a'), result);
+    const replace = jest
+      .spyOn(files, 'rename')
+      .mockRejectedValue(new Error('Storage unavailable'));
+    await expect(history.setPinned(input('a').hash, true)).rejects.toThrow();
+    expect((await history.list())[0].pinned).toBe(false);
+    await expect(history.delete(input('a').hash)).rejects.toThrow();
+    expect(await history.list()).toHaveLength(1);
+    replace.mockRestore();
+    await history.delete(input('a').hash);
+    expect(await history.list()).toEqual([]);
+  });
+
+  test('pin-only disk overflow marks oldest pinned result unavailable without removing metadata', async () => {
+    await history.record(input('a'), result);
+    await history.setPinned(input('a').hash, true);
+    await history.record(input('b'), result);
+    await history.setPinned(input('b').hash, true);
+    const size = (
+      await files.stat(join(directory, 'results', `${input('b').hash}.json.gz`))
+    ).size;
+    process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
+    results = new PersistedAnalysisResultService();
+    history = new RecentAnalysesService(results);
+    expect(
+      (await history.list()).map(({ pinned, hasPersistedResult }) => [
+        pinned,
+        hasPersistedResult,
+      ]),
+    ).toEqual([
+      [true, true],
+      [true, false],
+    ]);
+    await history.clear();
+    expect(await files.readdir(join(directory, 'results'))).toEqual([]);
   });
 });

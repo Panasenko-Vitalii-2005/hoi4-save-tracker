@@ -16,6 +16,7 @@ export interface RecentAnalysis {
   shipCount: number;
   navalLossCount: number;
   hasPersistedResult: boolean;
+  pinned: boolean;
 }
 
 function safeFileName(name: string): string {
@@ -58,6 +59,7 @@ function readItem(value: unknown): RecentAnalysis {
     shipCount: count('shipCount'),
     navalLossCount: count('navalLossCount'),
     hasPersistedResult: item.hasPersistedResult === true,
+    pinned: item.pinned === true,
   };
 }
 
@@ -91,14 +93,13 @@ export class RecentAnalysesService {
         throw new Error('Invalid history file');
       }
       const seen = new Set<string>();
-      this.items = stored.items
-        .map(readItem)
-        .filter((item) => {
+      this.items = this.retain(
+        stored.items.map(readItem).filter((item) => {
           if (seen.has(item.hash)) return false;
           seen.add(item.hash);
           return true;
-        })
-        .slice(0, this.limit);
+        }),
+      );
     } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         this.logger.warn(
@@ -144,18 +145,24 @@ export class RecentAnalysesService {
       shipCount: result.totals.ships,
       navalLossCount: result.navalLosses.length,
       hasPersistedResult: false,
+      pinned: false,
     };
     try {
       await this.enqueue(async () => {
-        const next = [
+        // Read the latest pin state inside the mutation queue, not at request start.
+        item.pinned =
+          this.items.find((old) => old.hash === item.hash)?.pinned ?? false;
+        const next = this.retain([
           item,
           ...this.items.filter((old) => old.hash !== item.hash),
-        ].slice(0, this.limit);
-        item.hasPersistedResult = await this.results.save(
-          item.hash,
-          result,
-          next,
-        );
+        ]);
+        if (next.includes(item)) {
+          item.hasPersistedResult = await this.results.save(
+            item.hash,
+            result,
+            next,
+          );
+        }
         const available = await this.results.reconcile(next).catch(() => {
           this.warnWrite();
           return new Set<string>();
@@ -178,6 +185,40 @@ export class RecentAnalysesService {
       await this.persist([]);
       this.items = [];
     });
+  }
+
+  delete(hash: string): Promise<void> {
+    return this.enqueue(async () => {
+      const next = this.items.filter((item) => item.hash !== hash);
+      await this.results.delete(hash);
+      await this.persist(next);
+      this.items = next;
+    });
+  }
+
+  setPinned(hash: string, pinned: boolean): Promise<boolean> {
+    return this.enqueue(async () => {
+      if (!this.items.some((item) => item.hash === hash)) return false;
+      const next = this.retain(
+        this.items.map((item) =>
+          item.hash === hash ? { ...item, pinned } : item,
+        ),
+      );
+      await this.persist(next);
+      this.items = next;
+      return true;
+    });
+  }
+
+  private retain(items: RecentAnalysis[]): RecentAnalysis[] {
+    // The total count includes pins. Stable ties preserve same-time source order.
+    return [...items]
+      .sort(
+        (a, b) =>
+          Number(b.pinned) - Number(a.pinned) ||
+          Date.parse(b.analyzedAt) - Date.parse(a.analyzedAt),
+      )
+      .slice(0, this.limit);
   }
 
   private enqueue<T>(work: () => Promise<T>): Promise<T> {

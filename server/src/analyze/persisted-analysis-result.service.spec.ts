@@ -257,4 +257,51 @@ describe('PersistedAnalysisResultService', () => {
     );
     expect((await files.stat(path())).isDirectory()).toBe(true);
   });
+
+  test('disk eviction protects an older pinned result over a newer unpinned one', async () => {
+    await service.save(hash('a'), result);
+    await service.save(hash('b'), result);
+    const size = (await files.stat(path())).size;
+    process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size * 2 + 100);
+    service = new PersistedAnalysisResultService();
+    const refs = [
+      { hash: hash('a'), analyzedAt: '2026-08-01T00:00:00Z', pinned: true },
+      { hash: hash('b'), analyzedAt: '2026-08-02T00:00:00Z', pinned: false },
+      { hash: hash('c'), analyzedAt: '2026-08-03T00:00:00Z', pinned: false },
+    ];
+    expect(await service.save(hash('c'), result, refs)).toBe(true);
+    expect(await service.exists(hash('a'))).toBe(true);
+    expect(await service.exists(hash('b'))).toBe(false);
+    expect(await service.exists(hash('c'))).toBe(true);
+  });
+
+  test('a new unpinned result is declined rather than displacing pins under a hard byte limit', async () => {
+    await service.save(hash('a'), result);
+    const size = (await files.stat(path())).size;
+    process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
+    service = new PersistedAnalysisResultService();
+    expect(
+      await service.save(hash('b'), result, [
+        { hash: hash('a'), analyzedAt: '2026-08-01T00:00:00Z', pinned: true },
+        { hash: hash('b'), analyzedAt: '2026-08-02T00:00:00Z', pinned: false },
+      ]),
+    ).toBe(false);
+    expect(await service.get(hash('a'))).toEqual(result);
+    expect(await service.exists(hash('b'))).toBe(false);
+  });
+
+  test('newer pinned result can replace oldest pin when all results are pinned', async () => {
+    await service.save(hash('a'), result);
+    const size = (await files.stat(path())).size;
+    process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
+    service = new PersistedAnalysisResultService();
+    expect(
+      await service.save(hash('b'), result, [
+        { hash: hash('a'), analyzedAt: '2026-08-01T00:00:00Z', pinned: true },
+        { hash: hash('b'), analyzedAt: '2026-08-02T00:00:00Z', pinned: true },
+      ]),
+    ).toBe(true);
+    expect(await service.exists(hash('a'))).toBe(false);
+    expect(await service.exists(hash('b'))).toBe(true);
+  });
 });
