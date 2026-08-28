@@ -96,7 +96,57 @@ Results are treated as immutable and serialized directly, without expensive
 deep copies. Cache code never modifies them. `parse_seconds` remains the duration
 of the original parser execution, **not** current request latency or a cache-hit
 indicator. The response shape is unchanged; upload, hashing and serialization
-still take time on a hit. No cache state or hashes are logged or added to the API.
+still take time on a hit. No cache state or hashes are logged or added to the
+analysis response.
+
+### Recent Analyses history
+
+Successful `POST /api/analyze` interactions also update a small persistent metadata
+history, separate from the in-memory result cache. Cache hits refresh it too.
+Identity is the same raw-byte SHA-256: identical contents update one entry's name,
+timestamp and counters; different contents with the same name remain distinct.
+The existing analysis response and `parse_seconds` are unchanged.
+
+- `HOI4_RECENT_ANALYSES_FILE`: defaults to `data/recent-analyses.json`, relative to
+  the backend working directory (`server/data/recent-analyses.json` when started
+  from `server/`). An absolute path is recommended for deployments.
+- `HOI4_RECENT_ANALYSES_LIMIT`: positive integer, default **20**; invalid values
+  fall back to 20. Newest interactions are kept first, oldest entries evicted.
+  This is independent of `HOI4_ANALYSIS_CACHE_ENTRIES`.
+- `GET /api/analyze/recent` returns `{ "items": [...] }` with hash, basename, exact
+  byte size, UTC ISO `analyzedAt`, game date, active-country count, division count,
+  ship count and naval-loss count. A typical item is about 300 bytes.
+- `DELETE /api/analyze/recent` clears metadata only. It does not remove saves or
+  evict cached results. A later successful analysis can add an entry again.
+
+No raw saves, decoded text, full analysis results, temporary paths, stack traces
+or Worker details are persisted. Filenames and campaign counters are local user
+data: keep the configured file private. The current deployment has one shared
+local history, not per-user ownership or authentication.
+
+Writes are serialized within one backend process, written to a unique adjacent
+temporary file, flushed with fsync, closed, then renamed over the store. A failed
+update leaves the previous store intact and does not fail save analysis. Missing
+files start empty; corrupt/unreadable files produce one startup warning and an
+empty history. The next successful write replaces corrupt history. Write errors
+produce one useful warning per service lifetime. Do not point multiple backend
+processes at the same file: cross-process locking is not provided.
+
+Only successful analyses are recorded; parser/hash errors, Worker crashes, 503s
+and callers disconnected before successful completion do not create entries.
+Request-specific temporary-file cleanup and shared in-flight analysis remain
+unchanged. A disconnect does not cancel another caller's analysis.
+
+The Analyzer's **Recent Analyses** section is informational, loads independently,
+and refreshes after success. It shows filenames, game dates, locally formatted
+analysis timestamps, divisions and ships. It has no reopen action: select or
+upload the original save to analyze again. History survives process restart;
+full results still disappear with the process-local cache.
+
+Compose stores history in the `analysis-history` named volume at
+`/app/data/recent-analyses.json`, surviving container recreation. Removing that
+volume (for example, `docker compose down -v`) removes history. Runtime data is
+excluded from Git and Docker build context; no history is baked into images.
 
 ## Run tests
 

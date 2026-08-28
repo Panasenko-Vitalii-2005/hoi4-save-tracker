@@ -6,8 +6,10 @@ services:
     environment:
       PORT: 3001
       HOI4_SAVES_DIR: /app/saves
+      HOI4_RECENT_ANALYSES_FILE: /app/data/recent-analyses.json
     volumes:
       - ./saves:/app/saves:ro
+      - analysis-history:/app/data
     expose:
       - "3001"
     healthcheck:
@@ -36,3 +38,6 @@ services:
       timeout: 5s
       retries: 6
       start_period: 5s
+
+volumes:
+  analysis-history:

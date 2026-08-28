@@ -21,6 +21,7 @@ import { ProductionTab } from "./ProductionTab";
 import { StockpileTab } from "./StockpileTab";
 import { LandForcesTab } from "./LandForcesTab";
 import { CountryDisplay } from "./CountryDisplay";
+import { RecentAnalyses } from "./RecentAnalyses";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -298,6 +299,7 @@ export function AnalyzerTab() {
     msg: string;
   }>({ type: "idle", msg: "" });
   const analysisInFlight = useRef(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [prevResult, setPrevResult] = useState<AnalyzeResult | null>(null);
   const [sortCol, setSortCol] = useState<SortCol>("manpowerInField");
@@ -378,6 +380,7 @@ export function AnalyzerTab() {
         "";
       setPrevResult(result);
       setResult(data);
+      setHistoryVersion((value) => value + 1);
       setAnalysisView("overview");
       setEqCountry(initialEqCountry);
       setShowEq(true);
@@ -667,6 +670,8 @@ export function AnalyzerTab() {
           </div>
         )}
       </div>
+
+      <RecentAnalyses refreshVersion={historyVersion} />
 
       {result && (
         <>

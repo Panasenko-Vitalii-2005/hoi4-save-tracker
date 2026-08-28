@@ -25,7 +25,20 @@ export class AnalysisResultCacheService {
   }
 
   async analyze(filePath: string): Promise<AnalyzeResult> {
+    return (await this.analyzeWithHash(filePath)).result;
+  }
+
+  async analyzeWithHash(
+    filePath: string,
+  ): Promise<{ hash: string; result: AnalyzeResult }> {
     const hash = await hashSaveContents(filePath);
+    return { hash, result: await this.analyzeHash(filePath, hash) };
+  }
+
+  private async analyzeHash(
+    filePath: string,
+    hash: string,
+  ): Promise<AnalyzeResult> {
     const cached = this.completed.get(hash);
     if (cached) {
       this.completed.delete(hash);

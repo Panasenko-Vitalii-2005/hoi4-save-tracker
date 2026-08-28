@@ -1,3 +1,15 @@
+export interface RecentAnalysis {
+  hash: string;
+  fileName: string;
+  fileSizeBytes: number;
+  analyzedAt: string;
+  gameDate: string;
+  countryCount: number;
+  divisionCount: number;
+  shipCount: number;
+  navalLossCount: number;
+}
+
 export interface SaveRecord {
   real_time: string;
   game_date: string | null;

@@ -436,6 +436,29 @@ select {
   word-break: break-word;
 }
 
+.analyzer-recent-scroll {
+  max-height: 260px;
+}
+
+.analyzer-recent-table {
+  min-width: 680px;
+  table-layout: fixed;
+}
+
+.analyzer-recent-table th:first-child {
+  width: 30%;
+}
+
+.analyzer-recent-table td:first-child {
+  overflow-wrap: anywhere;
+}
+
+.analyzer-recent-table .numeric-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .table-wrap {
   overflow: auto;
 }

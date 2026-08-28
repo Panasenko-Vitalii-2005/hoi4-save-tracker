@@ -1,4 +1,8 @@
-import { INestApplication, ServiceUnavailableException } from '@nestjs/common';
+import {
+  INestApplication,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import AdmZip from 'adm-zip';
 import {
@@ -17,6 +21,10 @@ import { Hoi4AnalysisWorkerService } from '../hoi4/hoi4-analysis-worker.service'
 import { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.service';
 import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
 import { Worker } from 'node:worker_threads';
+import { RecentAnalysesService } from './recent-analyses.service';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import type { Server } from 'node:http';
 
 class TrackedWorkerService extends Hoi4AnalysisWorkerService {
   created = 0;
@@ -76,6 +84,8 @@ describe('AnalyzeController uploads', () => {
   let app: INestApplication<App>;
   let analysis: TrackedWorkerService;
   let cache: AnalysisResultCacheService;
+  let history: RecentAnalysesService;
+  const originalHistoryFile = process.env.HOI4_RECENT_ANALYSES_FILE;
   const originalRoot = process.env.HOI4_SAVES_DIR;
   const originalCacheLimit = process.env.HOI4_ANALYSIS_CACHE_ENTRIES;
   const originalWorkerLimit = process.env.HOI4_ANALYSIS_WORKERS;
@@ -85,17 +95,24 @@ describe('AnalyzeController uploads', () => {
     process.env.HOI4_SAVES_DIR = localSaveRoot;
     process.env.HOI4_ANALYSIS_CACHE_ENTRIES = '3';
     process.env.HOI4_ANALYSIS_WORKERS = '1';
+    process.env.HOI4_RECENT_ANALYSES_FILE = join(localSaveRoot, 'recent.json');
     const moduleRef = await Test.createTestingModule({
       controllers: [AnalyzeController],
       providers: [
         { provide: Hoi4AnalysisWorkerService, useClass: TrackedWorkerService },
         AnalysisResultCacheService,
+        RecentAnalysesService,
       ],
     }).compile();
     analysis = moduleRef.get(Hoi4AnalysisWorkerService);
     cache = moduleRef.get(AnalysisResultCacheService);
+    history = moduleRef.get(RecentAnalysesService);
     app = moduleRef.createNestApplication();
     await app.init();
+  });
+
+  beforeEach(async () => {
+    await history.clear();
   });
 
   afterAll(async () => {
@@ -109,6 +126,9 @@ describe('AnalyzeController uploads', () => {
     if (originalWorkerLimit === undefined)
       delete process.env.HOI4_ANALYSIS_WORKERS;
     else process.env.HOI4_ANALYSIS_WORKERS = originalWorkerLimit;
+    if (originalHistoryFile === undefined)
+      delete process.env.HOI4_RECENT_ANALYSES_FILE;
+    else process.env.HOI4_RECENT_ANALYSES_FILE = originalHistoryFile;
   });
 
   test.each([
@@ -143,12 +163,35 @@ describe('AnalyzeController uploads', () => {
       expect(body.armyHierarchySummaries).toEqual([]);
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
       expect(analysis.created).toBe(before + 1);
+      const firstItem = (await history.list())[0];
+      expect(firstItem).toMatchObject({
+        hash: createHash('sha256').update(payload).digest('hex'),
+        fileName: 'fixture.hoi4',
+        fileSizeBytes: payload.length,
+        gameDate: '1944.5.1',
+        navalLossCount: 1,
+      });
       const cached = await request(app.getHttpServer())
         .post('/api/analyze')
         .attach('file', payload, 'renamed.hoi4')
         .expect(201);
       expect(cached.body).toEqual(response.body);
       expect(analysis.created).toBe(before + 1);
+      const recent = await request(app.getHttpServer())
+        .get('/api/analyze/recent')
+        .expect(200);
+      expect(recent.body).toEqual({ items: await history.list() });
+      const updated = await history.list();
+      expect(updated).toHaveLength(1);
+      expect(updated[0].fileName).toBe('renamed.hoi4');
+      expect(Date.parse(updated[0].analyzedAt)).toBeGreaterThanOrEqual(
+        Date.parse(firstItem.analyzedAt),
+      );
+      const stored = readFileSync(join(localSaveRoot, 'recent.json'), 'utf8');
+      expect(stored).not.toContain(UPLOAD_DIRECTORY);
+      expect(stored).not.toMatch(
+        /parse_seconds|by_country|navalLosses|temporaryPath/,
+      );
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
     },
   );
@@ -211,6 +254,7 @@ describe('AnalyzeController uploads', () => {
     expect((response.body as { message: string }).message).toMatch(
       /^Parse error:/,
     );
+    expect(await history.list()).toEqual([]);
     expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
   });
 
@@ -232,6 +276,7 @@ describe('AnalyzeController uploads', () => {
           'fixture.hoi4',
         )
         .expect(503);
+      expect(await history.list()).toEqual([]);
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
     } finally {
       spy.mockRestore();
@@ -264,6 +309,7 @@ describe('AnalyzeController uploads', () => {
       expect(existsSync(uploadedPath!)).toBe(true);
       crash(new Error('Save analysis worker exited without a result (code 2)'));
       expect((await response).status).toBe(500);
+      expect(await history.list()).toEqual([]);
       expect(existsSync(uploadedPath!)).toBe(false);
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
     } finally {
@@ -308,7 +354,16 @@ describe('AnalyzeController uploads', () => {
           return pending;
         });
       const lookups = jest.spyOn(cache['inFlight'], 'get');
+      const records = jest.spyOn(history, 'record');
       try {
+        const leaderClosed = new Promise<void>((resolve) => {
+          (app.getHttpServer() as Server).once(
+            'request',
+            (_request, response) => {
+              response.once('close', resolve);
+            },
+          );
+        });
         const leader = request(app.getHttpServer())
           .post('/api/analyze')
           .attach('file', payload, 'first.hoi4');
@@ -329,6 +384,8 @@ describe('AnalyzeController uploads', () => {
         expect(execute).toHaveBeenCalledTimes(1);
         if (outcome === 'disconnect') {
           leader.abort();
+          // Let the server observe the socket close before delivering success.
+          await leaderClosed;
           expect(existsSync(leaderPath!)).toBe(true);
         }
         if (outcome === 'failure') fail(new Error('Shared worker crash'));
@@ -344,11 +401,83 @@ describe('AnalyzeController uploads', () => {
         );
         expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
         expect(cache['inFlight'].size).toBe(0);
+        expect(records).toHaveBeenCalledTimes(
+          outcome === 'failure' ? 0 : outcome === 'disconnect' ? 1 : 2,
+        );
+        if (outcome === 'disconnect')
+          expect((await history.list())[0].fileName).toBe('second.hoi4');
       } finally {
         finish(result);
         execute.mockRestore();
         lookups.mockRestore();
+        records.mockRestore();
       }
     },
   );
+
+  test('clear endpoint removes only metadata; cached analysis and local save survive', async () => {
+    const savePath = join(localSaveRoot, 'clear.hoi4');
+    writeFileSync(savePath, navalSave('Clear fixture'));
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .send({ path: savePath })
+      .expect(201);
+    const workers = analysis.created;
+    await request(app.getHttpServer())
+      .delete('/api/analyze/recent')
+      .expect(200, { items: [] });
+    expect(await history.list()).toEqual([]);
+    expect(existsSync(savePath)).toBe(true);
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .send({ path: savePath })
+      .expect(201);
+    expect(analysis.created).toBe(workers);
+    expect(await history.list()).toHaveLength(1);
+  });
+
+  test('hash failure creates no history and still cleans the upload', async () => {
+    const before = readdirSync(UPLOAD_DIRECTORY).sort();
+    const hashFailure = jest
+      .spyOn(cache, 'analyzeWithHash')
+      .mockRejectedValueOnce(new Error('Cannot read upload'));
+    try {
+      await request(app.getHttpServer())
+        .post('/api/analyze')
+        .attach('file', Buffer.from(navalSave('Hash failure')), 'failure.hoi4')
+        .expect(500);
+      expect(await history.list()).toEqual([]);
+      expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(before);
+    } finally {
+      hashFailure.mockRestore();
+    }
+  });
+
+  test('history storage failure does not fail successful analysis or expose storage errors', async () => {
+    const write = jest
+      .spyOn(history as unknown as { persist: () => Promise<void> }, 'persist')
+      .mockRejectedValue(new Error('private storage path'));
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => {});
+    try {
+      const response = await request(app.getHttpServer())
+        .post('/api/analyze')
+        .attach(
+          'file',
+          Buffer.from(navalSave('Storage failure')),
+          'storage.hoi4',
+        )
+        .expect(201);
+      expect((response.body as AnalyzeResponse).game_date).toBe('1944.5.1');
+      expect(JSON.stringify(response.body)).not.toContain(
+        'private storage path',
+      );
+      expect(await history.list()).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      write.mockRestore();
+      warn.mockRestore();
+    }
+  });
 });

@@ -57,6 +57,8 @@ describe("analysis request lifecycle", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/analyze/recent")
+          return Promise.resolve(Response.json({ items: [] }));
         if (url === "/api/saves")
           return Promise.resolve(
             Response.json({
