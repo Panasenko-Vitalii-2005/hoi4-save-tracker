@@ -10,6 +10,7 @@ import { AnalyzeController } from './analyze/analyze.controller';
 import { SavesController } from './saves/saves.controller';
 import { AppController } from './app.controller';
 import { SaveAnalysisService } from './hoi4/save-analysis.service';
+import { Hoi4AnalysisWorkerService } from './hoi4/hoi4-analysis-worker.service';
 
 @Module({
   imports: [
@@ -26,6 +27,6 @@ import { SaveAnalysisService } from './hoi4/save-analysis.service';
     HealthController,
     SavesController,
   ],
-  providers: [SaveAnalysisService],
+  providers: [SaveAnalysisService, Hoi4AnalysisWorkerService],
 })
 export class AppModule {}

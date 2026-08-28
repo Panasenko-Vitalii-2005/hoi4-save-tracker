@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ServiceUnavailableException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import AdmZip from 'adm-zip';
 import {
@@ -13,6 +13,7 @@ import { join } from 'path';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AnalyzeController } from './analyze.controller';
+import { Hoi4AnalysisWorkerService } from '../hoi4/hoi4-analysis-worker.service';
 
 const MOWE = 'M\u00f6we';
 const POTOSI = 'ARM Potos\u00ed';
@@ -52,6 +53,7 @@ history={
 
 describe('AnalyzeController uploads', () => {
   let app: INestApplication<App>;
+  let analysis: Hoi4AnalysisWorkerService;
   const originalRoot = process.env.HOI4_SAVES_DIR;
   const localSaveRoot = mkdtempSync(join(tmpdir(), 'hoi4-local-analyze-'));
 
@@ -59,7 +61,9 @@ describe('AnalyzeController uploads', () => {
     process.env.HOI4_SAVES_DIR = localSaveRoot;
     const moduleRef = await Test.createTestingModule({
       controllers: [AnalyzeController],
+      providers: [Hoi4AnalysisWorkerService],
     }).compile();
+    analysis = moduleRef.get(Hoi4AnalysisWorkerService);
     app = moduleRef.createNestApplication();
     await app.init();
   });
@@ -129,6 +133,82 @@ describe('AnalyzeController uploads', () => {
       .post('/api/analyze')
       .send({ path: '../outside.hoi4' })
       .expect(400);
+  });
+
+  test('preserves 400/404 validation before starting an analysis', async () => {
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .send({})
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .send({ path: 'missing.hoi4' })
+      .expect(404);
+  });
+
+  test('removes a corrupt upload when the real Worker reports a parser error', async () => {
+    const existingUploads = readdirSync(UPLOAD_DIRECTORY).sort();
+    const response = await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from('PKinvalid'), 'corrupt.hoi4')
+      .expect(500);
+    expect((response.body as { message: string }).message).toMatch(
+      /^Parse error:/,
+    );
+    expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
+  });
+
+  test('returns overload as 503 and cleans up the rejected upload', async () => {
+    const existingUploads = readdirSync(UPLOAD_DIRECTORY).sort();
+    const spy = jest
+      .spyOn(analysis, 'analyze')
+      .mockRejectedValueOnce(
+        new ServiceUnavailableException(
+          'Save analysis capacity is full; please retry later',
+        ),
+      );
+    try {
+      await request(app.getHttpServer())
+        .post('/api/analyze')
+        .attach('file', Buffer.from(navalSave(MOWE)), 'fixture.hoi4')
+        .expect(503);
+      expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('retains the upload until analysis settles and removes it after a Worker crash', async () => {
+    const existingUploads = readdirSync(UPLOAD_DIRECTORY).sort();
+    let uploadedPath: string | undefined;
+    let crash!: (error: Error) => void;
+    let started!: () => void;
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const spy = jest
+      .spyOn(analysis, 'analyze')
+      .mockImplementation((filePath) => {
+        uploadedPath = filePath;
+        started();
+        return new Promise((_resolve, reject) => {
+          crash = reject;
+        });
+      });
+    try {
+      const response = request(app.getHttpServer())
+        .post('/api/analyze')
+        .attach('file', Buffer.from(navalSave(MOWE)), 'fixture.hoi4')
+        .then((value) => value);
+      await running;
+      expect(existsSync(uploadedPath!)).toBe(true);
+      crash(new Error('Save analysis worker exited without a result (code 2)'));
+      expect((await response).status).toBe(500);
+      expect(existsSync(uploadedPath!)).toBe(false);
+      expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test('rejects an absolute path outside the configured save root', async () => {

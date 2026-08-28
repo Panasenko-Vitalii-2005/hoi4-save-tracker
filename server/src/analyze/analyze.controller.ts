@@ -11,7 +11,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { analyzeSave } from '../hoi4/hoi4-parser';
+import { Hoi4AnalysisWorkerService } from '../hoi4/hoi4-analysis-worker.service';
 import { LocalSavePathError, resolveLocalSavePath } from '../saves/local-saves';
 
 interface AnalyzeRequest {
@@ -29,6 +29,8 @@ fs.mkdirSync(UPLOAD_DIRECTORY, { recursive: true });
 
 @Controller('api/analyze')
 export class AnalyzeController {
+  constructor(private readonly analysis: Hoi4AnalysisWorkerService) {}
+
   @Post()
   @UseInterceptors(
     FileInterceptor('file', {
@@ -36,7 +38,7 @@ export class AnalyzeController {
       limits: { fileSize: MAX_UPLOAD_BYTES },
     }),
   )
-  analyze(
+  async analyze(
     @Body() body: AnalyzeRequest,
     @UploadedFile() uploadedSave?: UploadedSave,
   ) {
@@ -66,8 +68,9 @@ export class AnalyzeController {
     }
 
     try {
-      return analyzeSave(filePath);
+      return await this.analysis.analyze(filePath);
     } catch (e: unknown) {
+      if (e instanceof HttpException) throw e;
       const msg = e instanceof Error ? e.message : String(e);
       throw new HttpException(
         `Parse error: ${msg}`,

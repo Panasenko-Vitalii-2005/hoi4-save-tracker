@@ -41,8 +41,29 @@ $ npm run start
 $ npm run start:dev
 
 # production mode
+$ npm run build
 $ npm run start:prod
 ```
+
+### Save analysis workers
+
+`POST /api/analyze` runs the existing save parser in a new Node.js Worker Thread.
+Only the file path is sent; the worker reads/decodes the save and returns the
+unchanged analysis result. Uploaded files are removed after the worker exits,
+including on parse errors or crashes.
+
+`HOI4_ANALYSIS_WORKERS` is a positive integer, default **1**, limiting active
+analyses per backend process. Excess requests receive **503** and may be retried;
+there is no waiting queue or worker pool. With the default, two simultaneous
+requests admit one and reject one; five admit one and reject four. Raising the
+limit permits parallel analyses but multiplies large-save heap usage and CPU
+demand. Do not size it solely by logical CPU count. No new analysis timeout is
+imposed. Result deserialization and HTTP JSON serialization still use the main thread.
+
+Nest start/watch and production use emitted workers under
+`dist/src/hoi4/workers/`. `npm run start:prod` runs `dist/src/main.js`, matching
+the existing Docker entry. Source execution (including Jest) uses the existing
+dev-only `ts-node` loader; production workers do not require it.
 
 ## Run tests
 
