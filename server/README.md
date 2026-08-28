@@ -242,6 +242,61 @@ reopen latency. JSON stringify/parse and HTTP serialization still run on the mai
 thread; gzip/gunzip are asynchronous. This remains local single-user storage,
 without authentication, encryption or multi-user access isolation.
 
+### Compare saved analyses (MVP)
+
+`GET /api/analyze/compare?base=<sha256>&target=<sha256>` loads durable results
+through `PersistedAnalysisResultService`, then returns a compact comparison DTO.
+It never reads original saves, invokes the parser/Worker, or depends on the RAM
+analysis cache. Equal hashes are valid and loaded once. Existing hash validation
+is reused: invalid/missing/repeated hash parameters return **400**; a missing or
+corrupt result returns a generic **404**; unexpected failures return a generic
+**503**, without paths. No persistence format or AnalyzeResult changes are made.
+
+The pure comparison model uses:
+
+- `game_date` for each side (preserved as the existing raw display date);
+- `active_countries`, `totals.divisions`, `totals.manpowerInField`,
+  `totals.aircraft`, `totals.ships`, and `navalLosses.length` for global summary;
+- the union of `by_country[].tag`, sorted ascending by exact tag;
+- per-country `effectiveMilitaryFactories`, `effectiveCivilianFactories`,
+  `effectiveDockyards`, `divisions`, `manpowerInField`, `ships`, and
+  `calculatedWarCasualtiesTotal`.
+
+Every numeric difference is **target minus base**, without date reordering.
+Only finite numbers participate in arithmetic; unknown/missing values stay null.
+For **every** compared country metric an absent country means unavailable, not
+zero: absence from this result is not proof that its historical quantities were
+zero. Added/removed countries remain explicit. `unchanged` denotes continued tag
+identity; `hasChanges` tracks metric differences (including availability changes)
+or added/removed status. Names are presentation only, resolved by the existing
+frontend country-name mapping; aliases with different tags are not merged.
+
+Industry uses final effective totals; no industry formulas are repeated.
+Calculated casualties retain bilateral-record semantics. Naval losses compare
+the count of retained events, **not** proven sinkings between saves or lifetime
+losses. No campaign-identity check is inferred. A date-only difference does not
+count as a change in compared numeric metrics. The unused nullable
+`manpowerCasualties` placeholder and a global casualty sum are deliberately not
+compared; no detailed production, stockpile, army, fleet, war, or map diff is added.
+
+Recent Analyses offers two explicit **Base / Target** selectors containing only
+available entries. Each slot can be replaced or cleared; there is no third slot.
+The same analysis can occupy both slots. **Swap** reverses direction; **Compare**
+requires both valid selections and guards duplicate requests. Selection changes
+abort pending reads, and late responses are ignored. History deletion or changed
+availability invalidates affected selections. A failed comparison keeps the last
+successful comparison with its original names/dates, never the new request's
+labels; unavailable results trigger a history refresh.
+
+Results appear in a separate section, with neutral signed deltas, global metrics,
+an exact-country table, **Changed only** (default) / **All countries**, and
+country-name/tag search. Native labelled controls, polite async announcements,
+and a focusable horizontally scrolling table support narrow screens and keyboard
+use. Existing upload/Open results coexist with this separate comparison section:
+opening or uploading another save does not clear the completed comparison or
+overwrite its Base/Target labels. No raw AnalyzeResult payloads or hashes are
+displayed as normal user-facing labels.
+
 ## Run tests
 
 ```bash

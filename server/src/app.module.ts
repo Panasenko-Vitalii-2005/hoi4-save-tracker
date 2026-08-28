@@ -14,6 +14,7 @@ import { Hoi4AnalysisWorkerService } from './hoi4/hoi4-analysis-worker.service';
 import { AnalysisResultCacheService } from './hoi4/analysis-result-cache.service';
 import { RecentAnalysesService } from './analyze/recent-analyses.service';
 import { PersistedAnalysisResultService } from './analyze/persisted-analysis-result.service';
+import { AnalysisComparisonService } from './analyze/analysis-comparison.service';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { PersistedAnalysisResultService } from './analyze/persisted-analysis-res
     AnalysisResultCacheService,
     RecentAnalysesService,
     PersistedAnalysisResultService,
+    AnalysisComparisonService,
   ],
 })
 export class AppModule {}

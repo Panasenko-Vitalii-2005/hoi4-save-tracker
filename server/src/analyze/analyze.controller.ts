@@ -8,6 +8,7 @@ import {
   Post,
   Param,
   Patch,
+  Query,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -21,6 +22,8 @@ import { LocalSavePathError, resolveLocalSavePath } from '../saves/local-saves';
 import { RecentAnalysesService } from './recent-analyses.service';
 import type { Response } from 'express';
 import { normalizeAnalysisHash } from './persisted-analysis-result.service';
+import { AnalysisComparisonService } from './analysis-comparison.service';
+import type { AnalysisComparisonDto } from './analysis-comparison.types';
 
 interface AnalyzeRequest {
   path: string;
@@ -42,7 +45,39 @@ export class AnalyzeController {
   constructor(
     private readonly analysis: AnalysisResultCacheService,
     private readonly history: RecentAnalysesService,
+    private readonly comparison: AnalysisComparisonService,
   ) {}
+
+  @Get('compare')
+  async compare(
+    @Query('base') base: unknown,
+    @Query('target') target: unknown,
+  ) {
+    const baseHash =
+      typeof base === 'string' ? normalizeAnalysisHash(base) : null;
+    const targetHash =
+      typeof target === 'string' ? normalizeAnalysisHash(target) : null;
+    if (!baseHash || !targetHash)
+      throw new HttpException(
+        'Provide valid base and target analysis hashes',
+        HttpStatus.BAD_REQUEST,
+      );
+    let result: AnalysisComparisonDto | null;
+    try {
+      result = await this.comparison.compare(baseHash, targetHash);
+    } catch {
+      throw new HttpException(
+        'Could not compare saved analyses',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    if (!result)
+      throw new HttpException(
+        'One or both saved analysis results are unavailable',
+        HttpStatus.NOT_FOUND,
+      );
+    return result;
+  }
 
   @Get('recent')
   async recent() {

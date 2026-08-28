@@ -489,6 +489,87 @@ select {
   outline-offset: 2px;
 }
 
+.comparison-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.comparison-actions .button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.comparison-direction {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.comparison-direction > div {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.comparison-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.analysis-comparison-results input[type="search"] {
+  padding: 12px 14px;
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink);
+  font: inherit;
+}
+
+.comparison-summary dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.comparison-summary dd {
+  margin: 6px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison-delta {
+  display: block;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.comparison-table-scroll {
+  margin-top: 16px;
+}
+
+.comparison-table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.comparison-country-table {
+  min-width: 1180px;
+}
+
+.comparison-country-table td:first-child {
+  min-width: 170px;
+  max-width: 260px;
+  overflow-wrap: anywhere;
+}
+
+.comparison-country-table .numeric-cell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .analyzer-recent-action .button {
   padding: 6px 10px;
   white-space: nowrap;

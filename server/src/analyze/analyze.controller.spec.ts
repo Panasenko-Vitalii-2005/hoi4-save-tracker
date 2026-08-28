@@ -26,6 +26,7 @@ import { PersistedAnalysisResultService } from './persisted-analysis-result.serv
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
+import { AnalysisComparisonService } from './analysis-comparison.service';
 
 class TrackedWorkerService extends Hoi4AnalysisWorkerService {
   created = 0;
@@ -109,6 +110,7 @@ describe('AnalyzeController uploads', () => {
         AnalysisResultCacheService,
         RecentAnalysesService,
         PersistedAnalysisResultService,
+        AnalysisComparisonService,
       ],
     }).compile();
     analysis = moduleRef.get(Hoi4AnalysisWorkerService);

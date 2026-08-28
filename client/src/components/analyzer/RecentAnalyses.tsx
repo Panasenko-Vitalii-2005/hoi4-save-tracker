@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RecentAnalysis } from "@/types";
+import { AnalysisComparison } from "./AnalysisComparison";
 
 type SortOrder =
   | "newest"
@@ -195,200 +196,215 @@ export function RecentAnalyses({
   };
 
   return (
-    <section
-      className="panel analyzer-recent"
-      aria-label="Recent Analyses"
-      aria-busy={loading || mutation !== null}
-    >
-      <div className="panel-head">
-        <h2>Recent Analyses</h2>
-        {failed && (
-          <button
-            className="button button-secondary"
-            onClick={() => setRetry((value) => value + 1)}
+    <>
+      <section
+        className="panel analyzer-recent"
+        aria-label="Recent Analyses"
+        aria-busy={loading || mutation !== null}
+      >
+        <div className="panel-head">
+          <h2>Recent Analyses</h2>
+          {failed && (
+            <button
+              className="button button-secondary"
+              onClick={() => setRetry((value) => value + 1)}
+            >
+              Retry history
+            </button>
+          )}
+        </div>
+        <p className="micro-copy">
+          Reopen a saved analysis without uploading again. Original save files
+          are not stored.
+        </p>
+        <div className="analyzer-recent-controls">
+          <label htmlFor="recent-analysis-search">
+            Search analyses
+            <input
+              id="recent-analysis-search"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Filename or game date"
+            />
+          </label>
+          <label htmlFor="recent-analysis-sort">
+            Sort analyses
+            <select
+              id="recent-analysis-sort"
+              value={sortOrder}
+              onChange={(event) =>
+                setSortOrder(event.target.value as SortOrder)
+              }
+            >
+              <option value="newest">Newest analyzed</option>
+              <option value="oldest">Oldest analyzed</option>
+              <option value="name-asc">Filename A–Z</option>
+              <option value="name-desc">Filename Z–A</option>
+              <option value="game-newest">Game date newest</option>
+              <option value="game-oldest">Game date oldest</option>
+            </select>
+          </label>
+        </div>
+        <p className="micro-copy">
+          Pinned analyses appear first. Pins are retained when possible, within
+          history limits.
+        </p>
+        <div className="micro-copy" role="status" aria-live="polite">
+          {loading
+            ? "Loading recent analyses…"
+            : failed
+              ? "Recent history is unavailable. You can still analyze saves."
+              : items.length === 0
+                ? "No recent analyses yet."
+                : visibleItems.length === 0
+                  ? "No analyses found."
+                  : `Showing ${visibleItems.length} of ${items.length} analyses.`}
+        </div>
+        <div className="micro-copy" role="status" aria-live="polite">
+          {openingHash ? "Opening saved analysis…" : openError}
+        </div>
+        <div className="micro-copy" role="status" aria-live="polite">
+          {mutation
+            ? mutation.action === "delete"
+              ? "Deleting saved analysis…"
+              : "Updating pin…"
+            : actionMessage}
+        </div>
+        {visibleItems.length > 0 && (
+          <div
+            className="table-wrap analyzer-recent-scroll"
+            role="region"
+            aria-label="Recent analyses table"
+            tabIndex={0}
           >
-            Retry history
-          </button>
-        )}
-      </div>
-      <p className="micro-copy">
-        Reopen a saved analysis without uploading again. Original save files are
-        not stored.
-      </p>
-      <div className="analyzer-recent-controls">
-        <label htmlFor="recent-analysis-search">
-          Search analyses
-          <input
-            id="recent-analysis-search"
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filename or game date"
-          />
-        </label>
-        <label htmlFor="recent-analysis-sort">
-          Sort analyses
-          <select
-            id="recent-analysis-sort"
-            value={sortOrder}
-            onChange={(event) => setSortOrder(event.target.value as SortOrder)}
-          >
-            <option value="newest">Newest analyzed</option>
-            <option value="oldest">Oldest analyzed</option>
-            <option value="name-asc">Filename A–Z</option>
-            <option value="name-desc">Filename Z–A</option>
-            <option value="game-newest">Game date newest</option>
-            <option value="game-oldest">Game date oldest</option>
-          </select>
-        </label>
-      </div>
-      <p className="micro-copy">
-        Pinned analyses appear first. Pins are retained when possible, within
-        history limits.
-      </p>
-      <div className="micro-copy" role="status" aria-live="polite">
-        {loading
-          ? "Loading recent analyses…"
-          : failed
-            ? "Recent history is unavailable. You can still analyze saves."
-            : items.length === 0
-              ? "No recent analyses yet."
-              : visibleItems.length === 0
-                ? "No analyses found."
-                : `Showing ${visibleItems.length} of ${items.length} analyses.`}
-      </div>
-      <div className="micro-copy" role="status" aria-live="polite">
-        {openingHash ? "Opening saved analysis…" : openError}
-      </div>
-      <div className="micro-copy" role="status" aria-live="polite">
-        {mutation
-          ? mutation.action === "delete"
-            ? "Deleting saved analysis…"
-            : "Updating pin…"
-          : actionMessage}
-      </div>
-      {visibleItems.length > 0 && (
-        <div
-          className="table-wrap analyzer-recent-scroll"
-          role="region"
-          aria-label="Recent analyses table"
-          tabIndex={0}
-        >
-          <table className="recent-table analyzer-recent-table">
-            <thead>
-              <tr>
-                <th>Save file</th>
-                <th>Game date</th>
-                <th>Analyzed</th>
-                <th className="numeric-cell">Divisions</th>
-                <th className="numeric-cell">Ships</th>
-                <th className="numeric-cell">Naval losses</th>
-                <th>Result</th>
-                <th className="analyzer-recent-action">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleItems.map((item) => (
-                <tr
-                  key={item.hash}
-                  aria-busy={
-                    openingHash === item.hash || mutation?.hash === item.hash
-                  }
-                >
-                  <td>
-                    <span className="analyzer-recent-name">
-                      {item.fileName}
-                    </span>
-                    <div className="micro-copy">
-                      {fileSize(item.fileSizeBytes)}
-                      {item.pinned ? " · Pinned" : ""}
-                    </div>
-                  </td>
-                  <td>{item.gameDate || "—"}</td>
-                  <td>
-                    <time dateTime={item.analyzedAt}>
-                      {new Date(item.analyzedAt).toLocaleString(undefined, {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </time>
-                  </td>
-                  <td className="numeric-cell">
-                    {item.divisionCount.toLocaleString()}
-                  </td>
-                  <td className="numeric-cell">
-                    {item.shipCount.toLocaleString()}
-                  </td>
-                  <td className="numeric-cell">
-                    {item.navalLossCount.toLocaleString()}
-                  </td>
-                  <td>
-                    <span
-                      title={
-                        item.hasPersistedResult
-                          ? "Saved analysis can be opened."
-                          : "Analyze the original save again to make this result available."
-                      }
-                    >
-                      {item.hasPersistedResult ? "Available" : "Unavailable"}
-                    </span>
-                  </td>
-                  <td className="analyzer-recent-action">
-                    <div className="analyzer-recent-actions">
-                      {item.hasPersistedResult === true ? (
+            <table className="recent-table analyzer-recent-table">
+              <thead>
+                <tr>
+                  <th>Save file</th>
+                  <th>Game date</th>
+                  <th>Analyzed</th>
+                  <th className="numeric-cell">Divisions</th>
+                  <th className="numeric-cell">Ships</th>
+                  <th className="numeric-cell">Naval losses</th>
+                  <th>Result</th>
+                  <th className="analyzer-recent-action">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleItems.map((item) => (
+                  <tr
+                    key={item.hash}
+                    aria-busy={
+                      openingHash === item.hash || mutation?.hash === item.hash
+                    }
+                  >
+                    <td>
+                      <span className="analyzer-recent-name">
+                        {item.fileName}
+                      </span>
+                      <div className="micro-copy">
+                        {fileSize(item.fileSizeBytes)}
+                        {item.pinned ? " · Pinned" : ""}
+                      </div>
+                    </td>
+                    <td>{item.gameDate || "—"}</td>
+                    <td>
+                      <time dateTime={item.analyzedAt}>
+                        {new Date(item.analyzedAt).toLocaleString(undefined, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </time>
+                    </td>
+                    <td className="numeric-cell">
+                      {item.divisionCount.toLocaleString()}
+                    </td>
+                    <td className="numeric-cell">
+                      {item.shipCount.toLocaleString()}
+                    </td>
+                    <td className="numeric-cell">
+                      {item.navalLossCount.toLocaleString()}
+                    </td>
+                    <td>
+                      <span
+                        title={
+                          item.hasPersistedResult
+                            ? "Saved analysis can be opened."
+                            : "Analyze the original save again to make this result available."
+                        }
+                      >
+                        {item.hasPersistedResult ? "Available" : "Unavailable"}
+                      </span>
+                    </td>
+                    <td className="analyzer-recent-action">
+                      <div className="analyzer-recent-actions">
+                        {item.hasPersistedResult === true ? (
+                          <button
+                            className="button button-secondary"
+                            aria-label={`Open analysis ${item.fileName}`}
+                            disabled={
+                              openingHash !== null ||
+                              analyzing ||
+                              mutation !== null
+                            }
+                            onClick={() => {
+                              if (!mutationInFlight.current) onOpen(item);
+                            }}
+                          >
+                            {openingHash === item.hash
+                              ? "Opening…"
+                              : "Open result"}
+                          </button>
+                        ) : null}
                         <button
                           className="button button-secondary"
-                          aria-label={`Open analysis ${item.fileName}`}
-                          disabled={
-                            openingHash !== null ||
-                            analyzing ||
-                            mutation !== null
-                          }
-                          onClick={() => {
-                            if (!mutationInFlight.current) onOpen(item);
-                          }}
+                          aria-label={`${item.pinned ? "Unpin" : "Pin"} analysis ${item.fileName}`}
+                          aria-pressed={item.pinned === true}
+                          disabled={mutation !== null || openingHash !== null}
+                          onClick={() => void manage(item, "pin")}
                         >
-                          {openingHash === item.hash
-                            ? "Opening…"
-                            : "Open result"}
+                          {mutation?.hash === item.hash &&
+                          mutation.action === "pin"
+                            ? "Updating…"
+                            : item.pinned
+                              ? "Unpin"
+                              : "Pin"}
                         </button>
-                      ) : null}
-                      <button
-                        className="button button-secondary"
-                        aria-label={`${item.pinned ? "Unpin" : "Pin"} analysis ${item.fileName}`}
-                        aria-pressed={item.pinned === true}
-                        disabled={mutation !== null || openingHash !== null}
-                        onClick={() => void manage(item, "pin")}
-                      >
-                        {mutation?.hash === item.hash &&
-                        mutation.action === "pin"
-                          ? "Updating…"
-                          : item.pinned
-                            ? "Unpin"
-                            : "Pin"}
-                      </button>
-                      <button
-                        className="button button-secondary analyzer-recent-delete"
-                        aria-label={`Delete analysis ${item.fileName}`}
-                        disabled={mutation !== null || openingHash !== null}
-                        onClick={() => void manage(item, "delete")}
-                      >
-                        {mutation?.hash === item.hash &&
-                        mutation.action === "delete"
-                          ? "Deleting…"
-                          : "Delete"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+                        <button
+                          className="button button-secondary analyzer-recent-delete"
+                          aria-label={`Delete analysis ${item.fileName}`}
+                          disabled={mutation !== null || openingHash !== null}
+                          onClick={() => void manage(item, "delete")}
+                        >
+                          {mutation?.hash === item.hash &&
+                          mutation.action === "delete"
+                            ? "Deleting…"
+                            : "Delete"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <AnalysisComparison
+        items={items}
+        busy={
+          loading ||
+          failed ||
+          mutation !== null ||
+          openingHash !== null ||
+          analyzing
+        }
+        onUnavailable={() => setRetry((value) => value + 1)}
+      />
+    </>
   );
 }
