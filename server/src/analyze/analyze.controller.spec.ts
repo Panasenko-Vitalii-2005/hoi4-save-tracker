@@ -14,6 +14,19 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AnalyzeController } from './analyze.controller';
 import { Hoi4AnalysisWorkerService } from '../hoi4/hoi4-analysis-worker.service';
+import { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.service';
+import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
+import { Worker } from 'node:worker_threads';
+
+class TrackedWorkerService extends Hoi4AnalysisWorkerService {
+  created = 0;
+
+  protected createWorker(filePath: string): Worker {
+    const worker = super.createWorker(filePath);
+    this.created++;
+    return worker;
+  }
+}
 
 const MOWE = 'M\u00f6we';
 const POTOSI = 'ARM Potos\u00ed';
@@ -51,19 +64,36 @@ history={
 }`;
 }
 
+async function waitFor(predicate: () => boolean) {
+  const deadline = Date.now() + 2000;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('Timed out waiting for uploads');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+}
+
 describe('AnalyzeController uploads', () => {
   let app: INestApplication<App>;
-  let analysis: Hoi4AnalysisWorkerService;
+  let analysis: TrackedWorkerService;
+  let cache: AnalysisResultCacheService;
   const originalRoot = process.env.HOI4_SAVES_DIR;
+  const originalCacheLimit = process.env.HOI4_ANALYSIS_CACHE_ENTRIES;
+  const originalWorkerLimit = process.env.HOI4_ANALYSIS_WORKERS;
   const localSaveRoot = mkdtempSync(join(tmpdir(), 'hoi4-local-analyze-'));
 
   beforeAll(async () => {
     process.env.HOI4_SAVES_DIR = localSaveRoot;
+    process.env.HOI4_ANALYSIS_CACHE_ENTRIES = '3';
+    process.env.HOI4_ANALYSIS_WORKERS = '1';
     const moduleRef = await Test.createTestingModule({
       controllers: [AnalyzeController],
-      providers: [Hoi4AnalysisWorkerService],
+      providers: [
+        { provide: Hoi4AnalysisWorkerService, useClass: TrackedWorkerService },
+        AnalysisResultCacheService,
+      ],
     }).compile();
     analysis = moduleRef.get(Hoi4AnalysisWorkerService);
+    cache = moduleRef.get(AnalysisResultCacheService);
     app = moduleRef.createNestApplication();
     await app.init();
   });
@@ -73,6 +103,12 @@ describe('AnalyzeController uploads', () => {
     rmSync(localSaveRoot, { recursive: true, force: true });
     if (originalRoot === undefined) delete process.env.HOI4_SAVES_DIR;
     else process.env.HOI4_SAVES_DIR = originalRoot;
+    if (originalCacheLimit === undefined)
+      delete process.env.HOI4_ANALYSIS_CACHE_ENTRIES;
+    else process.env.HOI4_ANALYSIS_CACHE_ENTRIES = originalCacheLimit;
+    if (originalWorkerLimit === undefined)
+      delete process.env.HOI4_ANALYSIS_WORKERS;
+    else process.env.HOI4_ANALYSIS_WORKERS = originalWorkerLimit;
   });
 
   test.each([
@@ -90,6 +126,7 @@ describe('AnalyzeController uploads', () => {
     'analyzes and removes a %s uploaded save',
     async (_kind, payload, name) => {
       const existingUploads = readdirSync(UPLOAD_DIRECTORY).sort();
+      const before = analysis.created;
       const response = await request(app.getHttpServer())
         .post('/api/analyze')
         .attach('file', payload, 'fixture.hoi4')
@@ -105,10 +142,23 @@ describe('AnalyzeController uploads', () => {
       expect(body.divisionEquipmentCatalog).toEqual([]);
       expect(body.armyHierarchySummaries).toEqual([]);
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
+      expect(analysis.created).toBe(before + 1);
+      const cached = await request(app.getHttpServer())
+        .post('/api/analyze')
+        .attach('file', payload, 'renamed.hoi4')
+        .expect(201);
+      expect(cached.body).toEqual(response.body);
+      expect(analysis.created).toBe(before + 1);
+      expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
     },
   );
 
   test('preserves the existing JSON path request', async () => {
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from(navalSave(MOWE)), 'fixture.hoi4')
+      .expect(201);
+    const before = analysis.created;
     const savePath = join(localSaveRoot, 'fixture.hoi4');
     writeFileSync(savePath, Buffer.from(navalSave(MOWE), 'utf8'));
 
@@ -126,6 +176,12 @@ describe('AnalyzeController uploads', () => {
     expect(body.divisionEquipmentCatalog).toEqual([]);
     expect(body.armyHierarchySummaries).toEqual([]);
     expect(existsSync(savePath)).toBe(true);
+    expect(analysis.created).toBe(before); // Reuses the identical plain upload.
+    const { parse_seconds, ...semantic } = response.body as AnalyzeResult;
+    const { parse_seconds: directSeconds, ...direct } = analyzeSave(savePath);
+    expect(Number.isFinite(parse_seconds)).toBe(true);
+    expect(Number.isFinite(directSeconds)).toBe(true);
+    expect(semantic).toEqual(direct);
   });
 
   test('rejects path traversal outside the configured save root', async () => {
@@ -170,7 +226,11 @@ describe('AnalyzeController uploads', () => {
     try {
       await request(app.getHttpServer())
         .post('/api/analyze')
-        .attach('file', Buffer.from(navalSave(MOWE)), 'fixture.hoi4')
+        .attach(
+          'file',
+          Buffer.from(navalSave('Overload fixture')),
+          'fixture.hoi4',
+        )
         .expect(503);
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
     } finally {
@@ -198,7 +258,7 @@ describe('AnalyzeController uploads', () => {
     try {
       const response = request(app.getHttpServer())
         .post('/api/analyze')
-        .attach('file', Buffer.from(navalSave(MOWE)), 'fixture.hoi4')
+        .attach('file', Buffer.from(navalSave('Crash fixture')), 'fixture.hoi4')
         .then((value) => value);
       await running;
       expect(existsSync(uploadedPath!)).toBe(true);
@@ -225,4 +285,70 @@ describe('AnalyzeController uploads', () => {
       rmSync(outsideDirectory, { recursive: true, force: true });
     }
   });
+
+  test.each(['success', 'failure', 'disconnect'])(
+    'same-hash uploads share analysis and clean up only their own files on %s',
+    async (outcome) => {
+      const existingUploads = readdirSync(UPLOAD_DIRECTORY).sort();
+      const payload = Buffer.from(navalSave(`Shared ${outcome}`));
+      const reference = join(localSaveRoot, `shared-${outcome}.hoi4`);
+      writeFileSync(reference, payload);
+      const result = analyzeSave(reference);
+      let leaderPath: string | undefined;
+      let finish!: (value: AnalyzeResult) => void;
+      let fail!: (error: Error) => void;
+      const pending = new Promise<AnalyzeResult>((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+      });
+      const execute = jest
+        .spyOn(analysis, 'analyze')
+        .mockImplementation((path) => {
+          leaderPath = path;
+          return pending;
+        });
+      const lookups = jest.spyOn(cache['inFlight'], 'get');
+      try {
+        const leader = request(app.getHttpServer())
+          .post('/api/analyze')
+          .attach('file', payload, 'first.hoi4');
+        const firstResponse = new Promise<number>((resolve) => {
+          leader.end((_error, response) => resolve(response?.status ?? 0));
+        });
+        await waitFor(() => leaderPath !== undefined);
+        const secondResponse = request(app.getHttpServer())
+          .post('/api/analyze')
+          .attach('file', payload, 'second.hoi4')
+          .then((value) => value);
+        await waitFor(() => lookups.mock.calls.length === 2);
+        const added = readdirSync(UPLOAD_DIRECTORY).filter(
+          (name) => !existingUploads.includes(name),
+        );
+        expect(added).toHaveLength(2);
+        expect(existsSync(leaderPath!)).toBe(true);
+        expect(execute).toHaveBeenCalledTimes(1);
+        if (outcome === 'disconnect') {
+          leader.abort();
+          expect(existsSync(leaderPath!)).toBe(true);
+        }
+        if (outcome === 'failure') fail(new Error('Shared worker crash'));
+        else finish(result);
+
+        const second = await secondResponse;
+        expect(second.status).toBe(outcome === 'failure' ? 500 : 201);
+        if (outcome !== 'failure') expect(second.body).toEqual(result);
+        if (outcome !== 'disconnect')
+          expect(await firstResponse).toBe(second.status);
+        await waitFor(() =>
+          added.every((name) => !existsSync(join(UPLOAD_DIRECTORY, name))),
+        );
+        expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
+        expect(cache['inFlight'].size).toBe(0);
+      } finally {
+        finish(result);
+        execute.mockRestore();
+        lookups.mockRestore();
+      }
+    },
+  );
 });

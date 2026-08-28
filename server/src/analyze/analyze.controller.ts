@@ -11,7 +11,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Hoi4AnalysisWorkerService } from '../hoi4/hoi4-analysis-worker.service';
+import { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.service';
 import { LocalSavePathError, resolveLocalSavePath } from '../saves/local-saves';
 
 interface AnalyzeRequest {
@@ -29,7 +29,7 @@ fs.mkdirSync(UPLOAD_DIRECTORY, { recursive: true });
 
 @Controller('api/analyze')
 export class AnalyzeController {
-  constructor(private readonly analysis: Hoi4AnalysisWorkerService) {}
+  constructor(private readonly analysis: AnalysisResultCacheService) {}
 
   @Post()
   @UseInterceptors(

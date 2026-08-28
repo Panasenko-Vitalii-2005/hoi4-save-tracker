@@ -47,15 +47,17 @@ $ npm run start:prod
 
 ### Save analysis workers
 
-`POST /api/analyze` runs the existing save parser in a new Node.js Worker Thread.
-Only the file path is sent; the worker reads/decodes the save and returns the
-unchanged analysis result. Uploaded files are removed after the worker exits,
-including on parse errors or crashes.
+On a cache miss, `POST /api/analyze` runs the existing save parser in a new Node.js
+Worker Thread. Only the file path is sent; the worker reads/decodes the save and
+returns the unchanged analysis result. Uploaded files are removed after analysis
+settles, including on cache hits, parse errors or crashes.
 
 `HOI4_ANALYSIS_WORKERS` is a positive integer, default **1**, limiting active
-analyses per backend process. Excess requests receive **503** and may be retried;
-there is no waiting queue or worker pool. With the default, two simultaneous
-requests admit one and reject one; five admit one and reject four. Raising the
+analyses per backend process. Excess cache misses for different contents receive
+**503** and may be retried; there is no waiting queue or worker pool. With the
+default, two simultaneous distinct uncached saves admit one and reject one;
+five admit one and reject four. Identical contents share an in-flight analysis,
+and completed cache hits do not use a worker slot. Raising the
 limit permits parallel analyses but multiplies large-save heap usage and CPU
 demand. Do not size it solely by logical CPU count. No new analysis timeout is
 imposed. Result deserialization and HTTP JSON serialization still use the main thread.
@@ -64,6 +66,37 @@ Nest start/watch and production use emitted workers under
 `dist/src/hoi4/workers/`. `npm run start:prod` runs `dist/src/main.js`, matching
 the existing Docker entry. Source execution (including Jest) uses the existing
 dev-only `ts-node` loader; production workers do not require it.
+
+### Analysis result cache
+
+Both JSON/path requests and uploads use a streaming SHA-256 of the raw file bytes
+before analysis. Filenames, paths and timestamps are not cache keys. Identical
+bytes share a result even under different names; different compressed encodings
+of the same decoded save are separate entries. Hashing reads the file once in
+bounded chunks without allocating a full-file buffer; a cache miss then lets
+the worker read/decode the file as before. Local saves must remain unchanged
+during hashing and analysis; use a stable copy rather than a file being rewritten.
+
+`HOI4_ANALYSIS_CACHE_ENTRIES` is a positive integer, default **3**. Missing or
+invalid values fall back to 3. The cache holds only successful results, evicting
+the least recently accessed entry when full. It is **process-local memory**, not
+durable storage: restart clears it, and separate backend processes do not share
+it. The control save's result is about 6.55 MiB serialized / 11.1 MiB retained
+heap in a sample measurement; three such entries are roughly 33 MiB of result
+heap, in addition to workers, in-flight results and HTTP serialization. This is
+an entry-count bound, not a byte limit; modded results may be larger.
+
+Concurrent requests with the same hash await one analysis. Failures (including
+503 and worker crashes) are neither cached nor retained as in-flight entries,
+so a later request can retry. Each upload retains and cleans up only its own
+temporary file after its awaited analysis settles. A duplicate caller or client
+disconnect does not cancel the worker or delete another caller's file.
+
+Results are treated as immutable and serialized directly, without expensive
+deep copies. Cache code never modifies them. `parse_seconds` remains the duration
+of the original parser execution, **not** current request latency or a cache-hit
+indicator. The response shape is unchanged; upload, hashing and serialization
+still take time on a hit. No cache state or hashes are logged or added to the API.
 
 ## Run tests
 
