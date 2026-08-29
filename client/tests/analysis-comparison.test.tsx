@@ -143,6 +143,10 @@ describe("Save comparison UI", () => {
     [...container.querySelectorAll("button")].find(
       (b) => b.textContent === text,
     )!;
+  const buttonByLabel = (label: string) =>
+    container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${label}"]`,
+    )!;
   const click = async (text: string) => {
     await act(async () => button(text).click());
   };
@@ -168,6 +172,7 @@ describe("Save comparison UI", () => {
   test("two explicit slots offer only available analyses and require both selections", async () => {
     await render();
     const controls = container.querySelector('[aria-label="Compare saves"]')!;
+    expect(controls.querySelector("h2")?.textContent).toBe("Compare Saves");
     expect(controls.querySelectorAll("select")).toHaveLength(2);
     expect(controls.textContent).not.toContain("Unavailable.hoi4");
     expect(container.querySelector('label[for="compare-base"]')?.textContent).toContain(
@@ -194,7 +199,9 @@ describe("Save comparison UI", () => {
   test("Swap reverses visible direction and the exact API query", async () => {
     await render();
     await choose();
-    await click("Swap");
+    await act(async () =>
+      buttonByLabel("Swap base and target analyses").click(),
+    );
     await click("Compare");
     const query = new URL(comparisons()[0].url, "http://localhost")
       .searchParams;
@@ -231,7 +238,9 @@ describe("Save comparison UI", () => {
     await choose();
     await click("Compare");
     const old = comparisons()[0];
-    await click("Swap");
+    await act(async () =>
+      buttonByLabel("Swap base and target analyses").click(),
+    );
     expect(old.init?.signal?.aborted).toBe(true);
     await click("Compare");
     await finish(response(entries[1].hash, entries[0].hash));
@@ -402,13 +411,21 @@ describe("Save comparison UI", () => {
         (item) => item.querySelector(".comparison-country-tag")?.textContent,
       ),
     ).toEqual(["GER", "ENG", "ITA", "D04"]);
-    await click("Largest first");
+    await act(async () =>
+      buttonByLabel(
+        "Current order largest first; sort smallest absolute changes first",
+      ).click(),
+    );
     expect(
       comparisonRows().map(
         (item) => item.querySelector(".comparison-country-tag")?.textContent,
       ),
     ).toEqual(["ITA", "ENG", "GER", "D04"]);
-    await click("Smallest first");
+    await act(async () =>
+      buttonByLabel(
+        "Current order smallest first; sort largest absolute changes first",
+      ).click(),
+    );
 
     await select("comparison-country-sort", "effectiveCivilianFactories");
     expect(
@@ -506,7 +523,9 @@ describe("Save comparison UI", () => {
     await choose();
     await click("Compare");
     await finish();
-    await click("Swap");
+    await act(async () =>
+      buttonByLabel("Swap base and target analyses").click(),
+    );
     await click("Compare");
     await act(async () =>
       comparisons()[1].resolve(
@@ -650,6 +669,11 @@ describe("Save comparison UI", () => {
     await choose();
     await click("Compare");
     await finish();
+    const sortDirection = results().querySelector(
+      ".comparison-sort-direction",
+    )!;
+    expect(sortDirection.textContent).toBe("↓");
+    expect(sortDirection.textContent).not.toContain("Largest first");
     expect(container.querySelector('label[for="compare-base"]')).not.toBeNull();
     expect(
       container.querySelector('label[for="compare-target"]'),
@@ -664,5 +688,10 @@ describe("Save comparison UI", () => {
         '[aria-label="Compare saves"] [aria-live="polite"]',
       ),
     ).not.toBeNull();
+    expect(
+      [...results().querySelectorAll(".comparison-detail-table thead th")].map(
+        (cell) => cell.textContent,
+      ),
+    ).toEqual(["Metric", "Base", "Target", "Change"]);
   });
 });

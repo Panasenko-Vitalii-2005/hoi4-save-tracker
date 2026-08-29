@@ -115,71 +115,72 @@ export function AnalysisComparison({
       >
         <div className="comparison-control-layout">
           <div className="comparison-control-copy">
-            <span className="eyebrow">World comparison</span>
+            <span className="eyebrow">Saved analysis comparison</span>
             <h2>Compare Saves</h2>
-            <p>See how your world changed between two saves.</p>
-            <p className="micro-copy">
-              All values show the difference <strong>Target − Base</strong>.
-            </p>
-            <p className="micro-copy">
-              Direction is never reordered by date. Comparing the same save is
-              supported.
+            <p className="comparison-subtitle">
+              See how your world changed between two saves.
+              <span>
+                All values show the difference <strong>Target − Base</strong>.
+              </span>
             </p>
           </div>
-          <div className="comparison-save-picker">
-            {(["base", "target"] as const).map((side) => {
-              const selected = side === "base" ? base : target;
-              return (
-                <label
-                  className="comparison-save-card"
-                  key={side}
-                  htmlFor={`compare-${side}`}
-                >
-                  <span className="comparison-save-role">
-                    {side === "base" ? "Base" : "Target"}
-                  </span>
-                  <select
-                    id={`compare-${side}`}
-                    value={selected?.hash ?? ""}
-                    onChange={(e) => select(side, e.target.value)}
+          <div className="comparison-picker-region">
+            <div className="comparison-save-picker">
+              {(["base", "target"] as const).map((side) => {
+                const selected = side === "base" ? base : target;
+                return (
+                  <label
+                    className="comparison-save-card"
+                    key={side}
+                    htmlFor={`compare-${side}`}
                   >
-                    <option value="">Select an analysis</option>
-                    {available.map((item) => (
-                      <option key={item.hash} value={item.hash}>
-                        {item.fileName} — {item.gameDate || "—"} ·{" "}
-                        {new Date(item.analyzedAt).toLocaleString()}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="comparison-save-date">
-                    {selected?.gameDate || "No save selected"}
-                  </span>
-                </label>
-              );
-            })}
-            <button
-              className="button button-secondary comparison-swap"
-              aria-label="Swap base and target analyses"
-              disabled={!base || !target}
-              onClick={() => {
-                cancel();
-                setError("");
-                setBaseHash(targetHash);
-                setTargetHash(baseHash);
-              }}
-            >
-              Swap
-            </button>
+                    <span className="comparison-save-role">
+                      {side === "base" ? "Base" : "Target"}
+                    </span>
+                    <select
+                      id={`compare-${side}`}
+                      value={selected?.hash ?? ""}
+                      onChange={(e) => select(side, e.target.value)}
+                    >
+                      <option value="">Select an analysis</option>
+                      {available.map((item) => (
+                        <option key={item.hash} value={item.hash}>
+                          {item.fileName}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="comparison-save-date">
+                      {selected?.gameDate || "No save selected"}
+                    </span>
+                  </label>
+                );
+              })}
+              <button
+                className="button button-secondary comparison-swap"
+                aria-label="Swap base and target analyses"
+                title="Swap Base and Target"
+                disabled={!base || !target}
+                onClick={() => {
+                  cancel();
+                  setError("");
+                  setBaseHash(targetHash);
+                  setTargetHash(baseHash);
+                }}
+              >
+                <span aria-hidden="true">⇄</span>
+                <span className="comparison-swap-label">Swap</span>
+              </button>
+            </div>
+            <div className="comparison-actions">
+              <button
+                className="button button-primary"
+                disabled={!base || !target || busy || loading}
+                onClick={() => void compare()}
+              >
+                {loading ? "Comparing…" : "Compare"}
+              </button>
+            </div>
           </div>
-        </div>
-        <div className="comparison-actions">
-          <button
-            className="button button-primary"
-            disabled={!base || !target || busy || loading}
-            onClick={() => void compare()}
-          >
-            {loading ? "Comparing…" : "Compare"}
-          </button>
         </div>
         <p className="micro-copy" role="status" aria-live="polite">
           {loading ? "Loading saved analyses for comparison…" : error}

@@ -237,10 +237,7 @@ export function AnalysisComparisonResults({
       aria-label="Comparison results"
     >
       <div className="comparison-results-heading">
-        <div>
-          <span className="eyebrow">Completed comparison</span>
-          <h2>World snapshot changes</h2>
-        </div>
+        <span className="eyebrow">Completed comparison</span>
         <div className="comparison-direction" aria-label="Comparison direction">
           <div>
             <span className="comparison-save-role">Base</span>
@@ -293,52 +290,60 @@ export function AnalysisComparisonResults({
               ))}
             </div>
             <label className="comparison-search" htmlFor="comparison-country-search">
-              <span>Search countries</span>
               <input
                 id="comparison-country-search"
                 type="search"
+                aria-label="Search countries"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Country name or tag"
+                placeholder="Search countries..."
               />
             </label>
-            <label className="comparison-sort" htmlFor="comparison-country-sort">
-              <span>Sort by</span>
-              <select
-                id="comparison-country-sort"
-                value={sortKey}
-                onChange={(event) => changeSort(event.target.value as SortKey)}
-              >
-                <option value="largest">Largest change</option>
-                <option value="country">Country name</option>
-                {COUNTRY_COLUMNS.map(({ key, label }) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="button button-secondary comparison-sort-direction"
-              aria-label={
-                sortKey === "country"
-                  ? descending
-                    ? "Sort country names A to Z"
-                    : "Sort country names Z to A"
-                  : descending
-                    ? "Sort smallest absolute changes first"
-                    : "Sort largest absolute changes first"
-              }
-              onClick={() => setDescending((value) => !value)}
+            <div
+              className="comparison-sort-cluster"
+              title="Metric sorts use the absolute size of each change."
             >
-              {sortKey === "country"
-                ? descending
-                  ? "Z → A"
-                  : "A → Z"
-                : descending
-                  ? "Largest first"
-                  : "Smallest first"}
-            </button>
+              <label className="comparison-sort" htmlFor="comparison-country-sort">
+                <select
+                  id="comparison-country-sort"
+                  aria-label="Sort countries by"
+                  value={sortKey}
+                  onChange={(event) => changeSort(event.target.value as SortKey)}
+                >
+                  <option value="largest">Largest change</option>
+                  <option value="country">Country name</option>
+                  {COUNTRY_COLUMNS.map(({ key, label }) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="comparison-sort-direction"
+                aria-label={
+                  sortKey === "country"
+                    ? descending
+                      ? "Current order Z to A; sort country names A to Z"
+                      : "Current order A to Z; sort country names Z to A"
+                    : descending
+                      ? "Current order largest first; sort smallest absolute changes first"
+                      : "Current order smallest first; sort largest absolute changes first"
+                }
+                title={
+                  sortKey === "country"
+                    ? descending
+                      ? "Z → A"
+                      : "A → Z"
+                    : descending
+                      ? "Largest first"
+                      : "Smallest first"
+                }
+                onClick={() => setDescending((value) => !value)}
+              >
+                <span aria-hidden="true">{descending ? "↓" : "↑"}</span>
+              </button>
+            </div>
           </div>
 
           {countries.length === 0 ? (
@@ -490,10 +495,6 @@ export function AnalysisComparisonResults({
               These snapshots do not prove production or losses occurred strictly
               between save dates. Recorded naval losses are retained event-count
               differences, not complete lifetime losses.
-            </p>
-            <p className="micro-copy">
-              “Largest change” uses the greatest absolute numeric delta among the
-              displayed metrics. Individual metric sorts also use absolute deltas.
             </p>
           </section>
         </aside>
