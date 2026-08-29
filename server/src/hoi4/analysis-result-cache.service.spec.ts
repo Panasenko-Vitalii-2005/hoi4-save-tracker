@@ -10,6 +10,7 @@ import {
 } from './analysis-result-cache.service';
 import { Hoi4AnalysisWorkerService } from './hoi4-analysis-worker.service';
 import { analyzeSave, type AnalyzeResult } from './hoi4-parser';
+import { SaveInputError } from './save-input.error';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -157,6 +158,7 @@ describe('AnalysisResultCacheService', () => {
   test.each([
     new Error('parser failure'),
     new Error('worker crash'),
+    new SaveInputError('ANALYSIS_TIMEOUT'),
     new ServiceUnavailableException('capacity full'),
   ])('never caches failure %s and retries successfully', async (failure) => {
     execute.mockRejectedValueOnce(failure);

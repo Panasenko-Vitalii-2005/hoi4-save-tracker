@@ -13,9 +13,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.service';
 import { LocalSavePathError, resolveLocalSavePath } from '../saves/local-saves';
@@ -24,6 +22,8 @@ import type { Response } from 'express';
 import { normalizeAnalysisHash } from './persisted-analysis-result.service';
 import { AnalysisComparisonService } from './analysis-comparison.service';
 import type { AnalysisComparisonDto } from './analysis-comparison.types';
+import { SaveUploadInterceptor } from './save-upload.interceptor';
+import { validateSaveFile } from '../hoi4/save-container';
 
 interface AnalyzeRequest {
   path: string;
@@ -34,11 +34,6 @@ interface UploadedSave {
   originalname: string;
   size: number;
 }
-
-const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
-const UPLOAD_DIRECTORY = path.join(os.tmpdir(), 'hoi4-save-tracker');
-
-fs.mkdirSync(UPLOAD_DIRECTORY, { recursive: true });
 
 @Controller('api/analyze')
 export class AnalyzeController {
@@ -163,18 +158,14 @@ export class AnalyzeController {
   }
 
   @Post()
-  @UseInterceptors(
-    FileInterceptor('file', {
-      dest: UPLOAD_DIRECTORY,
-      limits: { fileSize: MAX_UPLOAD_BYTES },
-    }),
-  )
+  @UseInterceptors(SaveUploadInterceptor)
   async analyze(
     @Body() body: AnalyzeRequest,
     @Res({ passthrough: true }) response: Response,
     @UploadedFile() uploadedSave?: UploadedSave,
   ) {
-    const requestedPath = (body?.path ?? '').trim();
+    const requestedPath =
+      typeof body?.path === 'string' ? body.path.trim() : '';
 
     if (!uploadedSave && !requestedPath) {
       throw new HttpException(
@@ -199,38 +190,21 @@ export class AnalyzeController {
       }
     }
 
-    try {
-      const fileSizeBytes =
-        uploadedSave?.size ?? (await fs.promises.stat(filePath)).size;
-      const { hash, result } = await this.analysis.analyzeWithHash(filePath);
-      // Disconnecting does not cancel shared work or another caller's upload.
-      // But a caller who disconnected before success should not refresh history.
-      if (!response.destroyed) {
-        await this.history.record(
-          {
-            hash,
-            fileName: uploadedSave?.originalname ?? path.basename(filePath),
-            fileSizeBytes,
-          },
-          result,
-        );
-      }
-      return result;
-    } catch (e: unknown) {
-      if (e instanceof HttpException) throw e;
-      const msg = e instanceof Error ? e.message : String(e);
-      throw new HttpException(
-        `Parse error: ${msg}`,
-        HttpStatus.INTERNAL_SERVER_ERROR,
+    await validateSaveFile(filePath);
+    const fileSizeBytes =
+      uploadedSave?.size ?? (await fs.promises.stat(filePath)).size;
+    const { hash, result } = await this.analysis.analyzeWithHash(filePath);
+    // The interceptor owns cleanup, including pre-controller failures and disconnects.
+    if (!response.destroyed) {
+      await this.history.record(
+        {
+          hash,
+          fileName: uploadedSave?.originalname ?? path.basename(filePath),
+          fileSizeBytes,
+        },
+        result,
       );
-    } finally {
-      if (uploadedSave) {
-        try {
-          fs.unlinkSync(uploadedSave.path);
-        } catch {
-          // The analysis result is still valid if temporary-file cleanup fails.
-        }
-      }
     }
+    return result;
   }
 }

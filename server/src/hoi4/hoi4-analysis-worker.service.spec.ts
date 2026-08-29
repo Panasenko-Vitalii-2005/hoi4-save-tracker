@@ -5,9 +5,12 @@ import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { Hoi4AnalysisWorkerService } from './hoi4-analysis-worker.service';
 import { analyzeSave, type AnalyzeResult } from './hoi4-parser';
+import { EventEmitter } from 'node:events';
+import { SaveInputError } from './save-input.error';
 
 class TrackedAnalysisService extends Hoi4AnalysisWorkerService {
   readonly created: Worker[] = [];
+  readonly limits: Array<Worker['resourceLimits']> = [];
   script: string | null = null;
   spawnError = false;
 
@@ -18,6 +21,7 @@ class TrackedAnalysisService extends Hoi4AnalysisWorkerService {
         ? super.createWorker(filePath)
         : new Worker(this.script, { eval: true, execArgv: [] });
     this.created.push(worker);
+    this.limits.push(worker.resourceLimits);
     return worker;
   }
 }
@@ -41,6 +45,7 @@ history={ sunk_ship={
 
 describe('Hoi4AnalysisWorkerService', () => {
   const originalLimit = process.env.HOI4_ANALYSIS_WORKERS;
+  const originalTimeout = process.env.HOI4_ANALYSIS_TIMEOUT_MS;
   const directory = mkdtempSync(join(tmpdir(), 'hoi4-worker-test-'));
   const firstPath = join(directory, 'first.hoi4');
   const secondPath = join(directory, 'second.hoi4');
@@ -53,6 +58,7 @@ describe('Hoi4AnalysisWorkerService', () => {
 
   beforeEach(() => {
     delete process.env.HOI4_ANALYSIS_WORKERS;
+    delete process.env.HOI4_ANALYSIS_TIMEOUT_MS;
     service = new TrackedAnalysisService();
   });
 
@@ -70,6 +76,9 @@ describe('Hoi4AnalysisWorkerService', () => {
     rmSync(directory, { recursive: true, force: true });
     if (originalLimit === undefined) delete process.env.HOI4_ANALYSIS_WORKERS;
     else process.env.HOI4_ANALYSIS_WORKERS = originalLimit;
+    if (originalTimeout === undefined)
+      delete process.env.HOI4_ANALYSIS_TIMEOUT_MS;
+    else process.env.HOI4_ANALYSIS_TIMEOUT_MS = originalTimeout;
   });
 
   test('runs the actual parser in a Worker and returns the same semantic result', async () => {
@@ -77,6 +86,9 @@ describe('Hoi4AnalysisWorkerService', () => {
     expect(stable(result)).toEqual(stable(analyzeSave(firstPath)));
     expect(result.navalLosses[0].sunkShip.name).toBe('M\u00f6we');
     expect(service.created).toHaveLength(1);
+    expect(service.limits[0].maxOldGenerationSizeMb).toBeGreaterThanOrEqual(
+      1024,
+    );
     // The promise settles only after the Worker exits, not just after its message.
     expect(service.created[0].threadId).toBe(-1);
   });
@@ -211,6 +223,89 @@ describe('Hoi4AnalysisWorkerService', () => {
     (limit) => {
       process.env.HOI4_ANALYSIS_WORKERS = limit;
       expect(() => new Hoi4AnalysisWorkerService()).toThrow('positive integer');
+    },
+  );
+
+  test('hard deadline terminates a real looping Worker, releases its slot and allows retry', async () => {
+    process.env.HOI4_ANALYSIS_TIMEOUT_MS = '150';
+    service = new TrackedAnalysisService();
+    service.script = 'while(true) {}';
+    const started = Date.now();
+    await expect(service.analyze(firstPath)).rejects.toMatchObject({
+      code: 'ANALYSIS_TIMEOUT',
+    });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(service.created[0].threadId).toBe(-1);
+    const result = analyzeSave(firstPath);
+    service.script = `require('node:worker_threads').parentPort.postMessage({ok:true,result:${JSON.stringify(result)}})`;
+    await expect(service.analyze(firstPath)).resolves.toEqual(result);
+  });
+
+  test.each(['result-first', 'timeout-first', 'error-first'])(
+    'settles exactly once and cleans all listeners/timers for %s race',
+    async (order) => {
+      jest.useFakeTimers();
+      process.env.HOI4_ANALYSIS_TIMEOUT_MS = '100';
+      const stub = new EventEmitter() as EventEmitter & {
+        terminate: jest.Mock;
+        threadId: number;
+      };
+      stub.threadId = 1;
+      let terminated!: () => void;
+      stub.terminate = jest.fn(
+        () =>
+          new Promise<number>((resolve) => {
+            terminated = () => {
+              stub.threadId = -1;
+              resolve(0);
+            };
+          }),
+      );
+      class StubService extends Hoi4AnalysisWorkerService {
+        protected createWorker() {
+          return stub as unknown as Worker;
+        }
+      }
+      const subject = new StubService();
+      try {
+        const result = analyzeSave(firstPath);
+        const done = jest.fn();
+        const pending = subject.analyze(firstPath).then(
+          (value) => {
+            done();
+            return value;
+          },
+          (error: unknown) => {
+            done();
+            return error;
+          },
+        );
+        if (order === 'result-first')
+          stub.emit('message', { ok: true, result });
+        else if (order === 'error-first')
+          stub.emit('error', new Error('first crash'));
+        jest.advanceTimersByTime(100);
+        stub.emit('message', { ok: true, result });
+        stub.emit('error', new Error('late failure'));
+        stub.emit('exit', 2);
+        expect(stub.terminate).toHaveBeenCalledTimes(1);
+        terminated();
+        const outcome = await pending;
+        expect(done).toHaveBeenCalledTimes(1);
+        if (order === 'result-first') expect(outcome).toEqual(result);
+        else if (order === 'timeout-first')
+          expect(outcome).toEqual(new SaveInputError('ANALYSIS_TIMEOUT'));
+        else expect(outcome).toEqual(new Error('first crash'));
+        expect(jest.getTimerCount()).toBe(0);
+        expect(
+          stub.listenerCount('message') +
+            stub.listenerCount('exit') +
+            stub.listenerCount('error'),
+        ).toBe(0);
+      } finally {
+        await subject.onModuleDestroy();
+        jest.useRealTimers();
+      }
     },
   );
 });

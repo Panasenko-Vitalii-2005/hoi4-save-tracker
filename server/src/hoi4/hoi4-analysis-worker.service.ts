@@ -7,12 +7,19 @@ import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type { AnalyzeResult } from './hoi4-parser';
 import type { AnalysisWorkerMessage } from './workers/hoi4-analysis.worker';
+import {
+  SaveInputError,
+  isSaveErrorCode,
+  SAVE_ERRORS,
+} from './save-input.error';
+import { saveUploadPolicy } from './save-upload.policy';
 
 @Injectable()
 export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
   private readonly workers = new Set<Worker>();
   private readonly limit: number;
   private closing = false;
+  private readonly policy = saveUploadPolicy();
 
   constructor() {
     this.limit = Number(process.env.HOI4_ANALYSIS_WORKERS ?? 1);
@@ -23,9 +30,10 @@ export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
 
   async analyze(filePath: string): Promise<AnalyzeResult> {
     if (this.closing || this.workers.size >= this.limit) {
-      throw new ServiceUnavailableException(
-        'Save analysis capacity is full; please retry later',
-      );
+      throw new ServiceUnavailableException({
+        code: 'ANALYZER_BUSY',
+        message: SAVE_ERRORS.ANALYZER_BUSY[1],
+      });
     }
 
     const worker = this.createWorker(filePath);
@@ -38,6 +46,7 @@ export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
       ) => {
         if (settled) return;
         settled = true;
+        clearTimeout(timer);
         try {
           // Do not release the slot or allow upload cleanup until the thread exits.
           await worker.terminate();
@@ -58,7 +67,9 @@ export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
         if (message.ok) {
           void finish({ result: message.result });
         } else {
-          const error = new Error(message.error.message);
+          const error = isSaveErrorCode(message.error.code)
+            ? new SaveInputError(message.error.code)
+            : new Error(message.error.message);
           error.name = message.error.name;
           if (message.error.stack) error.stack = message.error.stack;
           void finish({ error });
@@ -71,6 +82,11 @@ export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
             `Save analysis worker exited without a result (code ${code})`,
           ),
         });
+      const timer = setTimeout(
+        () => void finish({ error: new SaveInputError('ANALYSIS_TIMEOUT') }),
+        this.policy.analysisTimeoutMs,
+      );
+      timer.unref();
       worker.on('message', onMessage);
       worker.on('error', onError);
       worker.on('exit', onExit);
@@ -88,7 +104,8 @@ export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
         `hoi4-analysis.worker.${source ? 'ts' : 'js'}`,
       ),
       {
-        workerData: { filePath },
+        workerData: { filePath, uploadPolicy: this.policy },
+        resourceLimits: { maxOldGenerationSizeMb: this.policy.maxWorkerHeapMb },
         execArgv: source
           ? ['--require', require.resolve('ts-node/register/transpile-only')]
           : [],

@@ -274,6 +274,59 @@ describe("analysis request lifecycle", () => {
     expect(status().textContent).not.toContain("private path");
   });
 
+  test.each([
+    ["FILE_TOO_LARGE", 413, "Maximum upload size: 256 MiB"],
+    ["EMPTY_FILE", 400, "empty"],
+    ["UNSUPPORTED_FILE_TYPE", 415, ".hoi4 save file"],
+    ["INVALID_SAVE", 400, "not a valid Hearts of Iron IV"],
+    ["CORRUPT_ARCHIVE", 400, "corrupted or incomplete"],
+    ["UNSUPPORTED_SAVE", 422, "unsupported game version or mod configuration"],
+    ["DECOMPRESSED_SIZE_LIMIT", 413, "uncompressed save is too large"],
+    ["UPLOAD_TIMEOUT", 408, "upload took too long"],
+    ["ANALYSIS_TIMEOUT", 504, "Analysis took too long and was stopped"],
+    ["ANALYZER_BUSY", 503, "busy with another save"],
+    ["ANALYSIS_FAILED", 500, "Could not analyze the save"],
+    ["UNKNOWN_SERVER_BUG", 500, "Could not analyze the save"],
+  ])(
+    "safe %s failure retains previous result, announces status and allows explicit retry",
+    async (code, httpStatus, message) => {
+      await render();
+      await start();
+      await respond(0, snapshot());
+      await act(async () => chooseFile());
+      await respond(
+        1,
+        {
+          code,
+          message: "STACK C:/private/server/upload.hoi4",
+          maxUploadBytes: 268435456,
+        },
+        httpStatus as number,
+      );
+      expect(status().textContent).toContain(message);
+      expect(status().textContent).not.toMatch(/STACK|private|server\/upload/);
+      expect(status().getAttribute("aria-live")).toBe("polite");
+      expect(date()).toBe("1944.5.1");
+      expect(button("Upload .hoi4").disabled).toBe(false);
+      expect(requests).toHaveLength(2); // Never auto-retry.
+      await act(async () => chooseFile());
+      await respond(2, snapshot("1944.6.1"));
+      expect(date()).toBe("1944.6.1");
+    },
+  );
+
+  test("untrusted limit values never become UI text", async () => {
+    await render();
+    await start();
+    await respond(
+      0,
+      { code: "FILE_TOO_LARGE", maxUploadBytes: "C:/secret" },
+      413,
+    );
+    expect(status().textContent).toContain("too large");
+    expect(status().textContent).not.toContain("secret");
+  });
+
   test("switching app tabs cannot reset an in-flight analysis or its guard", async () => {
     await render(true);
     await act(async () => button("Save Analyzer").click());

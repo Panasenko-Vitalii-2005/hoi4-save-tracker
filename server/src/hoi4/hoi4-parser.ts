@@ -10,7 +10,6 @@
  */
 
 import * as fs from 'fs';
-import AdmZip from 'adm-zip';
 import {
   findDirectBlocks,
   parseGlobalNavalLossHistory,
@@ -26,7 +25,8 @@ import type {
   NavalKillerShipSummary,
   NavalLossEvent,
 } from './naval-loss/naval-loss.types';
-import { decodeSaveText } from './save-text.decoder';
+import { readSaveText, validateSaveStructure } from './save-container';
+import type { SaveUploadPolicy } from './save-upload.policy';
 import { aggregateMilitaryProduction } from './production/military-production.aggregator';
 import { parseMilitaryProductionLines } from './production/military-production.parser';
 import type { CountryMilitaryProductionSummary } from './production/production.types';
@@ -144,15 +144,12 @@ export interface ParsedWarCasualties {
 
 // ── File reader ───────────────────────────────────────────────────────────────
 
-function readSave(filePath: string): string {
-  const buf = fs.readFileSync(filePath);
-  if (buf[0] === 0x50 && buf[1] === 0x4b) {
-    const zip = new AdmZip(buf);
-    const entries = zip.getEntries();
-    if (!entries.length) return '';
-    return decodeSaveText(entries[0].getData());
-  }
-  return decodeSaveText(buf);
+function readSave(
+  filePath: string,
+  validateInput = false,
+  policy?: Readonly<SaveUploadPolicy>,
+): string {
+  return readSaveText(filePath, validateInput, policy);
 }
 
 // ── Block extractor ───────────────────────────────────────────────────────────
@@ -1379,13 +1376,23 @@ function calculateEffectiveDockyards(
 
 // ── Main analyzer ─────────────────────────────────────────────────────────────
 
-export function analyzeSave(filePath: string): AnalyzeResult {
+export function analyzeSave(
+  filePath: string,
+  {
+    validateInput = false,
+    uploadPolicy,
+  }: {
+    validateInput?: boolean;
+    uploadPolicy?: Readonly<SaveUploadPolicy>;
+  } = {},
+): AnalyzeResult {
   const t0 = performance.now();
-  const content = readSave(filePath);
+  const content = readSave(filePath, validateInput, uploadPolicy);
 
   const sizeMb =
     Math.round((fs.statSync(filePath).size / 1_048_576) * 100) / 100;
   const topLevelBlocks = findDirectBlocks(content, 0, content.length);
+  if (validateInput) validateSaveStructure(content, topLevelBlocks);
 
   const equipmentRegistry = parseEquipmentRegistry(content, topLevelBlocks);
   const countryProductionIndex = buildCountryProductionIndex(

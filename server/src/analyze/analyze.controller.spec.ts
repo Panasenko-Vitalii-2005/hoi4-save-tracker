@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { AnalysisComparisonService } from './analysis-comparison.service';
+import { SaveUploadInterceptor } from './save-upload.interceptor';
 
 class TrackedWorkerService extends Hoi4AnalysisWorkerService {
   created = 0;
@@ -111,6 +112,7 @@ describe('AnalyzeController uploads', () => {
         RecentAnalysesService,
         PersistedAnalysisResultService,
         AnalysisComparisonService,
+        SaveUploadInterceptor,
       ],
     }).compile();
     analysis = moduleRef.get(Hoi4AnalysisWorkerService);
@@ -268,15 +270,13 @@ describe('AnalyzeController uploads', () => {
       .expect(404);
   });
 
-  test('removes a corrupt upload when the real Worker reports a parser error', async () => {
+  test('removes a corrupt upload before launching a Worker', async () => {
     const existingUploads = readdirSync(UPLOAD_DIRECTORY).sort();
     const response = await request(app.getHttpServer())
       .post('/api/analyze')
       .attach('file', Buffer.from('PKinvalid'), 'corrupt.hoi4')
-      .expect(500);
-    expect((response.body as { message: string }).message).toMatch(
-      /^Parse error:/,
-    );
+      .expect(400);
+    expect((response.body as { code: string }).code).toBe('CORRUPT_ARCHIVE');
     expect(await history.list()).toEqual([]);
     expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
   });

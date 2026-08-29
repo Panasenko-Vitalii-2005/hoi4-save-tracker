@@ -13,6 +13,7 @@ import { PersistedAnalysisResultService } from './persisted-analysis-result.serv
 import { RecentAnalysesService } from './recent-analyses.service';
 import { comparisonResult } from './fixtures/analysis-comparison.fixture';
 import type { AnalysisComparisonDto } from './analysis-comparison.types';
+import { SaveUploadInterceptor } from './save-upload.interceptor';
 
 describe('Compare persisted analyses API', () => {
   let app: INestApplication<App>;
@@ -27,6 +28,7 @@ describe('Compare persisted analyses API', () => {
       controllers: [AnalyzeController],
       providers: [
         AnalysisComparisonService,
+        SaveUploadInterceptor,
         PersistedAnalysisResultService,
         {
           provide: AnalysisResultCacheService,

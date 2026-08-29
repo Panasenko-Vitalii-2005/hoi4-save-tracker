@@ -22,6 +22,7 @@ import { StockpileTab } from "./StockpileTab";
 import { LandForcesTab } from "./LandForcesTab";
 import { CountryDisplay } from "./CountryDisplay";
 import { RecentAnalyses } from "./RecentAnalyses";
+import { analysisError } from "@/lib/analysis-error";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -421,24 +422,8 @@ export function AnalyzerTab() {
               body: JSON.stringify({ path: filePath }),
             },
       );
-      if (resp.status === 503) {
-        setStatus({
-          type: "busy",
-          msg: "The analyzer is busy with another save. Please try again in a few seconds.",
-        });
-        return;
-      }
       if (!resp.ok) {
-        // Error bodies may contain server paths/stacks, so never render them.
-        setStatus({
-          type: "error",
-          msg:
-            resp.status === 413
-              ? "This save is too large to upload. Please choose a smaller file."
-              : resp.status === 404
-                ? "The selected save is no longer available. Refresh the list or upload it again."
-                : "Could not analyze the save. It may be unsupported or damaged. Please try again.",
-        });
+        setStatus(await analysisError(resp));
         return;
       }
       const data = (await resp.json()) as AnalyzeResult;

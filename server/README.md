@@ -47,6 +47,53 @@ $ npm run start:prod
 
 ### Save analysis workers
 
+#### Public save-upload policy
+
+`POST /api/analyze` accepts user uploads only when the presentation filename ends
+in `.hoi4` (case-insensitive). The browser MIME value is not trusted and
+`application/octet-stream` is accepted. Original names are sanitized and retained
+only as presentation metadata; the file on disk always receives a random,
+server-generated name in a dedicated upload directory.
+
+The following positive-integer environment settings form one shared policy. An
+invalid, zero, negative, fractional or out-of-range value falls back to its safe
+default:
+
+- `HOI4_MAX_UPLOAD_BYTES`: **268435456** (256 MiB) raw request-file limit.
+- `HOI4_MAX_UNCOMPRESSED_BYTES`: **536870912** (512 MiB) limit for plain saves and
+  for the bytes actually produced by ZIP inflation.
+- `HOI4_UPLOAD_TIMEOUT_MS`: **120000** (two minutes) for receiving multipart data.
+- `HOI4_ANALYSIS_TIMEOUT_MS`: **60000** (one minute) hard Worker deadline.
+- `HOI4_ANALYSIS_REQUESTS`: **2** active analyze requests per backend process,
+  covering upload, validation, hashing, shared analysis, persistence and cleanup.
+- `HOI4_ANALYSIS_HEAP_MB`: **1024** MiB V8 old-generation limit per analysis
+  Worker. Node Worker resource limits do not bound Buffers or total process RSS;
+  deployment/container memory limits are still required.
+- `HOI4_UPLOAD_DIRECTORY`: dedicated temporary upload directory; defaults to
+  `hoi4-save-tracker` under the operating-system temporary directory.
+
+Plain saves must have a conservative `HOI4txt` header. Compressed saves are read
+without extracting files and must contain the single supported root payload
+(`gamestate` or one `.hoi4` entry). Encrypted, ZIP64, split, ambiguous, corrupt or
+unsupported archive layouts are rejected. Both declared expansion and actual
+inflation are bounded; CRC and actual byte count are checked after inflation.
+Unknown mod fields continue to be handled by the parser rather than rejected by
+the cheap boundary check.
+
+Request-owned uploads are removed after success, cache hit, validation failure,
+Worker failure/timeout, persistence failure and interrupted multipart input.
+Startup performs a bounded scan that removes only stale, recognizably named
+regular files from the dedicated directory; it never recursively clears the OS
+temporary directory. Raw uploaded save files are temporary and deleted after
+processing. Analysis results may be stored separately to support Recent Analyses
+and comparison features.
+
+Admission and Worker limits are process-local, with no distributed queue or IP
+rate limiting. Before public deployment, put the service behind TLS and a reverse
+proxy with request-rate, connection and total container memory/disk limits. CORS
+currently permits only the local Vite origin configured in `src/main.ts`; proxy/IP
+trust has deliberately not been enabled.
+
 On a cache miss, `POST /api/analyze` runs the existing save parser in a new Node.js
 Worker Thread. Only the file path is sent; the worker reads/decodes the save and
 returns the unchanged analysis result. Uploaded files are removed after analysis
@@ -59,8 +106,10 @@ default, two simultaneous distinct uncached saves admit one and reject one;
 five admit one and reject four. Identical contents share an in-flight analysis,
 and completed cache hits do not use a worker slot. Raising the
 limit permits parallel analyses but multiplies large-save heap usage and CPU
-demand. Do not size it solely by logical CPU count. No new analysis timeout is
-imposed. Result deserialization and HTTP JSON serialization still use the main thread.
+demand. Do not size it solely by logical CPU count. Each Worker is terminated at
+the `HOI4_ANALYSIS_TIMEOUT_MS` deadline; the slot is released only after thread
+termination settles. Result deserialization and HTTP JSON serialization still use
+the main thread.
 
 Nest start/watch and production use emitted workers under
 `dist/src/hoi4/workers/`. `npm run start:prod` runs `dist/src/main.js`, matching
