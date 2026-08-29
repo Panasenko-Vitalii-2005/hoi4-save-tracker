@@ -21,10 +21,15 @@ export interface PersistedAnalysisResultV1 {
   result: AnalyzeResult;
 }
 
-interface ResultReference {
+export interface PersistedResultReference {
   hash: string;
   analyzedAt: string;
   pinned?: boolean;
+  shared?: boolean;
+}
+
+export interface PersistedResultRetentionOptions {
+  preserveUnknown?: boolean;
 }
 interface ResultFile {
   hash: string;
@@ -194,7 +199,8 @@ export class PersistedAnalysisResultService {
   async save(
     hash: string,
     result: AnalyzeResult,
-    recent: readonly ResultReference[] = [],
+    recent: readonly PersistedResultReference[] = [],
+    options: PersistedResultRetentionOptions = {},
   ): Promise<boolean> {
     const key = this.key(hash);
     return this.enqueue(async () => {
@@ -214,10 +220,15 @@ export class PersistedAnalysisResultService {
         await this.checkDirectory(true);
         const files = await this.inventory();
         // Reserve space before writing. Failed cleanup must not allow growth.
-        const admitted = await this.enforceBudget(files, recent, {
-          hash: key,
-          bytes: bytes.length,
-        });
+        const admitted = await this.enforceBudget(
+          files,
+          recent,
+          {
+            hash: key,
+            bytes: bytes.length,
+          },
+          options.preserveUnknown === true,
+        );
         if (!admitted) return false;
         const destination = this.path(key);
         try {
@@ -292,10 +303,22 @@ export class PersistedAnalysisResultService {
     return found;
   }
 
+  /** Read-only existence reconciliation for share metadata startup. */
+  async available(hashes: readonly string[]): Promise<Set<string>> {
+    const wanted = new Set(hashes.map((hash) => this.key(hash)));
+    await this.pending;
+    return new Set(
+      (await this.inventory())
+        .filter((file) => wanted.has(file.hash) && !this.invalid.has(file.hash))
+        .map((file) => file.hash),
+    );
+  }
+
   private async enforceBudget(
     files: ResultFile[],
-    recent: readonly ResultReference[],
+    recent: readonly PersistedResultReference[],
     incoming?: { hash: string; bytes: number },
+    preserveUnknown = false,
   ): Promise<boolean> {
     const metadata = new Map(recent.map((entry) => [entry.hash, entry]));
     const candidates = files.filter((file) => file.hash !== incoming?.hash);
@@ -307,15 +330,15 @@ export class PersistedAnalysisResultService {
     };
     const oldest = candidates.sort(
       (a, b) =>
-        Number(metadata.get(a.hash)?.pinned === true) -
-          Number(metadata.get(b.hash)?.pinned === true) ||
+        this.protectionRank(a.hash, metadata, preserveUnknown) -
+          this.protectionRank(b.hash, metadata, preserveUnknown) ||
         timestamp(a) - timestamp(b) ||
         a.hash.localeCompare(b.hash),
     );
     const evicted: ResultFile[] = [];
     for (const file of oldest) {
       if (total <= this.maxBytes) break;
-      // A new unpinned result cannot displace protected pins. Decide before deleting.
+      // A new ordinary result cannot displace pins or shares. Decide before deleting.
       if (file.hash === incoming?.hash) return false;
       evicted.push(file);
       total -= file.bytes;
@@ -324,15 +347,36 @@ export class PersistedAnalysisResultService {
     return true;
   }
 
+  private protectionRank(
+    hash: string,
+    metadata: ReadonlyMap<string, PersistedResultReference>,
+    preserveUnknown: boolean,
+  ): number {
+    const entry = metadata.get(hash);
+    if (entry?.shared === true || (preserveUnknown && !entry)) return 2;
+    return entry?.pinned === true ? 1 : 0;
+  }
+
   /** Reconcile only this service's regular files, never arbitrary files or links. */
-  reconcile(recent: readonly ResultReference[]): Promise<Set<string>> {
+  reconcile(
+    recent: readonly PersistedResultReference[],
+    options: PersistedResultRetentionOptions = {},
+  ): Promise<Set<string>> {
     return this.enqueue(async () => {
       const wanted = new Set(recent.map((entry) => this.key(entry.hash)));
       const files = await this.inventory();
       for (const file of files)
-        if (!wanted.has(file.hash)) await this.remove(file.hash);
-      const retained = files.filter((file) => wanted.has(file.hash));
-      await this.enforceBudget(retained, recent);
+        if (!options.preserveUnknown && !wanted.has(file.hash))
+          await this.remove(file.hash);
+      const retained = options.preserveUnknown
+        ? files
+        : files.filter((file) => wanted.has(file.hash));
+      await this.enforceBudget(
+        retained,
+        recent,
+        undefined,
+        options.preserveUnknown === true,
+      );
       if (await this.checkDirectory()) {
         for (const entry of await readdir(this.directory, {
           withFileTypes: true,

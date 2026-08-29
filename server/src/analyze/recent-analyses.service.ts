@@ -1,9 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, resolve, win32 } from 'node:path';
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
-import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
+import {
+  PersistedAnalysisResultService,
+  type PersistedResultReference,
+} from './persisted-analysis-result.service';
+import { SharedAnalysesService } from './shared-analyses.service';
 
 export interface RecentAnalysis {
   hash: string;
@@ -74,7 +78,10 @@ export class RecentAnalysesService {
   private pending: Promise<void>;
   private warnedWrite = false;
 
-  constructor(private readonly results: PersistedAnalysisResultService) {
+  constructor(
+    private readonly results: PersistedAnalysisResultService,
+    @Optional() private readonly shares?: SharedAnalysesService,
+  ) {
     const configured = Number(process.env.HOI4_RECENT_ANALYSES_LIMIT ?? 20);
     this.limit =
       Number.isSafeInteger(configured) && configured > 0 ? configured : 20;
@@ -125,6 +132,7 @@ export class RecentAnalysesService {
       if (!result) {
         item.hasPersistedResult = false;
         await this.persist(this.items).catch(() => this.warnWrite());
+        await this.reconcile();
       }
       return result;
     });
@@ -156,14 +164,16 @@ export class RecentAnalysesService {
           item,
           ...this.items.filter((old) => old.hash !== item.hash),
         ]);
+        const retention = await this.retention(next);
         if (next.includes(item)) {
           item.hasPersistedResult = await this.results.save(
             item.hash,
             result,
-            next,
+            retention.references,
+            { preserveUnknown: !retention.reliable },
           );
         }
-        const available = await this.results.reconcile(next).catch(() => {
+        const available = await this.reconcileResults(next).catch(() => {
           this.warnWrite();
           return new Set<string>();
         });
@@ -181,7 +191,7 @@ export class RecentAnalysesService {
 
   clear(): Promise<void> {
     return this.enqueue(async () => {
-      await this.results.reconcile([]);
+      await this.reconcileResults([]);
       await this.persist([]);
       this.items = [];
     });
@@ -190,7 +200,7 @@ export class RecentAnalysesService {
   delete(hash: string): Promise<void> {
     return this.enqueue(async () => {
       const next = this.items.filter((item) => item.hash !== hash);
-      await this.results.delete(hash);
+      await this.reconcileResults(next);
       await this.persist(next);
       this.items = next;
     });
@@ -207,6 +217,15 @@ export class RecentAnalysesService {
       await this.persist(next);
       this.items = next;
       return true;
+    });
+  }
+
+  revokeShare(hash: string): Promise<boolean> {
+    return this.enqueue(async () => {
+      if (!this.shares) return false;
+      const revoked = await this.shares.revokeByHash(hash);
+      await this.reconcileResults(this.items);
+      return revoked;
     });
   }
 
@@ -242,7 +261,7 @@ export class RecentAnalysesService {
 
   private async reconcile(): Promise<void> {
     try {
-      const available = await this.results.reconcile(this.items);
+      const available = await this.reconcileResults(this.items);
       let changed = false;
       for (const item of this.items) {
         if (item.hasPersistedResult && !available.has(item.hash)) {
@@ -256,6 +275,29 @@ export class RecentAnalysesService {
       for (const item of this.items) item.hasPersistedResult = false;
       this.warnWrite();
     }
+  }
+
+  private async retention(items: readonly RecentAnalysis[]): Promise<{
+    references: PersistedResultReference[];
+    reliable: boolean;
+  }> {
+    if (!this.shares) return { references: [...items], reliable: true };
+    const protection = await this.shares.protection();
+    return {
+      references: [...items, ...protection.references],
+      reliable: protection.reliable,
+    };
+  }
+
+  private async reconcileResults(
+    items: readonly RecentAnalysis[],
+  ): Promise<Set<string>> {
+    const retention = await this.retention(items);
+    const available = await this.results.reconcile(retention.references, {
+      preserveUnknown: !retention.reliable,
+    });
+    await this.shares?.reconcileAvailable(available);
+    return available;
   }
 
   private async persist(items: RecentAnalysis[]): Promise<void> {

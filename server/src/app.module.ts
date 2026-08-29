@@ -16,6 +16,8 @@ import { RecentAnalysesService } from './analyze/recent-analyses.service';
 import { PersistedAnalysisResultService } from './analyze/persisted-analysis-result.service';
 import { AnalysisComparisonService } from './analyze/analysis-comparison.service';
 import { SaveUploadInterceptor } from './analyze/save-upload.interceptor';
+import { SharedAnalysesController } from './analyze/shared-analyses.controller';
+import { SharedAnalysesService } from './analyze/shared-analyses.service';
 
 @Module({
   imports: [
@@ -29,6 +31,7 @@ import { SaveUploadInterceptor } from './analyze/save-upload.interceptor';
     RecordsController,
     SoldiersController,
     AnalyzeController,
+    SharedAnalysesController,
     HealthController,
     SavesController,
   ],
@@ -38,6 +41,7 @@ import { SaveUploadInterceptor } from './analyze/save-upload.interceptor';
     AnalysisResultCacheService,
     RecentAnalysesService,
     PersistedAnalysisResultService,
+    SharedAnalysesService,
     AnalysisComparisonService,
     SaveUploadInterceptor,
   ],

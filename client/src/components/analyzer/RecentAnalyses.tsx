@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RecentAnalysis } from "@/types";
 import { AnalysisComparison } from "./AnalysisComparison";
+import {
+  ShareAnalysisDialog,
+  type PublicShareLink,
+} from "./ShareAnalysisDialog";
 
 type SortOrder =
   | "newest"
@@ -68,6 +72,10 @@ export function RecentAnalyses({
     action: "delete" | "pin";
   } | null>(null);
   const [actionMessage, setActionMessage] = useState("");
+  const [shareItem, setShareItem] = useState<RecentAnalysis | null>(null);
+  const [knownShares, setKnownShares] = useState<
+    ReadonlyMap<string, PublicShareLink>
+  >(new Map());
   const mutationInFlight = useRef(false);
   const mounted = useRef(false);
 
@@ -145,11 +153,11 @@ export function RecentAnalyses({
   }, [items, query, sortOrder]);
 
   const manage = async (item: RecentAnalysis, action: "delete" | "pin") => {
-    if (mutationInFlight.current || openingHash !== null) return;
+    if (mutationInFlight.current || openingHash !== null || shareItem) return;
     if (
       action === "delete" &&
       !window.confirm(
-        `Delete the saved analysis for "${item.fileName}"? The original save and any currently displayed result will remain unchanged.`,
+        `Delete the saved analysis for "${item.fileName}"? The original save and any currently displayed result will remain unchanged. An active public link will remain available until it is revoked.`,
       )
     )
       return;
@@ -343,28 +351,48 @@ export function RecentAnalyses({
                     <td className="analyzer-recent-action">
                       <div className="analyzer-recent-actions">
                         {item.hasPersistedResult === true ? (
-                          <button
-                            className="button button-secondary"
-                            aria-label={`Open analysis ${item.fileName}`}
-                            disabled={
-                              openingHash !== null ||
-                              analyzing ||
-                              mutation !== null
-                            }
-                            onClick={() => {
-                              if (!mutationInFlight.current) onOpen(item);
-                            }}
-                          >
-                            {openingHash === item.hash
-                              ? "Opening…"
-                              : "Open result"}
-                          </button>
+                          <>
+                            <button
+                              className="button button-secondary"
+                              aria-label={`Open analysis ${item.fileName}`}
+                              disabled={
+                                openingHash !== null ||
+                                analyzing ||
+                                mutation !== null ||
+                                shareItem !== null
+                              }
+                              onClick={() => {
+                                if (!mutationInFlight.current) onOpen(item);
+                              }}
+                            >
+                              {openingHash === item.hash
+                                ? "Opening…"
+                                : "Open result"}
+                            </button>
+                            <button
+                              className="button button-secondary"
+                              aria-label={`Share analysis ${item.fileName}`}
+                              disabled={
+                                openingHash !== null ||
+                                analyzing ||
+                                mutation !== null ||
+                                shareItem !== null
+                              }
+                              onClick={() => setShareItem(item)}
+                            >
+                              Share
+                            </button>
+                          </>
                         ) : null}
                         <button
                           className="button button-secondary"
                           aria-label={`${item.pinned ? "Unpin" : "Pin"} analysis ${item.fileName}`}
                           aria-pressed={item.pinned === true}
-                          disabled={mutation !== null || openingHash !== null}
+                          disabled={
+                            mutation !== null ||
+                            openingHash !== null ||
+                            shareItem !== null
+                          }
                           onClick={() => void manage(item, "pin")}
                         >
                           {mutation?.hash === item.hash &&
@@ -377,7 +405,11 @@ export function RecentAnalyses({
                         <button
                           className="button button-secondary analyzer-recent-delete"
                           aria-label={`Delete analysis ${item.fileName}`}
-                          disabled={mutation !== null || openingHash !== null}
+                          disabled={
+                            mutation !== null ||
+                            openingHash !== null ||
+                            shareItem !== null
+                          }
                           onClick={() => void manage(item, "delete")}
                         >
                           {mutation?.hash === item.hash &&
@@ -405,6 +437,28 @@ export function RecentAnalyses({
         }
         onUnavailable={() => setRetry((value) => value + 1)}
       />
+      {shareItem && (
+        <ShareAnalysisDialog
+          item={shareItem}
+          initialLink={knownShares.get(shareItem.hash)}
+          onClose={() => setShareItem(null)}
+          onCreated={(link) =>
+            setKnownShares((current) => {
+              const next = new Map(current);
+              next.set(shareItem.hash, link);
+              return next;
+            })
+          }
+          onRevoked={() => {
+            setKnownShares((current) => {
+              const next = new Map(current);
+              next.delete(shareItem.hash);
+              return next;
+            });
+            setActionMessage("Public link revoked.");
+          }}
+        />
+      )}
     </>
   );
 }

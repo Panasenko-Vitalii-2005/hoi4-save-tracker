@@ -8,6 +8,7 @@ services:
       HOI4_SAVES_DIR: /app/saves
       HOI4_RECENT_ANALYSES_FILE: /app/data/recent-analyses.json
       HOI4_ANALYSIS_RESULTS_DIR: /app/data/analysis-results
+      HOI4_SHARED_ANALYSES_FILE: /app/data/shared-analyses.json
     volumes:
       - ./saves:/app/saves:ro
       - analysis-history:/app/data

@@ -6,6 +6,7 @@ import { SummaryGrid } from '@/components/ui/SummaryGrid'
 import { ChartTab } from '@/components/chart/ChartTab'
 import { SoldiersTab } from '@/components/soldiers/SoldiersTab'
 import { AnalyzerTab } from '@/components/analyzer/AnalyzerTab'
+import { SharedAnalysisPage } from '@/components/analyzer/SharedAnalysisPage'
 import { fmtNum } from '@/lib/utils'
 
 type Theme = 'light' | 'dark'
@@ -27,24 +28,13 @@ function avg(vals: (number | null | undefined)[]) {
   return c.length ? c.reduce((s, v) => s + v, 0) / c.length : null
 }
 
-export default function App() {
+function Dashboard() {
   const [tab, setTab] = useState<TabId>('chart')
   const [analyzerOpened, setAnalyzerOpened] = useState(false)
   const { records, loading, reload } = useRecords()
-  const [theme, toggleTheme] = useTheme()
   const latest = records.at(-1)
 
   return (
-    <>
-      <button
-        className="theme-toggle"
-        onClick={toggleTheme}
-        title={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
-        aria-label="Toggle theme"
-      >
-        {theme === 'light' ? '🌙' : '☀️'}
-      </button>
-
       <div className="page-shell">
         <header className="hero">
           <div className="hero-copy">
@@ -79,6 +69,42 @@ export default function App() {
           </div>
         )}
       </div>
+  )
+}
+
+function sharedId(pathname: string): string | null {
+  const match = pathname.match(/^\/share\/([^/]+)\/?$/)
+  if (match) {
+    try {
+      return decodeURIComponent(match[1])
+    } catch {
+      return ""
+    }
+  }
+  return pathname === "/share" || pathname.startsWith("/share/") ? "" : null
+}
+
+export default function App() {
+  const [theme, toggleTheme] = useTheme()
+  const [pathname, setPathname] = useState(() => window.location.pathname)
+  useEffect(() => {
+    const update = () => setPathname(window.location.pathname)
+    window.addEventListener("popstate", update)
+    return () => window.removeEventListener("popstate", update)
+  }, [])
+  const publicId = sharedId(pathname)
+
+  return (
+    <>
+      <button
+        className="theme-toggle"
+        onClick={toggleTheme}
+        title={theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+        aria-label="Toggle theme"
+      >
+        {theme === 'light' ? '🌙' : '☀️'}
+      </button>
+      {publicId !== null ? <SharedAnalysisPage publicId={publicId} /> : <Dashboard />}
     </>
   )
 }

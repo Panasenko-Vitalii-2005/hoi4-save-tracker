@@ -293,7 +293,12 @@ function SaveBrowser({
   );
 }
 
-export function AnalyzerTab() {
+export function AnalyzerTab({
+  readOnlyResult,
+}: {
+  readOnlyResult?: AnalyzeResult;
+} = {}) {
+  const readOnly = readOnlyResult !== undefined;
   const BASE = usePlotTheme();
   const [status, setStatus] = useState<{
     type: "idle" | "loading" | "ok" | "error" | "busy";
@@ -305,7 +310,9 @@ export function AnalyzerTab() {
   const [openingHash, setOpeningHash] = useState<string | null>(null);
   const [openError, setOpenError] = useState("");
   const [historyVersion, setHistoryVersion] = useState(0);
-  const [result, setResult] = useState<AnalyzeResult | null>(null);
+  const [result, setResult] = useState<AnalyzeResult | null>(
+    readOnlyResult ?? null,
+  );
   const [prevResult, setPrevResult] = useState<AnalyzeResult | null>(null);
   const [sortCol, setSortCol] = useState<SortCol>("manpowerInField");
   const [sortAsc, setSortAsc] = useState(false);
@@ -696,33 +703,37 @@ export function AnalyzerTab() {
 
   return (
     <div className="analyzer-shell">
-      <SaveBrowser
-        analyzing={status.type === "loading"}
-        onSelect={analyze}
-        onUpload={(file) => analyze("", file.name, file)}
-      />
+      {!readOnly && (
+        <>
+          <SaveBrowser
+            analyzing={status.type === "loading"}
+            onSelect={analyze}
+            onUpload={(file) => analyze("", file.name, file)}
+          />
 
-      <div role="status" aria-live="polite" aria-atomic="true">
-        {status.type !== "idle" && (
-          <div
-            className={`panel analyzer-status ${status.type}`}
-            style={{ padding: "14px 20px" }}
-          >
-            {status.type === "loading" && (
-              <span className="spinner" aria-hidden="true" />
+          <div role="status" aria-live="polite" aria-atomic="true">
+            {status.type !== "idle" && (
+              <div
+                className={`panel analyzer-status ${status.type}`}
+                style={{ padding: "14px 20px" }}
+              >
+                {status.type === "loading" && (
+                  <span className="spinner" aria-hidden="true" />
+                )}
+                {status.msg}
+              </div>
             )}
-            {status.msg}
           </div>
-        )}
-      </div>
 
-      <RecentAnalyses
-        refreshVersion={historyVersion}
-        onOpen={(item) => void openResult(item)}
-        openingHash={openingHash}
-        openError={openError}
-        analyzing={status.type === "loading"}
-      />
+          <RecentAnalyses
+            refreshVersion={historyVersion}
+            onOpen={(item) => void openResult(item)}
+            openingHash={openingHash}
+            openError={openError}
+            analyzing={status.type === "loading"}
+          />
+        </>
+      )}
 
       {result && (
         <>

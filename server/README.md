@@ -169,11 +169,14 @@ The existing analysis response and `parse_seconds` are unchanged.
 - `GET /api/analyze/recent` returns `{ "items": [...] }` with hash, basename, exact
   byte size, UTC ISO `analyzedAt`, game date, active-country count, division count,
   ship count, naval-loss count, `hasPersistedResult` availability and `pinned`.
-- `DELETE /api/analyze/recent` clears metadata **and durable result files**. It
-  does not remove original saves or evict the independent RAM cache. A later
+- `DELETE /api/analyze/recent` clears metadata and durable result files that are
+  not protected by active public share links. Shared results remain available
+  until their links are revoked or the hard byte limit must evict them. It does
+  not remove original saves or evict the independent RAM cache. A later
   successful analysis (including a cache hit) can add a persisted entry again.
-- `DELETE /api/analyze/recent/:hash` deletes one metadata entry, its durable
-  result and its completed RAM-cache entry, including when pinned. It is
+- `DELETE /api/analyze/recent/:hash` deletes one metadata entry, its completed
+  RAM-cache entry and, unless an active public share protects it, its durable
+  result, including when pinned. It is
   idempotent: an unknown valid hash also returns **200**, with `{ "items": [...] }`.
   Original saves and unrelated entries are untouched. Already rendered frontend
   results remain visible. In-flight analyses are not cancelled: a subsequently
@@ -231,9 +234,10 @@ history mutation queue. A same-hash re-analysis reads the latest pin state insid
 that queue and preserves it. No database or cross-process synchronization is added.
 
 Compose stores history in the `analysis-history` named volume at
-`/app/data/recent-analyses.json` and results at `/app/data/analysis-results`, surviving
-container recreation. Removing that volume (for example, `docker compose down -v`)
-removes both history and results. Runtime data is
+`/app/data/recent-analyses.json`, results at `/app/data/analysis-results`, and
+public-share metadata at `/app/data/shared-analyses.json`, surviving container
+recreation. Removing that volume (for example, `docker compose down -v`)
+removes history, results and public links. Runtime data is
 excluded from Git and Docker build context; no history is baked into images.
 
 ### Durable analysis results
@@ -283,6 +287,62 @@ Read validation checks the envelope version, hash, timestamp and required result
 shape. Invalid gzip/JSON or incompatible data is unavailable, produces one generic
 read warning per service lifetime, and clears availability. Re-analysis can repair
 it. Legacy metadata requires no migration or original save on startup.
+
+### Public share links
+
+An analysis remains private to the application's global Recent Analyses view
+until a user explicitly creates a public link. `POST /api/analyze/recent/:hash/share`
+accepts the validated internal SHA-256 used by
+Recent Analyses, requires an already persisted result, and returns only a
+cryptographically random 22-character URL-safe ID plus a relative `/share/:id`
+path. The ID contains 128 bits of randomness, is collision-checked, and is not
+derived from the hash. Repeating Share for the same hash returns its one active
+link, including after restart.
+
+The small, separate metadata store contains only `{ id, hash, createdAt }`:
+
+- `HOI4_SHARED_ANALYSES_FILE`: defaults to `data/shared-analyses.json`; Compose
+  uses `/app/data/shared-analyses.json` in the existing data volume.
+- `HOI4_SHARED_ANALYSES_LIMIT`: positive integer, default **1000**. Existing
+  active links are never displaced merely to admit a new link. When the limit is
+  reached, new creation returns a generic **503**.
+
+`GET /api/share/:id` validates the exact public-ID alphabet and length, resolves
+the ID in memory, and reads the existing gzip result. It does not run the parser,
+start a Worker, access the original save, refresh history, or create private
+metadata. Unknown, malformed, revoked and missing-result links return a generic
+**404**. No share-listing or hash-query endpoint exists. `DELETE
+/api/analyze/recent/:hash/share` is idempotent and returns `{ revoked: boolean }`.
+It removes public reachability without deleting private history. If private
+history was already deleted, normal reconciliation can then remove the orphaned
+result.
+
+An active share protects its result from Recent delete, Clear All and normal
+history-count eviction. The hard result byte ceiling still wins: ordinary and
+pinned private results are considered before shared results, but the oldest
+shared files can be evicted as a last resort. Corresponding share records are
+then removed; a crash between the two atomic store operations is repaired at
+startup or the next public read, and the URL returns a clean 404. A corrupt share
+store warns once and marks share protection unreliable, so unknown result files
+are preserved except where the hard byte ceiling itself requires eviction.
+Malformed individual records and records whose files are missing are ignored or
+removed without preventing valid links from loading.
+
+Share metadata mutations are serialized and use exclusive temporary files,
+fsync and atomic rename. This remains a single-process store without
+cross-process locking. Public pages use a neutral game-derived title and never
+receive the private filename, raw save, internal hash, paths, request metadata or
+server diagnostics. The browser constructs the visible URL from its own origin;
+the nginx configuration already falls back unknown frontend routes such as
+`/share/:id` to `index.html`.
+
+Anyone possessing a link can view all game analytics in that `AnalyzeResult`;
+the link is unlisted, not authenticated. The application still has one global,
+unauthenticated Recent Analyses and management API. Consequently this deployment
+does not provide per-user isolation: anyone who can access that management API
+can see internal recent hashes and request or revoke links. Public multi-tenant
+hosting requires authentication/authorization in a separate security design;
+share IDs alone do not solve ownership.
 
 Reopen always reads/decompresses the durable file; it does **not** populate or
 change the upload result cache, preserving its existing semantics. No Worker or
