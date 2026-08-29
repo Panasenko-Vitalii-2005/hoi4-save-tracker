@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   AnalysisComparisonDto,
   CountryComparison,
@@ -7,45 +7,162 @@ import type {
 import { countryFullName } from "@/lib/utils";
 import { CountryDisplay } from "./CountryDisplay";
 
-const number = (value: number | null) =>
+type CountryMetricKey = keyof Omit<
+  CountryComparison,
+  "tag" | "status" | "hasChanges"
+>;
+type SortKey = "largest" | "country" | CountryMetricKey;
+type CountryScope = "changed" | "all";
+
+interface CountryColumn {
+  key: CountryMetricKey;
+  label: string;
+  shortLabel: string;
+  compact?: boolean;
+}
+
+const COUNTRY_COLUMNS: readonly CountryColumn[] = [
+  {
+    key: "effectiveMilitaryFactories",
+    label: "Military factories",
+    shortLabel: "MIL",
+  },
+  {
+    key: "effectiveCivilianFactories",
+    label: "Civilian factories",
+    shortLabel: "CIV",
+  },
+  {
+    key: "effectiveDockyards",
+    label: "Dockyards",
+    shortLabel: "Docks",
+  },
+  { key: "divisions", label: "Divisions", shortLabel: "Divisions" },
+  {
+    key: "manpowerInField",
+    label: "Manpower in field",
+    shortLabel: "Manpower",
+    compact: true,
+  },
+  { key: "ships", label: "Ships", shortLabel: "Ships" },
+  {
+    key: "calculatedWarCasualtiesTotal",
+    label: "Calculated casualties",
+    shortLabel: "Casualties",
+    compact: true,
+  },
+];
+
+const GLOBAL_COLUMNS: readonly {
+  key: keyof AnalysisComparisonDto["summary"];
+  label: string;
+  compact?: boolean;
+}[] = [
+  { key: "activeCountries", label: "Active countries" },
+  { key: "divisions", label: "Divisions" },
+  { key: "manpowerInField", label: "Manpower in field", compact: true },
+  { key: "aircraft", label: "Aircraft", compact: true },
+  { key: "ships", label: "Ships" },
+  { key: "navalLossCount", label: "Recorded naval losses" },
+];
+
+const exactNumber = (value: number | null) =>
   value === null
-    ? "—"
+    ? "Unavailable"
     : value.toLocaleString(undefined, { maximumFractionDigits: 15 });
 
-function DiffValue({ diff }: { diff: NumericDiff }) {
+function compactNumber(value: number): string {
+  const absolute = Math.abs(value);
+  const [divisor, suffix] =
+    absolute >= 1_000_000_000
+      ? [1_000_000_000, "B"]
+      : absolute >= 1_000_000
+        ? [1_000_000, "M"]
+        : absolute >= 1_000
+          ? [1_000, "k"]
+          : [1, ""];
+  return `${(absolute / divisor).toLocaleString("en-US", {
+    maximumFractionDigits: divisor === 1 ? 15 : 2,
+  })}${suffix}`;
+}
+
+function signedDelta(value: number, compact: boolean): string {
+  const sign = value > 0 ? "+" : "-";
+  const magnitude = compact
+    ? compactNumber(value)
+    : Math.abs(value).toLocaleString(undefined, {
+        maximumFractionDigits: 15,
+      });
+  return `${sign}${magnitude}`;
+}
+
+function DeltaValue({
+  diff,
+  compact = false,
+  zero = "dash",
+}: {
+  diff: NumericDiff;
+  compact?: boolean;
+  zero?: "dash" | "number";
+}) {
+  if (diff.delta === null)
+    return (
+      <span className="comparison-delta-value unavailable" aria-label="Unavailable">
+        N/A
+      </span>
+    );
+  if (diff.delta === 0)
+    return (
+      <span className="comparison-delta-value no-change" aria-label="No change">
+        {zero === "number" ? "0" : "—"}
+      </span>
+    );
   return (
-    <>
-      <span>
-        {number(diff.before)} → {number(diff.after)}
-      </span>
-      <span className="comparison-delta">
-        {diff.delta !== null && diff.delta > 0 ? "+" : ""}
-        {number(diff.delta)}
-      </span>
-    </>
+    <span
+      className={`comparison-delta-value ${
+        diff.delta > 0 ? "increase" : "decrease"
+      }`}
+      aria-label={`${diff.delta > 0 ? "Increase" : "Decrease"} ${Math.abs(
+        diff.delta,
+      ).toLocaleString()}`}
+    >
+      {signedDelta(diff.delta, compact)}
+    </span>
   );
 }
 
-const COUNTRY_COLUMNS: [
-  keyof Omit<CountryComparison, "tag" | "status" | "hasChanges">,
-  string,
-][] = [
-  ["effectiveMilitaryFactories", "MIL"],
-  ["effectiveCivilianFactories", "CIV"],
-  ["effectiveDockyards", "Dockyards"],
-  ["divisions", "Divisions"],
-  ["manpowerInField", "Manpower in field"],
-  ["ships", "Ships"],
-  ["calculatedWarCasualtiesTotal", "Calculated casualties"],
-];
-const GLOBAL_COLUMNS: [keyof AnalysisComparisonDto["summary"], string][] = [
-  ["activeCountries", "Active countries"],
-  ["divisions", "Divisions"],
-  ["manpowerInField", "Manpower in field"],
-  ["aircraft", "Aircraft"],
-  ["ships", "Ships"],
-  ["navalLossCount", "Recorded naval losses"],
-];
+function SummaryCard({
+  label,
+  diff,
+  compact,
+}: {
+  label: string;
+  diff: NumericDiff;
+  compact?: boolean;
+}) {
+  return (
+    <div className="comparison-metric-card">
+      <span className="comparison-metric-label">{label}</span>
+      <span className="comparison-metric-range">
+        {exactNumber(diff.before)} <span aria-hidden="true">→</span>{" "}
+        {exactNumber(diff.after)}
+      </span>
+      <DeltaValue diff={diff} compact={compact} zero="number" />
+    </div>
+  );
+}
+
+function magnitude(country: CountryComparison, key: SortKey): number | null {
+  if (key === "country") return null;
+  if (key === "largest") {
+    const values = COUNTRY_COLUMNS.map(({ key: metric }) =>
+      country[metric].delta === null ? null : Math.abs(country[metric].delta),
+    ).filter((value): value is number => value !== null);
+    return values.length ? Math.max(...values) : null;
+  }
+  const delta = country[key].delta;
+  return delta === null ? null : Math.abs(delta);
+}
 
 export function AnalysisComparisonResults({
   data,
@@ -56,128 +173,331 @@ export function AnalysisComparisonResults({
   baseName: string;
   targetName: string;
 }) {
-  const [changedOnly, setChangedOnly] = useState(true);
+  const [scope, setScope] = useState<CountryScope>("changed");
   const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("largest");
+  const [descending, setDescending] = useState(true);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
   const countries = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
-    return data.countries.filter(
+    const filtered = data.countries.filter(
       (country) =>
-        (!changedOnly || country.hasChanges) &&
+        (scope === "all" || country.hasChanges) &&
         (!query ||
           country.tag.toLocaleLowerCase().includes(query) ||
           countryFullName(country.tag).toLocaleLowerCase().includes(query)),
     );
-  }, [data, changedOnly, search]);
+    return [...filtered].sort((left, right) => {
+      const byName =
+        countryFullName(left.tag).localeCompare(countryFullName(right.tag)) ||
+        left.tag.localeCompare(right.tag);
+      if (sortKey === "country") return descending ? -byName : byName;
+      const leftValue = magnitude(left, sortKey);
+      const rightValue = magnitude(right, sortKey);
+      if (leftValue === null && rightValue !== null) return 1;
+      if (leftValue !== null && rightValue === null) return -1;
+      if (leftValue !== null && rightValue !== null && leftValue !== rightValue)
+        return descending ? rightValue - leftValue : leftValue - rightValue;
+      return byName;
+    });
+  }, [data.countries, descending, scope, search, sortKey]);
+
+  const selected = useMemo(
+    () => data.countries.find((country) => country.tag === selectedTag) ?? null,
+    [data.countries, selectedTag],
+  );
+
+  useEffect(() => {
+    const exists = data.countries.some(
+      (country) => country.tag === selectedTag,
+    );
+    if (!exists) {
+      setSelectedTag(countries[0]?.tag ?? null);
+      return;
+    }
+    if (
+      countries.length > 0 &&
+      !countries.some((country) => country.tag === selectedTag)
+    )
+      setSelectedTag(countries[0].tag);
+  }, [countries, data.countries, selectedTag]);
+
+  const changeSort = (next: SortKey) => {
+    if (next === sortKey) setDescending((value) => !value);
+    else {
+      setSortKey(next);
+      setDescending(next !== "country");
+    }
+  };
 
   return (
     <section
       className="panel analysis-comparison-results"
       aria-label="Comparison results"
     >
-      <h2>Compare analyses</h2>
-      <div className="comparison-direction">
+      <div className="comparison-results-heading">
         <div>
-          <span className="micro-copy">Base</span>
-          <strong>{baseName}</strong>
-          <span>{data.baseGameDate || "—"}</span>
+          <span className="eyebrow">Completed comparison</span>
+          <h2>World snapshot changes</h2>
         </div>
-        <span aria-hidden="true">→</span>
-        <div>
-          <span className="micro-copy">Target</span>
-          <strong>{targetName}</strong>
-          <span>{data.targetGameDate || "—"}</span>
-        </div>
-      </div>
-      <p className="micro-copy">
-        Every delta is Target − Base. Values are snapshot differences, not
-        production or losses proven to have occurred between dates. Different
-        campaigns can also be compared.
-      </p>
-      {!data.hasChanges && (
-        <p role="status">No differences in compared metrics.</p>
-      )}
-      <dl className="comparison-summary">
-        {GLOBAL_COLUMNS.map(([key, label]) => (
-          <div key={key}>
-            <dt>{label}</dt>
-            <dd>
-              <DiffValue diff={data.summary[key]} />
-            </dd>
+        <div className="comparison-direction" aria-label="Comparison direction">
+          <div>
+            <span className="comparison-save-role">Base</span>
+            <strong>{baseName}</strong>
+            <span>{data.baseGameDate || "Unavailable"}</span>
           </div>
-        ))}
-      </dl>
-      <div className="analyzer-recent-controls">
-        <label htmlFor="comparison-country-scope">
-          Countries
-          <select
-            id="comparison-country-scope"
-            value={changedOnly ? "changed" : "all"}
-            onChange={(e) => setChangedOnly(e.target.value === "changed")}
-          >
-            <option value="changed">Changed only</option>
-            <option value="all">All countries</option>
-          </select>
-        </label>
-        <label htmlFor="comparison-country-search">
-          Search countries
-          <input
-            id="comparison-country-search"
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Country name or tag"
-          />
-        </label>
-      </div>
-      {countries.length === 0 ? (
-        <p className="micro-copy">No countries match these filters.</p>
-      ) : (
-        <div
-          className="table-wrap comparison-table-scroll"
-          role="region"
-          aria-label="Country comparison table"
-          tabIndex={0}
-        >
-          <table className="recent-table comparison-country-table">
-            <thead>
-              <tr>
-                <th>Country</th>
-                {COUNTRY_COLUMNS.map(([key, label]) => (
-                  <th className="numeric-cell" key={key}>
-                    {label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {countries.map((country) => (
-                <tr key={country.tag}>
-                  <td>
-                    <CountryDisplay tag={country.tag} />
-                    {country.status !== "unchanged" && (
-                      <div className="micro-copy">
-                        {country.status === "added" ? "Added" : "Removed"}
-                      </div>
-                    )}
-                  </td>
-                  {COUNTRY_COLUMNS.map(([key]) => (
-                    <td className="numeric-cell" key={key}>
-                      <DiffValue diff={country[key]} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <span className="comparison-direction-arrow" aria-hidden="true">
+            →
+          </span>
+          <div>
+            <span className="comparison-save-role">Target</span>
+            <strong>{targetName}</strong>
+            <span>{data.targetGameDate || "Unavailable"}</span>
+          </div>
         </div>
+      </div>
+      {!data.hasChanges && (
+        <p className="comparison-no-differences" role="status">
+          No differences in compared metrics.
+        </p>
       )}
-      <p className="micro-copy">
-        Industry uses final effective factory totals. Calculated casualties sum
-        bilateral war_relation records. Recorded naval losses count retained
-        events, not complete lifetime losses. — means unavailable, including a
-        country absent from one result; unavailable values are never treated as
-        zero.
-      </p>
+      <div className="comparison-summary" aria-label="Global change summary">
+        {GLOBAL_COLUMNS.map(({ key, label, compact }) => (
+          <SummaryCard
+            key={key}
+            label={label}
+            diff={data.summary[key]}
+            compact={compact}
+          />
+        ))}
+      </div>
+
+      <div className="comparison-content-grid">
+        <div className="comparison-country-panel">
+          <div className="comparison-table-toolbar">
+            <div
+              className="comparison-scope-tabs"
+              role="group"
+              aria-label="Country change filter"
+            >
+              {(["changed", "all"] as const).map((value) => (
+                <button
+                  key={value}
+                  className={scope === value ? "active" : ""}
+                  aria-pressed={scope === value}
+                  onClick={() => setScope(value)}
+                >
+                  {value === "changed" ? "Changed only" : "All countries"}
+                </button>
+              ))}
+            </div>
+            <label className="comparison-search" htmlFor="comparison-country-search">
+              <span>Search countries</span>
+              <input
+                id="comparison-country-search"
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Country name or tag"
+              />
+            </label>
+            <label className="comparison-sort" htmlFor="comparison-country-sort">
+              <span>Sort by</span>
+              <select
+                id="comparison-country-sort"
+                value={sortKey}
+                onChange={(event) => changeSort(event.target.value as SortKey)}
+              >
+                <option value="largest">Largest change</option>
+                <option value="country">Country name</option>
+                {COUNTRY_COLUMNS.map(({ key, label }) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="button button-secondary comparison-sort-direction"
+              aria-label={
+                sortKey === "country"
+                  ? descending
+                    ? "Sort country names A to Z"
+                    : "Sort country names Z to A"
+                  : descending
+                    ? "Sort smallest absolute changes first"
+                    : "Sort largest absolute changes first"
+              }
+              onClick={() => setDescending((value) => !value)}
+            >
+              {sortKey === "country"
+                ? descending
+                  ? "Z → A"
+                  : "A → Z"
+                : descending
+                  ? "Largest first"
+                  : "Smallest first"}
+            </button>
+          </div>
+
+          {countries.length === 0 ? (
+            <p className="comparison-empty micro-copy">
+              No countries match these filters.
+            </p>
+          ) : (
+            <div
+              className="table-wrap comparison-table-scroll"
+              role="region"
+              aria-label="Country comparison table"
+              tabIndex={0}
+            >
+              <table className="recent-table comparison-country-table">
+                <thead>
+                  <tr>
+                    <th>Country</th>
+                    <th>Tag</th>
+                    {COUNTRY_COLUMNS.map(({ key, label, shortLabel }) => (
+                      <th className="numeric-cell" key={key} title={label}>
+                        <button
+                          className="comparison-column-sort"
+                          aria-label={`Sort by ${label}`}
+                          onClick={() => changeSort(key)}
+                        >
+                          {shortLabel}
+                        </button>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {countries.map((country) => (
+                    <tr
+                      key={country.tag}
+                      className={selectedTag === country.tag ? "selected" : ""}
+                      tabIndex={0}
+                      aria-selected={selectedTag === country.tag}
+                      onClick={() => setSelectedTag(country.tag)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedTag(country.tag);
+                        }
+                      }}
+                    >
+                      <td>
+                        <span className="comparison-country-name">
+                          {countryFullName(country.tag)}
+                        </span>
+                        {country.status !== "unchanged" && (
+                          <span
+                            className={`comparison-country-status ${country.status}`}
+                          >
+                            {country.status === "added" ? "Added" : "Removed"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="comparison-country-tag">{country.tag}</td>
+                      {COUNTRY_COLUMNS.map(({ key, compact }) => (
+                        <td className="numeric-cell" key={key}>
+                          <DeltaValue diff={country[key]} compact={compact} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <aside className="comparison-sidebar">
+          <section className="comparison-detail" aria-label="Country detail">
+            <span className="eyebrow">Country Detail</span>
+            {selected ? (
+              <>
+                <h3>
+                  <CountryDisplay tag={selected.tag} />
+                </h3>
+                {selected.status !== "unchanged" && (
+                  <p className={`comparison-detail-status ${selected.status}`}>
+                    {selected.status === "added"
+                      ? "Added in Target"
+                      : "Removed from Target"}
+                  </p>
+                )}
+                <div className="comparison-detail-summary">
+                  {COUNTRY_COLUMNS.map(({ key, shortLabel, compact }) => (
+                    <div key={key}>
+                      <span>{shortLabel}</span>
+                      <DeltaValue diff={selected[key]} compact={compact} />
+                    </div>
+                  ))}
+                </div>
+                <h4>Detailed breakdown</h4>
+                <div className="table-wrap comparison-detail-scroll">
+                  <table className="comparison-detail-table">
+                    <thead>
+                      <tr>
+                        <th>Metric</th>
+                        <th>Base</th>
+                        <th>Target</th>
+                        <th>Change</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {COUNTRY_COLUMNS.map(({ key, label }) => (
+                        <tr key={key}>
+                          <th scope="row">{label}</th>
+                          <td>{exactNumber(selected[key].before)}</td>
+                          <td>{exactNumber(selected[key].after)}</td>
+                          <td>
+                            <DeltaValue diff={selected[key]} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="micro-copy">Select a country to inspect changes.</p>
+            )}
+          </section>
+
+          <section className="comparison-about" aria-label="About changes">
+            <h3>About changes</h3>
+            <p>Values show Target − Base snapshot differences.</p>
+            <dl>
+              <div>
+                <dt>Positive</dt>
+                <dd>Increase</dd>
+              </div>
+              <div>
+                <dt>Negative</dt>
+                <dd>Decrease</dd>
+              </div>
+              <div>
+                <dt>—</dt>
+                <dd>No change</dd>
+              </div>
+              <div>
+                <dt>N/A</dt>
+                <dd>Unavailable</dd>
+              </div>
+            </dl>
+            <p className="micro-copy">
+              These snapshots do not prove production or losses occurred strictly
+              between save dates. Recorded naval losses are retained event-count
+              differences, not complete lifetime losses.
+            </p>
+            <p className="micro-copy">
+              “Largest change” uses the greatest absolute numeric delta among the
+              displayed metrics. Individual metric sorts also use absolute deltas.
+            </p>
+          </section>
+        </aside>
+      </div>
     </section>
   );
 }

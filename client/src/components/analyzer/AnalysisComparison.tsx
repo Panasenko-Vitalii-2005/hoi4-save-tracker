@@ -113,47 +113,66 @@ export function AnalysisComparison({
         aria-label="Compare saves"
         aria-busy={loading}
       >
-        <h2>Compare saves</h2>
-        <p className="micro-copy">
-          Choose Base and Target from available saved analyses. Direction is
-          never reordered by date. Choose the same analysis in both slots to
-          check for differences.
-        </p>
-        <div className="analyzer-recent-controls">
-          {(["base", "target"] as const).map((side) => (
-            <label key={side} htmlFor={`compare-${side}`}>
-              {side === "base" ? "Base analysis" : "Target analysis"}
-              <select
-                id={`compare-${side}`}
-                value={
-                  side === "base" ? (base?.hash ?? "") : (target?.hash ?? "")
-                }
-                onChange={(e) => select(side, e.target.value)}
-              >
-                <option value="">Select an analysis</option>
-                {available.map((item) => (
-                  <option key={item.hash} value={item.hash}>
-                    {item.fileName} — {item.gameDate || "—"} ·{" "}
-                    {new Date(item.analyzedAt).toLocaleString()}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+        <div className="comparison-control-layout">
+          <div className="comparison-control-copy">
+            <span className="eyebrow">World comparison</span>
+            <h2>Compare Saves</h2>
+            <p>See how your world changed between two saves.</p>
+            <p className="micro-copy">
+              All values show the difference <strong>Target − Base</strong>.
+            </p>
+            <p className="micro-copy">
+              Direction is never reordered by date. Comparing the same save is
+              supported.
+            </p>
+          </div>
+          <div className="comparison-save-picker">
+            {(["base", "target"] as const).map((side) => {
+              const selected = side === "base" ? base : target;
+              return (
+                <label
+                  className="comparison-save-card"
+                  key={side}
+                  htmlFor={`compare-${side}`}
+                >
+                  <span className="comparison-save-role">
+                    {side === "base" ? "Base" : "Target"}
+                  </span>
+                  <select
+                    id={`compare-${side}`}
+                    value={selected?.hash ?? ""}
+                    onChange={(e) => select(side, e.target.value)}
+                  >
+                    <option value="">Select an analysis</option>
+                    {available.map((item) => (
+                      <option key={item.hash} value={item.hash}>
+                        {item.fileName} — {item.gameDate || "—"} ·{" "}
+                        {new Date(item.analyzedAt).toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="comparison-save-date">
+                    {selected?.gameDate || "No save selected"}
+                  </span>
+                </label>
+              );
+            })}
+            <button
+              className="button button-secondary comparison-swap"
+              aria-label="Swap base and target analyses"
+              disabled={!base || !target}
+              onClick={() => {
+                cancel();
+                setError("");
+                setBaseHash(targetHash);
+                setTargetHash(baseHash);
+              }}
+            >
+              Swap
+            </button>
+          </div>
         </div>
         <div className="comparison-actions">
-          <button
-            className="button button-secondary"
-            disabled={!base || !target}
-            onClick={() => {
-              cancel();
-              setError("");
-              setBaseHash(targetHash);
-              setTargetHash(baseHash);
-            }}
-          >
-            Swap
-          </button>
           <button
             className="button button-primary"
             disabled={!base || !target || busy || loading}

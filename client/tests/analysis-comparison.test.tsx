@@ -157,15 +157,25 @@ describe("Save comparison UI", () => {
   };
   const results = () =>
     container.querySelector('[aria-label="Comparison results"]')!;
-  const countryRows = () => [...results().querySelectorAll("tbody tr")];
+  const comparisonRows = () => [
+    ...results().querySelectorAll(".comparison-country-table tbody tr"),
+  ];
+  const countryRow = (tag: string) =>
+    comparisonRows().find(
+      (item) => item.querySelector(".comparison-country-tag")?.textContent === tag,
+    )!;
 
   test("two explicit slots offer only available analyses and require both selections", async () => {
     await render();
     const controls = container.querySelector('[aria-label="Compare saves"]')!;
     expect(controls.querySelectorAll("select")).toHaveLength(2);
     expect(controls.textContent).not.toContain("Unavailable.hoi4");
-    expect(controls.textContent).toContain("Base analysis");
-    expect(controls.textContent).toContain("Target analysis");
+    expect(container.querySelector('label[for="compare-base"]')?.textContent).toContain(
+      "Base",
+    );
+    expect(
+      container.querySelector('label[for="compare-target"]')?.textContent,
+    ).toContain("Target");
     expect(button("Compare").disabled).toBe(true);
     await select("compare-base", entries[0].hash);
     expect(button("Compare").disabled).toBe(true);
@@ -250,11 +260,13 @@ describe("Save comparison UI", () => {
     expect(results().textContent).toContain("Recorded naval losses");
     expect(results().textContent).toContain("10 → 15");
     expect(results().textContent).toContain("+5");
-    const cells = countryRows()[0].querySelectorAll("td");
-    expect(cells[1].textContent).toBe("10 → 12+2");
-    expect(cells[2].textContent).toBe("8 → 6-2");
-    expect(cells[3].textContent).toBe("0 → 00");
-    expect(cells[6].textContent).toBe("— → 2—");
+    const cells = countryRow("GER").querySelectorAll("td");
+    expect(cells[2].textContent).toBe("+2");
+    expect(cells[3].textContent).toBe("-2");
+    expect(cells[4].textContent).toBe("—");
+    expect(cells[7].textContent).toBe("N/A");
+    expect(cells[4].querySelector('[aria-label="No change"]')).not.toBeNull();
+    expect(cells[7].querySelector('[aria-label="Unavailable"]')).not.toBeNull();
     expect(results().textContent).not.toContain("+0");
     expect(results().textContent).not.toContain(entries[0].hash);
     expect(results().textContent).not.toContain(entries[1].hash);
@@ -266,21 +278,17 @@ describe("Save comparison UI", () => {
     await click("Compare");
     await finish();
     expect(
-      (
-        container.querySelector(
-          "#comparison-country-scope",
-        ) as HTMLSelectElement
-      ).value,
-    ).toBe("changed");
-    expect(countryRows()).toHaveLength(3);
+      button("Changed only").getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(comparisonRows()).toHaveLength(3);
     expect(results().textContent).toContain("Added");
     expect(results().textContent).toContain("Removed");
     expect(results().textContent).toContain("Germany");
     expect(results().textContent).toContain("United Kingdom");
-    await select("comparison-country-scope", "all");
-    expect(countryRows()).toHaveLength(5);
+    await click("All countries");
+    expect(comparisonRows()).toHaveLength(5);
     expect(
-      countryRows().filter((r) => r.textContent?.includes("Denmark")),
+      comparisonRows().filter((r) => r.textContent?.includes("Denmark")),
     ).toHaveLength(2);
   });
 
@@ -302,11 +310,172 @@ describe("Save comparison UI", () => {
       });
     };
     await search("gerMAny");
-    expect(countryRows()).toHaveLength(1);
+    expect(comparisonRows()).toHaveLength(1);
     await search("d04");
-    expect(countryRows()[0].textContent).toContain("D04");
+    expect(comparisonRows()[0].textContent).toContain("D04");
     await search("nonexistent");
     expect(results().textContent).toContain("No countries match");
+  });
+
+  test("six summary cards emphasize delta while retaining exact Base and Target values", async () => {
+    await render();
+    await choose();
+    await click("Compare");
+    await finish();
+    const cards = results().querySelectorAll(".comparison-metric-card");
+    expect(cards).toHaveLength(6);
+    expect(cards[0].textContent).toContain("Active countries");
+    expect(cards[0].textContent).toContain("2 → 3");
+    expect(cards[0].textContent).toContain("+1");
+    expect(cards[3].querySelector("svg, canvas")).toBeNull();
+  });
+
+  test("large table deltas are compact while Country Detail retains exact values", async () => {
+    await render();
+    await choose();
+    await click("Compare");
+    const data = response();
+    data.summary.manpowerInField = diff(1_000_000, 1_182_000);
+    const germany = data.countries.find((country) => country.tag === "GER")!;
+    germany.manpowerInField = diff(1_000_000, 2_276_500);
+    await finish(data);
+    expect(
+      [...results().querySelectorAll(".comparison-metric-card")].find((card) =>
+        card.textContent?.includes("Manpower in field"),
+      )?.textContent,
+    ).toContain("+182k");
+    expect(countryRow("GER").textContent).toContain("+1.28M");
+    await act(async () => countryRow("GER").click());
+    const detail = results().querySelector('[aria-label="Country detail"]')!;
+    expect(detail.textContent).toMatch(/1\D000\D000/);
+    expect(detail.textContent).toMatch(/2\D276\D500/);
+    expect(detail.textContent).toMatch(/\+1\D276\D500/);
+  });
+
+  test("mouse and keyboard row activation update accessible Country Detail selection", async () => {
+    await render();
+    await choose();
+    await click("Compare");
+    await finish();
+    const england = countryRow("ENG") as HTMLTableRowElement;
+    await act(async () => england.click());
+    expect(england.getAttribute("aria-selected")).toBe("true");
+    expect(results().querySelector('[aria-label="Country detail"]')?.textContent).toContain(
+      "United Kingdom",
+    );
+    expect(results().textContent).toContain("Removed from Target");
+
+    const added = countryRow("D04") as HTMLTableRowElement;
+    added.focus();
+    await act(async () =>
+      added.dispatchEvent(
+        new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+      ),
+    );
+    expect(added.getAttribute("aria-selected")).toBe("true");
+    expect(results().querySelector('[aria-label="Country detail"]')?.textContent).toContain(
+      "Added in Target",
+    );
+  });
+
+  test("metric sorting uses absolute delta, puts unavailable last and breaks ties deterministically", async () => {
+    await render();
+    await choose();
+    await click("Compare");
+    const data = response();
+    const germany = row("GER", true);
+    germany.effectiveMilitaryFactories = diff(10, 110);
+    germany.effectiveCivilianFactories = diff(0, 10);
+    const england = row("ENG", true);
+    england.effectiveMilitaryFactories = diff(100, 10);
+    england.effectiveCivilianFactories = diff(0, 10);
+    const italy = row("ITA", true);
+    italy.effectiveMilitaryFactories = diff(10, 30);
+    italy.effectiveCivilianFactories = diff(0, 10);
+    const unavailable = row("D04", true, "added");
+    unavailable.effectiveMilitaryFactories = diff(null, 20);
+    data.countries = [italy, unavailable, england, germany];
+    await finish(data);
+    await select("comparison-country-sort", "effectiveMilitaryFactories");
+    expect(
+      comparisonRows().map(
+        (item) => item.querySelector(".comparison-country-tag")?.textContent,
+      ),
+    ).toEqual(["GER", "ENG", "ITA", "D04"]);
+    await click("Largest first");
+    expect(
+      comparisonRows().map(
+        (item) => item.querySelector(".comparison-country-tag")?.textContent,
+      ),
+    ).toEqual(["ITA", "ENG", "GER", "D04"]);
+    await click("Smallest first");
+
+    await select("comparison-country-sort", "effectiveCivilianFactories");
+    expect(
+      comparisonRows().slice(0, 3).map(
+        (item) => item.querySelector(".comparison-country-tag")?.textContent,
+      ),
+    ).toEqual(["GER", "ITA", "ENG"]);
+  });
+
+  test("a 100-country result renders and responds to search and sort without virtualization", async () => {
+    await render();
+    await choose();
+    await click("Compare");
+    const data = response();
+    data.countries = Array.from({ length: 100 }, (_, index) => {
+      const country = row(`X${index.toString().padStart(2, "0")}`, true);
+      country.effectiveMilitaryFactories = diff(0, index);
+      country.manpowerInField = diff(0, index * 1_000);
+      return country;
+    });
+    const renderStart = performance.now();
+    await finish(data);
+    const renderMs = performance.now() - renderStart;
+    expect(comparisonRows()).toHaveLength(100);
+
+    const search = container.querySelector<HTMLInputElement>(
+      "#comparison-country-search",
+    )!;
+    const searchStart = performance.now();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(search, "X42");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const searchMs = performance.now() - searchStart;
+    expect(comparisonRows()).toHaveLength(1);
+
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(search, "");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const sortStart = performance.now();
+    await select("comparison-country-sort", "manpowerInField");
+    const sortMs = performance.now() - sortStart;
+    expect(
+      comparisonRows()[0].querySelector(".comparison-country-tag")?.textContent,
+    ).toBe("X99");
+    expect(Math.max(renderMs, searchMs, sortMs)).toBeLessThan(2_000);
+  });
+
+  test("About Changes defines snapshot semantics without fabricated history", async () => {
+    await render();
+    await choose();
+    await click("Compare");
+    await finish();
+    const about = results().querySelector('[aria-label="About changes"]')!;
+    expect(about.textContent).toContain("Target − Base snapshot differences");
+    expect(about.textContent).toContain("PositiveIncrease");
+    expect(about.textContent).toContain("NegativeDecrease");
+    expect(about.textContent).toMatch(/recorded naval losses/i);
+    expect(about.textContent).toContain("not complete lifetime losses");
+    expect(results().textContent).not.toMatch(/sparkline|historical trend|timeline/i);
   });
 
   test("same save may occupy both slots and no-difference state keeps its header", async () => {
