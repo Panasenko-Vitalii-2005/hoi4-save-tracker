@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type { AnalyzeResult, CountryStats } from '../hoi4/hoi4-parser';
+import {
+  unknownSaveComparisonContext,
+  type SaveComparisonContext,
+} from '../hoi4/save-comparison-context';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
 import type {
   AnalysisComparisonDto,
@@ -30,12 +34,53 @@ const COUNTRY_METRICS = [
   'calculatedWarCasualtiesTotal',
 ] as const satisfies readonly (keyof CountryStats)[];
 
+function gameDate(value: unknown): readonly [number, number, number] | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(\d+)\.(\d{1,2})\.(\d{1,2})$/.exec(value);
+  if (!match) return null;
+  const date = match.slice(1).map(Number) as [number, number, number];
+  return date[0] > 0 &&
+    date[1] >= 1 &&
+    date[1] <= 12 &&
+    date[2] >= 1 &&
+    date[2] <= 31
+    ? date
+    : null;
+}
+
+function chronology(
+  baseDate: unknown,
+  targetDate: unknown,
+): AnalysisComparisonDto['context']['chronology'] {
+  const base = gameDate(baseDate);
+  const target = gameDate(targetDate);
+  if (!base || !target) return 'unknown';
+  for (let index = 0; index < base.length; index++) {
+    if (target[index] > base[index]) return 'target_after_base';
+    if (target[index] < base[index]) return 'target_before_base';
+  }
+  return 'same_date';
+}
+
+function compatibility(
+  before: string | null,
+  after: string | null,
+): 'same' | 'different' | 'unknown' {
+  return before && after
+    ? before === after
+      ? 'same'
+      : 'different'
+    : 'unknown';
+}
+
 /** Pure snapshot comparison. Missing countries/fields are unknown, never implicit zero. */
 export function compareAnalysisResults(
   baseHash: string,
   targetHash: string,
   base: AnalyzeResult,
   target: AnalyzeResult,
+  baseContext: SaveComparisonContext = unknownSaveComparisonContext(),
+  targetContext: SaveComparisonContext = unknownSaveComparisonContext(),
 ): AnalysisComparisonDto {
   const index = (result: AnalyzeResult) =>
     new Map(
@@ -87,6 +132,18 @@ export function compareAnalysisResults(
     targetHash,
     baseGameDate: base.game_date || null,
     targetGameDate: target.game_date || null,
+    context: {
+      chronology: chronology(base.game_date, target.game_date),
+      sameAnalysis: baseHash === targetHash,
+      campaignCompatibility: compatibility(
+        baseContext.campaignId,
+        targetContext.campaignId,
+      ),
+      gameVersionCompatibility: compatibility(
+        baseContext.gameVersion,
+        targetContext.gameVersion,
+      ),
+    },
     hasChanges:
       countries.some((country) => country.hasChanges) ||
       Object.values(summary).some(changed),
@@ -106,13 +163,22 @@ export class AnalysisComparisonService {
     // Durable storage is authoritative; do not consult the Worker or completed RAM cache.
     const [base, target] =
       baseHash === targetHash
-        ? await this.results.get(baseHash).then((result) => [result, result])
+        ? await this.results
+            .getWithContext(baseHash)
+            .then((result) => [result, result])
         : await Promise.all([
-            this.results.get(baseHash),
-            this.results.get(targetHash),
+            this.results.getWithContext(baseHash),
+            this.results.getWithContext(targetHash),
           ]);
     return base && target
-      ? compareAnalysisResults(baseHash, targetHash, base, target)
+      ? compareAnalysisResults(
+          baseHash,
+          targetHash,
+          base.result,
+          target.result,
+          base.comparisonContext,
+          target.comparisonContext,
+        )
       : null;
   }
 }

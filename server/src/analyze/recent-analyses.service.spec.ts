@@ -133,6 +133,27 @@ describe('RecentAnalysesService', () => {
     });
   });
 
+  test('persists comparison context separately from recent metadata', async () => {
+    const comparisonContext = {
+      campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+      gameVersion: '1.19.2',
+    };
+    await history.record(
+      input('comparison-context'),
+      result,
+      comparisonContext,
+    );
+    expect(
+      await results.getWithContext(input('comparison-context').hash),
+    ).toEqual({
+      result,
+      comparisonContext,
+    });
+    expect(await files.readFile(file, 'utf8')).not.toMatch(
+      /campaignId|gameVersion|0731c3c7/,
+    );
+  });
+
   test('backfills both missing legacy metrics from the persisted result and persists them', async () => {
     const metrics = {
       ...result,

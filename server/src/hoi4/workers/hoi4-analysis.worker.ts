@@ -2,6 +2,10 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { analyzeSave, type AnalyzeResult } from '../hoi4-parser';
 import { SaveInputError, type SaveErrorCode } from '../save-input.error';
 import type { SaveUploadPolicy } from '../save-upload.policy';
+import {
+  unknownSaveComparisonContext,
+  type SaveComparisonContext,
+} from '../save-comparison-context';
 
 interface WorkerSerializedError {
   name: string;
@@ -11,7 +15,11 @@ interface WorkerSerializedError {
 }
 
 export type AnalysisWorkerMessage =
-  | { ok: true; result: AnalyzeResult }
+  | {
+      ok: true;
+      result: AnalyzeResult;
+      comparisonContext: SaveComparisonContext;
+    }
   | { ok: false; error: WorkerSerializedError };
 
 if (!parentPort) throw new Error('Save analysis requires a worker parent port');
@@ -22,10 +30,17 @@ const { filePath, uploadPolicy } = workerData as {
 };
 let message: AnalysisWorkerMessage;
 try {
-  const result = analyzeSave(filePath, { validateInput: true, uploadPolicy });
+  let comparisonContext = unknownSaveComparisonContext();
+  const result = analyzeSave(filePath, {
+    validateInput: true,
+    uploadPolicy,
+    onComparisonContext: (context) => {
+      comparisonContext = context;
+    },
+  });
   if (result.game_date === 'unknown')
     throw new SaveInputError('UNSUPPORTED_SAVE');
-  message = { ok: true, result };
+  message = { ok: true, result, comparisonContext };
 } catch (error: unknown) {
   const failure = error instanceof Error ? error : new Error(String(error));
   message = {

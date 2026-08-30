@@ -17,7 +17,10 @@ import { join } from 'path';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AnalyzeController } from './analyze.controller';
-import { Hoi4AnalysisWorkerService } from '../hoi4/hoi4-analysis-worker.service';
+import {
+  Hoi4AnalysisWorkerService,
+  type AnalyzedSave,
+} from '../hoi4/hoi4-analysis-worker.service';
 import { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.service';
 import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
 import { Worker } from 'node:worker_threads';
@@ -42,6 +45,7 @@ class TrackedWorkerService extends Hoi4AnalysisWorkerService {
 const MOWE = 'M\u00f6we';
 const POTOSI = 'ARM Potos\u00ed';
 const UPLOAD_DIRECTORY = join(tmpdir(), 'hoi4-save-tracker');
+const UNKNOWN_CONTEXT = { campaignId: null, gameVersion: null } as const;
 
 interface AnalyzeResponse {
   game_date: string;
@@ -57,6 +61,8 @@ interface AnalyzeResponse {
 function navalSave(shipName: string): string {
   return `HOI4txt
 date="1944.5.1.2"
+version="Operation Postern v1.19.2.0.a729 (d245)"
+game_unique_id="0731c3c7-035e-46b1-b07b-6c35b27e8dc2"
 history={
   sunk_ship={
     name="${shipName}"
@@ -191,6 +197,12 @@ describe('AnalyzeController uploads', () => {
         hasPersistedResult: true,
       });
       expect(await results.get(firstItem.hash)).toEqual(response.body);
+      expect(
+        (await results.getWithContext(firstItem.hash))?.comparisonContext,
+      ).toEqual({
+        campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+        gameVersion: 'Operation Postern v1.19.2.0.a729 (d245)',
+      });
       const cached = await request(app.getHttpServer())
         .post('/api/analyze')
         .attach('file', payload, 'renamed.hoi4')
@@ -284,7 +296,7 @@ describe('AnalyzeController uploads', () => {
   test('returns overload as 503 and cleans up the rejected upload', async () => {
     const existingUploads = readdirSync(UPLOAD_DIRECTORY).sort();
     const spy = jest
-      .spyOn(analysis, 'analyze')
+      .spyOn(analysis, 'analyzeWithContext')
       .mockRejectedValueOnce(
         new ServiceUnavailableException(
           'Save analysis capacity is full; please retry later',
@@ -315,7 +327,7 @@ describe('AnalyzeController uploads', () => {
       started = resolve;
     });
     const spy = jest
-      .spyOn(analysis, 'analyze')
+      .spyOn(analysis, 'analyzeWithContext')
       .mockImplementation((filePath) => {
         uploadedPath = filePath;
         started();
@@ -364,14 +376,14 @@ describe('AnalyzeController uploads', () => {
       writeFileSync(reference, payload);
       const result = analyzeSave(reference);
       let leaderPath: string | undefined;
-      let finish!: (value: AnalyzeResult) => void;
+      let finish!: (value: AnalyzedSave) => void;
       let fail!: (error: Error) => void;
-      const pending = new Promise<AnalyzeResult>((resolve, reject) => {
+      const pending = new Promise<AnalyzedSave>((resolve, reject) => {
         finish = resolve;
         fail = reject;
       });
       const execute = jest
-        .spyOn(analysis, 'analyze')
+        .spyOn(analysis, 'analyzeWithContext')
         .mockImplementation((path) => {
           leaderPath = path;
           return pending;
@@ -412,7 +424,7 @@ describe('AnalyzeController uploads', () => {
           expect(existsSync(leaderPath!)).toBe(true);
         }
         if (outcome === 'failure') fail(new Error('Shared worker crash'));
-        else finish(result);
+        else finish({ result, comparisonContext: UNKNOWN_CONTEXT });
 
         const second = await secondResponse;
         expect(second.status).toBe(outcome === 'failure' ? 500 : 201);
@@ -430,7 +442,7 @@ describe('AnalyzeController uploads', () => {
         if (outcome === 'disconnect')
           expect((await history.list())[0].fileName).toBe('second.hoi4');
       } finally {
-        finish(result);
+        finish({ result, comparisonContext: UNKNOWN_CONTEXT });
         execute.mockRestore();
         lookups.mockRestore();
         records.mockRestore();

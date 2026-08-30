@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, resolve, win32 } from 'node:path';
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
+import type { SaveComparisonContext } from '../hoi4/save-comparison-context';
 import {
   PersistedAnalysisResultService,
   type PersistedResultReference,
@@ -148,6 +149,7 @@ export class RecentAnalysesService {
   async record(
     input: Pick<RecentAnalysis, 'hash' | 'fileName' | 'fileSizeBytes'>,
     result: AnalyzeResult,
+    comparisonContext?: SaveComparisonContext,
   ): Promise<void> {
     const item: RecentAnalysis = {
       hash: input.hash,
@@ -179,7 +181,10 @@ export class RecentAnalysesService {
             item.hash,
             result,
             retention.references,
-            { preserveUnknown: !retention.reliable },
+            {
+              preserveUnknown: !retention.reliable,
+              comparisonContext,
+            },
           );
         }
         const available = await this.reconcileResults(next).catch(() => {

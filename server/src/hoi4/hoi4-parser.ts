@@ -52,6 +52,10 @@ import {
   buildCountryProductionIndex,
   type CountryProductionIndex,
 } from './country-production.index';
+import {
+  parseSaveComparisonContext,
+  type SaveComparisonContext,
+} from './save-comparison-context';
 
 // ── Core model (single source of truth) ─────────────────────────────────────
 
@@ -1381,13 +1385,16 @@ export function analyzeSave(
   {
     validateInput = false,
     uploadPolicy,
+    onComparisonContext,
   }: {
     validateInput?: boolean;
     uploadPolicy?: Readonly<SaveUploadPolicy>;
+    onComparisonContext?: (context: SaveComparisonContext) => void;
   } = {},
 ): AnalyzeResult {
   const t0 = performance.now();
   const content = readSave(filePath, validateInput, uploadPolicy);
+  onComparisonContext?.(parseSaveComparisonContext(content));
 
   const sizeMb =
     Math.round((fs.statSync(filePath).size / 1_048_576) * 100) / 100;

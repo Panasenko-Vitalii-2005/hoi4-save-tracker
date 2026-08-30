@@ -903,6 +903,34 @@ select {
   font-size: 14px;
 }
 
+.comparison-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.comparison-context p {
+  margin: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--intel-line, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--intel-surface-deep) 72%, transparent);
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.comparison-context .muted {
+  color: var(--muted);
+}
+
+.comparison-context .comparison-context-warning {
+  border-color: color-mix(in srgb, var(--intel-warning, #b87720) 42%, transparent);
+  background: color-mix(in srgb, var(--intel-warning, #b87720) 10%, transparent);
+  color: color-mix(in srgb, var(--intel-warning, #b87720) 82%, var(--ink));
+}
+
 .comparison-no-differences {
   margin-top: 12px;
   padding: 10px 12px;

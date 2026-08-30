@@ -35,6 +35,8 @@ function stable(result: AnalyzeResult) {
 function save(shipName: string, country: string): string {
   return `HOI4txt
 date="1944.5.1.2"
+version="Operation Postern v1.19.2.0.a729 (d245)"
+game_unique_id="0731c3c7-035e-46b1-b07b-6c35b27e8dc2"
 history={ sunk_ship={
   name="${shipName}" country="${country}" definition="destroyer"
   killer_name="HMS Example" killer_country="ENG" killer_definition="destroyer"
@@ -91,6 +93,16 @@ describe('Hoi4AnalysisWorkerService', () => {
     );
     // The promise settles only after the Worker exits, not just after its message.
     expect(service.created[0].threadId).toBe(-1);
+  });
+
+  test('returns campaign context from the existing Worker decode without a second analysis', async () => {
+    const analysis = await service.analyzeWithContext(firstPath);
+    expect(analysis.comparisonContext).toEqual({
+      campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+      gameVersion: 'Operation Postern v1.19.2.0.a729 (d245)',
+    });
+    expect(analysis.result.game_date).toBe('1944.5.1');
+    expect(service.created).toHaveLength(1);
   });
 
   test('propagates a nonexistent path error with its parser stack', async () => {

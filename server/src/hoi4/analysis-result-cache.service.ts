@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { Hoi4AnalysisWorkerService } from './hoi4-analysis-worker.service';
+import {
+  Hoi4AnalysisWorkerService,
+  type AnalyzedSave,
+} from './hoi4-analysis-worker.service';
 import type { AnalyzeResult } from './hoi4-parser';
+import type { SaveComparisonContext } from './save-comparison-context';
 
 export async function hashSaveContents(filePath: string): Promise<string> {
   const hash = createHash('sha256');
@@ -14,8 +18,8 @@ export async function hashSaveContents(filePath: string): Promise<string> {
 
 @Injectable()
 export class AnalysisResultCacheService {
-  private readonly completed = new Map<string, AnalyzeResult>();
-  private readonly inFlight = new Map<string, Promise<AnalyzeResult>>();
+  private readonly completed = new Map<string, AnalyzedSave>();
+  private readonly inFlight = new Map<string, Promise<AnalyzedSave>>();
   private readonly limit: number;
 
   constructor(private readonly analysis: Hoi4AnalysisWorkerService) {
@@ -33,17 +37,19 @@ export class AnalysisResultCacheService {
     this.completed.delete(hash);
   }
 
-  async analyzeWithHash(
-    filePath: string,
-  ): Promise<{ hash: string; result: AnalyzeResult }> {
+  async analyzeWithHash(filePath: string): Promise<{
+    hash: string;
+    result: AnalyzeResult;
+    comparisonContext: SaveComparisonContext;
+  }> {
     const hash = await hashSaveContents(filePath);
-    return { hash, result: await this.analyzeHash(filePath, hash) };
+    return { hash, ...(await this.analyzeHash(filePath, hash)) };
   }
 
   private async analyzeHash(
     filePath: string,
     hash: string,
-  ): Promise<AnalyzeResult> {
+  ): Promise<AnalyzedSave> {
     const cached = this.completed.get(hash);
     if (cached) {
       this.completed.delete(hash);
@@ -55,7 +61,7 @@ export class AnalysisResultCacheService {
     if (pending) return pending;
 
     const result = this.analysis
-      .analyze(filePath)
+      .analyzeWithContext(filePath)
       .then((value) => {
         // Consumers serialize these results without mutation. Keep the original
         // parse_seconds; it is not the duration of the current HTTP request.

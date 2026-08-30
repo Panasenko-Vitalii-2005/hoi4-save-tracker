@@ -9,6 +9,7 @@ import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
 import {
   PersistedAnalysisResultService,
   type PersistedAnalysisResultV1,
+  type PersistedAnalysisResultV2,
 } from './persisted-analysis-result.service';
 
 const compress = promisify(gzip);
@@ -68,11 +69,12 @@ describe('PersistedAnalysisResultService', () => {
     expect([...bytes.subarray(0, 2)]).toEqual([0x1f, 0x8b]);
     const envelope = JSON.parse(
       (await decompress(bytes)).toString('utf8'),
-    ) as PersistedAnalysisResultV1;
+    ) as PersistedAnalysisResultV2;
     expect(envelope).toEqual({
-      formatVersion: 1,
+      formatVersion: 2,
       hash: hash('a'),
       savedAt: expect.any(String) as unknown,
+      comparisonContext: { campaignId: null, gameVersion: null },
       result,
     });
     expect(Number.isFinite(Date.parse(envelope.savedAt))).toBe(true);
@@ -83,7 +85,7 @@ describe('PersistedAnalysisResultService', () => {
 
   test.each([
     ['wrong hash', { hash: hash('b') }],
-    ['unsupported version', { formatVersion: 2 }],
+    ['unsupported version', { formatVersion: 3 }],
     ['missing version', { formatVersion: undefined }],
     ['invalid timestamp', { savedAt: 'not a date' }],
     ['invalid result', { result: { game_date: '1944.5.1' } }],
@@ -93,7 +95,7 @@ describe('PersistedAnalysisResultService', () => {
       await service.save(hash('a'), result);
       const original = JSON.parse(
         (await decompress(await files.readFile(path()))).toString('utf8'),
-      ) as PersistedAnalysisResultV1;
+      ) as PersistedAnalysisResultV2;
       await files.writeFile(
         path(),
         await compress(JSON.stringify({ ...original, ...change })),
@@ -105,6 +107,32 @@ describe('PersistedAnalysisResultService', () => {
       expect(JSON.stringify(warn.mock.calls)).not.toContain(directory);
     },
   );
+
+  test('round-trips comparison context and reads legacy v1 as unknown', async () => {
+    const comparisonContext = {
+      campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+      gameVersion: 'Operation Postern v1.19.2.0.a729 (d245)',
+    };
+    await service.save(hash('a'), result, [], { comparisonContext });
+    expect(await service.getWithContext(hash('a'))).toEqual({
+      result,
+      comparisonContext,
+    });
+
+    const legacy: PersistedAnalysisResultV1 = {
+      formatVersion: 1,
+      hash: hash('a'),
+      savedAt: new Date().toISOString(),
+      result,
+    };
+    await files.writeFile(path(), await compress(JSON.stringify(legacy)));
+    expect(
+      await new PersistedAnalysisResultService().getWithContext(hash('a')),
+    ).toEqual({
+      result,
+      comparisonContext: { campaignId: null, gameVersion: null },
+    });
+  });
 
   test.each(['gzip', 'json', 'truncated'])(
     'handles corrupt %s safely',

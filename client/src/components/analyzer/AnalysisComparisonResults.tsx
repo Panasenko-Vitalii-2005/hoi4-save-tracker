@@ -122,9 +122,9 @@ function DeltaValue({
       className={`comparison-delta-value ${
         diff.delta > 0 ? "increase" : "decrease"
       }`}
-      aria-label={`${diff.delta > 0 ? "Increase" : "Decrease"} ${Math.abs(
-        diff.delta,
-      ).toLocaleString()}`}
+      aria-label={`${
+        diff.delta > 0 ? "Target higher by" : "Target lower by"
+      } ${Math.abs(diff.delta).toLocaleString()}`}
     >
       {signedDelta(diff.delta, compact)}
     </span>
@@ -168,10 +168,12 @@ export function AnalysisComparisonResults({
   data,
   baseName,
   targetName,
+  showContext = true,
 }: {
   data: AnalysisComparisonDto;
   baseName: string;
   targetName: string;
+  showContext?: boolean;
 }) {
   const [scope, setScope] = useState<CountryScope>("changed");
   const [search, setSearch] = useState("");
@@ -254,6 +256,43 @@ export function AnalysisComparisonResults({
           </div>
         </div>
       </div>
+      {showContext && (
+        <div className="comparison-context" aria-label="Comparison context">
+          {data.context.sameAnalysis ? (
+            <p className="comparison-context-note">
+              Base and Target are the same saved analysis.
+            </p>
+          ) : data.context.chronology === "same_date" ? (
+            <p className="comparison-context-note">
+              Base and Target have the same game date.
+            </p>
+          ) : null}
+          {data.context.chronology === "target_before_base" && (
+            <p className="comparison-context-warning" role="status">
+              Target save is earlier than Base save. Changes are still calculated
+              as Target − Base.
+            </p>
+          )}
+          {data.context.campaignCompatibility === "same" ? (
+            <p className="comparison-context-note">Same campaign</p>
+          ) : data.context.campaignCompatibility === "different" ? (
+            <p className="comparison-context-warning" role="status">
+              These saves appear to belong to different campaigns. The comparison
+              is still a raw Target − Base snapshot difference.
+            </p>
+          ) : (
+            <p className="comparison-context-note muted">
+              Campaign relationship unknown
+            </p>
+          )}
+          {data.context.gameVersionCompatibility === "different" && (
+            <p className="comparison-context-warning" role="status">
+              These saves use different game versions. Snapshot differences remain
+              Target − Base.
+            </p>
+          )}
+        </div>
+      )}
       {!data.hasChanges && (
         <p className="comparison-no-differences" role="status">
           No differences in compared metrics.
@@ -398,7 +437,9 @@ export function AnalysisComparisonResults({
                           <span
                             className={`comparison-country-status ${country.status}`}
                           >
-                            {country.status === "added" ? "Added" : "Removed"}
+                            {country.status === "added"
+                              ? "Target only"
+                              : "Base only"}
                           </span>
                         )}
                       </td>
@@ -427,8 +468,8 @@ export function AnalysisComparisonResults({
                 {selected.status !== "unchanged" && (
                   <p className={`comparison-detail-status ${selected.status}`}>
                     {selected.status === "added"
-                      ? "Added in Target"
-                      : "Removed from Target"}
+                      ? "Present only in Target"
+                      : "Present only in Base"}
                   </p>
                 )}
                 <div className="comparison-detail-summary">
@@ -476,11 +517,11 @@ export function AnalysisComparisonResults({
             <dl>
               <div>
                 <dt>Positive</dt>
-                <dd>Increase</dd>
+                <dd>Target higher</dd>
               </div>
               <div>
                 <dt>Negative</dt>
-                <dd>Decrease</dd>
+                <dd>Target lower</dd>
               </div>
               <div>
                 <dt>—</dt>
@@ -492,9 +533,10 @@ export function AnalysisComparisonResults({
               </div>
             </dl>
             <p className="micro-copy">
-              These snapshots do not prove production or losses occurred strictly
-              between save dates. Recorded naval losses are retained event-count
-              differences, not complete lifetime losses.
+              Calculated casualty changes compare cumulative snapshot values; they
+              do not prove casualties occurred during the selected interval.
+              Recorded naval losses are event-count snapshot differences and do
+              not prove those losses occurred strictly between the selected saves.
             </p>
           </section>
         </aside>

@@ -8,7 +8,10 @@ import {
   AnalysisResultCacheService,
   hashSaveContents,
 } from './analysis-result-cache.service';
-import { Hoi4AnalysisWorkerService } from './hoi4-analysis-worker.service';
+import {
+  Hoi4AnalysisWorkerService,
+  type AnalyzedSave,
+} from './hoi4-analysis-worker.service';
 import { analyzeSave, type AnalyzeResult } from './hoi4-parser';
 import { SaveInputError } from './save-input.error';
 
@@ -53,8 +56,12 @@ describe('AnalysisResultCacheService', () => {
   const originalLimit = process.env.HOI4_ANALYSIS_CACHE_ENTRIES;
   let worker: Hoi4AnalysisWorkerService;
   let cache: AnalysisResultCacheService;
-  let execute: jest.SpyInstance<Promise<AnalyzeResult>, [string]>;
+  let execute: jest.SpyInstance<Promise<AnalyzedSave>, [string]>;
   let result: AnalyzeResult;
+  const analysis = (): AnalyzedSave => ({
+    result,
+    comparisonContext: { campaignId: null, gameVersion: null },
+  });
 
   beforeAll(() => {
     paths.forEach((path, index) =>
@@ -71,7 +78,9 @@ describe('AnalysisResultCacheService', () => {
   beforeEach(() => {
     delete process.env.HOI4_ANALYSIS_CACHE_ENTRIES;
     worker = new Hoi4AnalysisWorkerService();
-    execute = jest.spyOn(worker, 'analyze').mockResolvedValue(result);
+    execute = jest
+      .spyOn(worker, 'analyzeWithContext')
+      .mockResolvedValue(analysis());
     cache = new AnalysisResultCacheService(worker);
   });
 
@@ -106,6 +115,23 @@ describe('AnalysisResultCacheService', () => {
     expect(cache['inFlight'].size).toBe(0);
   });
 
+  test('returns and caches Worker comparison context with the unchanged result', async () => {
+    const comparisonContext = {
+      campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+      gameVersion: '1.19.2',
+    };
+    execute.mockResolvedValue({ result, comparisonContext });
+    expect(await cache.analyzeWithHash(paths[0])).toMatchObject({
+      result,
+      comparisonContext,
+    });
+    expect(await cache.analyzeWithHash(paths[0])).toMatchObject({
+      result,
+      comparisonContext,
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   test('identical contents under different paths share a cache entry', async () => {
     await cache.analyze(paths[0]);
     await cache.analyze(sameBytes);
@@ -124,14 +150,14 @@ describe('AnalysisResultCacheService', () => {
   });
 
   test('deletion does not cancel shared in-flight work, whose later completion can repopulate', async () => {
-    const pending = deferred<AnalyzeResult>();
+    const pending = deferred<AnalyzedSave>();
     execute.mockReturnValueOnce(pending.promise);
     const hash = await hashSaveContents(paths[0]);
     const running = cache.analyze(paths[0]);
     await waitFor(() => execute.mock.calls.length === 1);
     cache.delete(hash);
     expect(cache['inFlight'].size).toBe(1);
-    pending.resolve(result);
+    pending.resolve(analysis());
     expect(await running).toEqual(result);
     expect(await cache.analyze(paths[0])).toEqual(result);
     expect(execute).toHaveBeenCalledTimes(1);
@@ -209,20 +235,20 @@ describe('AnalysisResultCacheService', () => {
   );
 
   test('same-hash concurrent callers share one analysis and release in-flight state', async () => {
-    const pending = deferred<AnalyzeResult>();
+    const pending = deferred<AnalyzedSave>();
     execute.mockReturnValueOnce(pending.promise);
     const lookups = jest.spyOn(cache['inFlight'], 'get');
     const first = cache.analyze(paths[0]);
     const second = cache.analyze(sameBytes);
     await waitFor(() => lookups.mock.calls.length === 2);
     expect(execute).toHaveBeenCalledTimes(1);
-    pending.resolve(result);
+    pending.resolve(analysis());
     expect(await Promise.all([first, second])).toEqual([result, result]);
     expect(cache['inFlight'].size).toBe(0);
   });
 
   test('same-hash failure rejects every waiter, removes state, and permits retry', async () => {
-    const pending = deferred<AnalyzeResult>();
+    const pending = deferred<AnalyzedSave>();
     execute.mockReturnValueOnce(pending.promise);
     const lookups = jest.spyOn(cache['inFlight'], 'get');
     const all = Promise.allSettled([

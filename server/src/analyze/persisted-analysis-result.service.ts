@@ -13,12 +13,30 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { gzip, gunzip } from 'node:zlib';
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
+import {
+  normalizeSaveComparisonContext,
+  unknownSaveComparisonContext,
+  type SaveComparisonContext,
+} from '../hoi4/save-comparison-context';
 
 export interface PersistedAnalysisResultV1 {
   formatVersion: 1;
   hash: string;
   savedAt: string;
   result: AnalyzeResult;
+}
+
+export interface PersistedAnalysisResultV2 {
+  formatVersion: 2;
+  hash: string;
+  savedAt: string;
+  comparisonContext: SaveComparisonContext;
+  result: AnalyzeResult;
+}
+
+export interface PersistedAnalysis {
+  result: AnalyzeResult;
+  comparisonContext: SaveComparisonContext;
 }
 
 export interface PersistedResultReference {
@@ -30,6 +48,7 @@ export interface PersistedResultReference {
 
 export interface PersistedResultRetentionOptions {
   preserveUnknown?: boolean;
+  comparisonContext?: SaveComparisonContext;
 }
 interface ResultFile {
   hash: string;
@@ -157,6 +176,14 @@ export class PersistedAnalysisResultService {
   }
 
   async get(hash: string): Promise<AnalyzeResult | null> {
+    return (await this.readPersisted(hash))?.result ?? null;
+  }
+
+  async getWithContext(hash: string): Promise<PersistedAnalysis | null> {
+    return this.readPersisted(hash);
+  }
+
+  private async readPersisted(hash: string): Promise<PersistedAnalysis | null> {
     const key = this.key(hash);
     await this.pending;
     try {
@@ -175,15 +202,20 @@ export class PersistedAnalysisResultService {
       const envelope: unknown = JSON.parse(json.toString('utf8'));
       if (
         !isObject(envelope) ||
-        envelope.formatVersion !== 1 ||
+        ![1, 2].includes(envelope.formatVersion as number) ||
         envelope.hash !== key ||
         typeof envelope.savedAt !== 'string' ||
         !Number.isFinite(Date.parse(envelope.savedAt)) ||
         !isResult(envelope.result)
       )
         throw new Error('Invalid persisted analysis');
+      const comparisonContext =
+        envelope.formatVersion === 1
+          ? unknownSaveComparisonContext()
+          : normalizeSaveComparisonContext(envelope.comparisonContext);
+      if (!comparisonContext) throw new Error('Invalid persisted analysis');
       this.invalid.delete(key);
-      return envelope.result;
+      return { result: envelope.result, comparisonContext };
     } catch (error: unknown) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         this.invalid.add(key);
@@ -205,10 +237,13 @@ export class PersistedAnalysisResultService {
     const key = this.key(hash);
     return this.enqueue(async () => {
       try {
-        const envelope: PersistedAnalysisResultV1 = {
-          formatVersion: 1,
+        const envelope: PersistedAnalysisResultV2 = {
+          formatVersion: 2,
           hash: key,
           savedAt: new Date().toISOString(),
+          comparisonContext:
+            normalizeSaveComparisonContext(options.comparisonContext) ??
+            unknownSaveComparisonContext(),
           result,
         };
         const json = JSON.stringify(envelope);

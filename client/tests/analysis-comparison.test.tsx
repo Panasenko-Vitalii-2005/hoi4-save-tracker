@@ -16,6 +16,7 @@ const entry = (
   letter: string,
   fileName: string,
   available = true,
+  gameDate = "1944.5.1",
 ): RecentAnalysis => ({
   hash: letter.repeat(64),
   fileName,
@@ -23,15 +24,15 @@ const entry = (
   pinned: false,
   fileSizeBytes: 100,
   analyzedAt: "2026-08-28T10:00:00Z",
-  gameDate: "1944.5.1",
+  gameDate,
   countryCount: 1,
   divisionCount: 10,
   shipCount: 2,
   navalLossCount: 1,
 });
 const entries = [
-  entry("a", "Base.hoi4"),
-  entry("b", "Target.hoi4"),
+  entry("a", "Base.hoi4", true, "1944.5.1"),
+  entry("b", "Target.hoi4", true, "1944.6.1"),
   entry("c", "Third.hoi4"),
   entry("d", "Unavailable.hoi4", false),
 ];
@@ -64,6 +65,12 @@ const response = (
   targetHash: target,
   baseGameDate: "1944.5.1",
   targetGameDate: "1944.6.1",
+  context: {
+    chronology: "target_after_base",
+    sameAnalysis: base === target,
+    campaignCompatibility: "unknown",
+    gameVersionCompatibility: "unknown",
+  },
   hasChanges: true,
   summary: {
     activeCountries: diff(2, 3),
@@ -202,16 +209,92 @@ describe("Save comparison UI", () => {
     await act(async () =>
       buttonByLabel("Swap base and target analyses").click(),
     );
+    expect(container.textContent).toContain(
+      "Target save is earlier than Base save. Changes are still calculated as Target − Base.",
+    );
     await click("Compare");
     const query = new URL(comparisons()[0].url, "http://localhost")
       .searchParams;
     expect(query.get("base")).toBe(entries[1].hash);
     expect(query.get("target")).toBe(entries[0].hash);
-    await finish(response(entries[1].hash, entries[0].hash));
+    const swapped = response(entries[1].hash, entries[0].hash);
+    swapped.context.chronology = "target_before_base";
+    await finish(swapped);
     const names = [
       ...results().querySelectorAll(".comparison-direction strong"),
     ].map((n) => n.textContent);
     expect(names).toEqual(["Target.hoi4", "Base.hoi4"]);
+    expect(results().textContent).toContain("Target save is earlier than Base");
+
+    await act(async () =>
+      buttonByLabel("Swap base and target analyses").click(),
+    );
+    expect(container.textContent).not.toContain("Target save is earlier");
+    await click("Compare");
+    await finish(response());
+    expect(results().textContent).not.toContain("Target save is earlier");
+  });
+
+  test("renders reverse, normal, same-date and same-analysis chronology context", async () => {
+    await render();
+    await choose();
+    await click("Compare");
+    const reverse = response();
+    reverse.context.chronology = "target_before_base";
+    await finish(reverse);
+    expect(results().textContent).toContain(
+      "Target save is earlier than Base save. Changes are still calculated as Target − Base.",
+    );
+
+    await click("Compare");
+    await finish(response());
+    expect(results().textContent).not.toContain("Target save is earlier");
+
+    await click("Compare");
+    const sameDate = response();
+    sameDate.context.chronology = "same_date";
+    sameDate.targetGameDate = sameDate.baseGameDate;
+    await finish(sameDate);
+    expect(results().textContent).toContain(
+      "Base and Target have the same game date.",
+    );
+
+    await select("compare-target", entries[0].hash);
+    await click("Compare");
+    const same = response(entries[0].hash, entries[0].hash);
+    same.context.sameAnalysis = true;
+    same.context.chronology = "same_date";
+    await finish(same);
+    expect(results().textContent).toContain(
+      "Base and Target are the same saved analysis.",
+    );
+    expect(results().textContent).not.toContain(
+      "Base and Target have the same game date.",
+    );
+  });
+
+  test("renders same, different and unknown campaign evidence without blocking", async () => {
+    await render();
+    await choose();
+    await click("Compare");
+    const same = response();
+    same.context.campaignCompatibility = "same";
+    await finish(same);
+    expect(results().textContent).toContain("Same campaign");
+
+    await click("Compare");
+    const different = response();
+    different.context.campaignCompatibility = "different";
+    different.context.gameVersionCompatibility = "different";
+    await finish(different);
+    expect(results().textContent).toContain(
+      "These saves appear to belong to different campaigns.",
+    );
+    expect(results().textContent).toContain("different game versions");
+
+    await click("Compare");
+    await finish(response());
+    expect(results().textContent).toContain("Campaign relationship unknown");
   });
 
   test("loading uses a synchronous duplicate guard and accessible busy status", async () => {
@@ -290,8 +373,8 @@ describe("Save comparison UI", () => {
       button("Changed only").getAttribute("aria-pressed"),
     ).toBe("true");
     expect(comparisonRows()).toHaveLength(3);
-    expect(results().textContent).toContain("Added");
-    expect(results().textContent).toContain("Removed");
+    expect(results().textContent).toContain("Target only");
+    expect(results().textContent).toContain("Base only");
     expect(results().textContent).toContain("Germany");
     expect(results().textContent).toContain("United Kingdom");
     await click("All countries");
@@ -372,7 +455,7 @@ describe("Save comparison UI", () => {
     expect(results().querySelector('[aria-label="Country detail"]')?.textContent).toContain(
       "United Kingdom",
     );
-    expect(results().textContent).toContain("Removed from Target");
+    expect(results().textContent).toContain("Present only in Base");
 
     const added = countryRow("D04") as HTMLTableRowElement;
     added.focus();
@@ -383,7 +466,7 @@ describe("Save comparison UI", () => {
     );
     expect(added.getAttribute("aria-selected")).toBe("true");
     expect(results().querySelector('[aria-label="Country detail"]')?.textContent).toContain(
-      "Added in Target",
+      "Present only in Target",
     );
   });
 
@@ -488,10 +571,15 @@ describe("Save comparison UI", () => {
     await finish();
     const about = results().querySelector('[aria-label="About changes"]')!;
     expect(about.textContent).toContain("Target − Base snapshot differences");
-    expect(about.textContent).toContain("PositiveIncrease");
-    expect(about.textContent).toContain("NegativeDecrease");
+    expect(about.textContent).toContain("PositiveTarget higher");
+    expect(about.textContent).toContain("NegativeTarget lower");
     expect(about.textContent).toMatch(/recorded naval losses/i);
-    expect(about.textContent).toContain("not complete lifetime losses");
+    expect(about.textContent).toContain(
+      "do not prove those losses occurred strictly between the selected saves",
+    );
+    expect(about.textContent).toContain(
+      "do not prove casualties occurred during the selected interval",
+    );
     expect(results().textContent).not.toMatch(/sparkline|historical trend|timeline/i);
   });
 

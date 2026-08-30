@@ -23,6 +23,13 @@ export interface AnalysisComparisonDto {
   targetHash: string;
   baseGameDate: string | null;
   targetGameDate: string | null;
+  context: {
+    chronology:
+      'target_after_base' | 'same_date' | 'target_before_base' | 'unknown';
+    sameAnalysis: boolean;
+    campaignCompatibility: 'same' | 'different' | 'unknown';
+    gameVersionCompatibility: 'same' | 'different' | 'unknown';
+  };
   hasChanges: boolean;
   summary: {
     activeCountries: NumericDiff;

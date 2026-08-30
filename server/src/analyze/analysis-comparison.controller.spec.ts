@@ -22,6 +22,10 @@ describe('Compare persisted analyses API', () => {
   const previous = process.env.HOI4_ANALYSIS_RESULTS_DIR;
   const base = 'a'.repeat(64);
   const target = 'b'.repeat(64);
+  const comparisonContext = {
+    campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+    gameVersion: '1.19.2',
+  };
   const analyze = jest.fn();
   const start = async () => {
     const module = await Test.createTestingModule({
@@ -48,10 +52,10 @@ describe('Compare persisted analyses API', () => {
     jest.spyOn(parser, 'analyzeSave');
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     await start();
-    await results.save(base, comparisonResult());
+    await results.save(base, comparisonResult(), [], { comparisonContext });
     const next = comparisonResult({ game_date: '1944.6.1' });
     next.totals.divisions = 15;
-    await results.save(target, next);
+    await results.save(target, next, [], { comparisonContext });
   });
   afterEach(async () => {
     expect(analyze).not.toHaveBeenCalled(); // No cache or Worker dependency is used.
@@ -77,6 +81,12 @@ describe('Compare persisted analyses API', () => {
     });
     expect(body.baseGameDate).toBe('1944.5.1');
     expect(body.targetGameDate).toBe('1944.6.1');
+    expect(body.context).toEqual({
+      chronology: 'target_after_base',
+      sameAnalysis: false,
+      campaignCompatibility: 'same',
+      gameVersionCompatibility: 'same',
+    });
     expect(before.text).not.toMatch(
       /by_country|equipment_by_country|divisionTemplateCatalog|savedAt|formatVersion|parse_seconds/,
     );
@@ -87,10 +97,12 @@ describe('Compare persisted analyses API', () => {
   });
 
   test('same hash accepted and loaded only once, with zero differences', async () => {
-    const read = jest.spyOn(results, 'get');
+    const read = jest.spyOn(results, 'getWithContext');
     const response = await get(base.toUpperCase(), base).expect(200);
     const body = response.body as AnalysisComparisonDto;
     expect(body.baseHash).toBe(base);
+    expect(body.context.sameAnalysis).toBe(true);
+    expect(body.context.chronology).toBe('same_date');
     expect(body.hasChanges).toBe(false);
     expect(body.summary.divisions.delta).toBe(0);
     expect(read).toHaveBeenCalledTimes(1);
@@ -125,7 +137,9 @@ describe('Compare persisted analyses API', () => {
     expect(response.text).not.toMatch(/gzip|stack/);
   });
   test('unexpected storage failure is generic, without paths', async () => {
-    jest.spyOn(results, 'get').mockRejectedValue(new Error('C:/private/error'));
+    jest
+      .spyOn(results, 'getWithContext')
+      .mockRejectedValue(new Error('C:/private/error'));
     const response = await get().expect(503);
     expect(response.text).not.toContain('private');
   });

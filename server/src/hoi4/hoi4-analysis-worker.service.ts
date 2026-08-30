@@ -13,6 +13,16 @@ import {
   SAVE_ERRORS,
 } from './save-input.error';
 import { saveUploadPolicy } from './save-upload.policy';
+import {
+  normalizeSaveComparisonContext,
+  unknownSaveComparisonContext,
+  type SaveComparisonContext,
+} from './save-comparison-context';
+
+export interface AnalyzedSave {
+  result: AnalyzeResult;
+  comparisonContext: SaveComparisonContext;
+}
 
 @Injectable()
 export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
@@ -29,6 +39,10 @@ export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
   }
 
   async analyze(filePath: string): Promise<AnalyzeResult> {
+    return (await this.analyzeWithContext(filePath)).result;
+  }
+
+  async analyzeWithContext(filePath: string): Promise<AnalyzedSave> {
     if (this.closing || this.workers.size >= this.limit) {
       throw new ServiceUnavailableException({
         code: 'ANALYZER_BUSY',
@@ -39,10 +53,10 @@ export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
     const worker = this.createWorker(filePath);
     this.workers.add(worker);
 
-    return new Promise<AnalyzeResult>((resolve, reject) => {
+    return new Promise<AnalyzedSave>((resolve, reject) => {
       let settled = false;
       const finish = async (
-        outcome: { result: AnalyzeResult } | { error: Error },
+        outcome: { analysis: AnalyzedSave } | { error: Error },
       ) => {
         if (settled) return;
         settled = true;
@@ -61,11 +75,18 @@ export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
           this.workers.delete(worker);
         }
         if ('error' in outcome) reject(outcome.error);
-        else resolve(outcome.result);
+        else resolve(outcome.analysis);
       };
       const onMessage = (message: AnalysisWorkerMessage) => {
         if (message.ok) {
-          void finish({ result: message.result });
+          void finish({
+            analysis: {
+              result: message.result,
+              comparisonContext:
+                normalizeSaveComparisonContext(message.comparisonContext) ??
+                unknownSaveComparisonContext(),
+            },
+          });
         } else {
           const error = isSaveErrorCode(message.error.code)
             ? new SaveInputError(message.error.code)

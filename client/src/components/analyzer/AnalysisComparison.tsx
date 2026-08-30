@@ -3,6 +3,32 @@ import type { RecentAnalysis } from "@/types";
 import type { AnalysisComparisonDto } from "@/types/analysis-comparison";
 import { AnalysisComparisonResults } from "./AnalysisComparisonResults";
 
+function compareGameDates(
+  baseDate: string,
+  targetDate: string,
+): "after" | "same" | "before" | "unknown" {
+  const parse = (value: string) => {
+    const match = /^(\d+)\.(\d{1,2})\.(\d{1,2})$/.exec(value);
+    if (!match) return null;
+    const parts = match.slice(1).map(Number);
+    return parts[0] > 0 &&
+      parts[1] >= 1 &&
+      parts[1] <= 12 &&
+      parts[2] >= 1 &&
+      parts[2] <= 31
+      ? parts
+      : null;
+  };
+  const base = parse(baseDate);
+  const target = parse(targetDate);
+  if (!base || !target) return "unknown";
+  for (let index = 0; index < base.length; index++) {
+    if (target[index] > base[index]) return "after";
+    if (target[index] < base[index]) return "before";
+  }
+  return "same";
+}
+
 export function AnalysisComparison({
   items,
   busy,
@@ -28,6 +54,11 @@ export function AnalysisComparison({
   );
   const base = available.find((item) => item.hash === baseHash);
   const target = available.find((item) => item.hash === targetHash);
+  const selectedChronology =
+    base && target ? compareGameDates(base.gameDate, target.gameDate) : null;
+  const completedMatchesSelection =
+    completed?.data.baseHash === baseHash &&
+    completed?.data.targetHash === targetHash;
   const cancel = useCallback(() => {
     pending.current?.abort();
     pending.current = null;
@@ -87,7 +118,8 @@ export function AnalysisComparison({
         data.baseHash !== base.hash ||
         data.targetHash !== target.hash ||
         !Array.isArray(data.countries) ||
-        !data.summary
+        !data.summary ||
+        !data.context
       )
         throw new Error("Invalid comparison response");
       setCompleted({
@@ -118,7 +150,7 @@ export function AnalysisComparison({
             <span className="eyebrow">Saved analysis comparison</span>
             <h2>Compare Saves</h2>
             <p className="comparison-subtitle">
-              See how your world changed between two saves.
+              Compare two saved world snapshots.
               <span>
                 All values show the difference <strong>Target − Base</strong>.
               </span>
@@ -185,16 +217,42 @@ export function AnalysisComparison({
         <p className="micro-copy" role="status" aria-live="polite">
           {loading ? "Loading saved analyses for comparison…" : error}
         </p>
+        {base && target && !completedMatchesSelection && (
+          <div
+            className="comparison-context comparison-selection-context"
+            aria-label="Selected comparison context"
+          >
+            {base.hash === target.hash ? (
+              <p className="comparison-context-note">
+                Base and Target are the same saved analysis.
+              </p>
+            ) : selectedChronology === "same" ? (
+              <p className="comparison-context-note">
+                Base and Target have the same game date.
+              </p>
+            ) : null}
+            {selectedChronology === "before" && (
+              <p className="comparison-context-warning" role="status">
+                Target save is earlier than Base save. Changes are still
+                calculated as Target − Base.
+              </p>
+            )}
+          </div>
+        )}
         {completed &&
-          (completed.data.baseHash !== baseHash ||
-            completed.data.targetHash !== targetHash) && (
+          !completedMatchesSelection && (
             <p className="micro-copy">
               Showing the last completed comparison below. Press Compare to
               update it.
             </p>
           )}
       </section>
-      {completed && <AnalysisComparisonResults {...completed} />}
+      {completed && (
+        <AnalysisComparisonResults
+          {...completed}
+          showContext={completedMatchesSelection}
+        />
+      )}
     </>
   );
 }

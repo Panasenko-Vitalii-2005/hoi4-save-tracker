@@ -7,9 +7,14 @@ import {
   comparisonResult as result,
 } from './fixtures/analysis-comparison.fixture';
 import type { NavalLossEvent } from '../hoi4/naval-loss/naval-loss.types';
+import type { SaveComparisonContext } from '../hoi4/save-comparison-context';
 
 const compare = (base = result(), target = result()) =>
   compareAnalysisResults('a', 'b', base, target);
+const context = (
+  campaignId: string | null,
+  gameVersion = '1.19.2',
+): SaveComparisonContext => ({ campaignId, gameVersion });
 
 describe('Analysis comparison', () => {
   test.each([
@@ -157,17 +162,70 @@ describe('Analysis comparison', () => {
     });
   });
 
-  test('direction is explicit even when target date is earlier', () => {
+  test('chronology is numeric and direction remains Target minus Base', () => {
     const base = result({
-      game_date: '1945.1.1',
+      game_date: '1944.10.1',
       by_country: [country('GER', { ships: 5 })],
     });
-    const target = result({ game_date: '1944.1.1' });
+    const target = result({ game_date: '1944.9.1' });
     const data = compare(base, target);
-    expect(data.baseGameDate).toBe('1945.1.1');
-    expect(data.targetGameDate).toBe('1944.1.1');
+    expect(data.baseGameDate).toBe('1944.10.1');
+    expect(data.targetGameDate).toBe('1944.9.1');
+    expect(data.context.chronology).toBe('target_before_base');
     expect(data.countries[0].ships.delta).toBe(-3);
-    expect(compare(target, base).countries[0].ships.delta).toBe(3);
+    const swapped = compare(target, base);
+    expect(swapped.context.chronology).toBe('target_after_base');
+    expect(swapped.countries[0].ships.delta).toBe(3);
+  });
+
+  test.each([
+    ['1944.5.1', '1944.5.1', 'same_date'],
+    ['1944.5.1', '1944.5.2', 'target_after_base'],
+    ['1944.5.2', '1944.5.1', 'target_before_base'],
+    ['1944.5.1.2', '1944.5.2', 'unknown'],
+    ['unknown', '1944.5.2', 'unknown'],
+    ['1944.13.1', '1944.5.2', 'unknown'],
+  ])(
+    'classifies chronology %s → %s as %s',
+    (baseDate, targetDate, expected) => {
+      expect(
+        compare(
+          result({ game_date: baseDate }),
+          result({ game_date: targetDate }),
+        ).context.chronology,
+      ).toBe(expected);
+    },
+  );
+
+  test('campaign and game-version compatibility require persisted evidence', () => {
+    const campaignA = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
+    const campaignB = '016a6f0b-47b4-4812-a626-73537dcc5c56';
+    const same = compareAnalysisResults(
+      'a',
+      'b',
+      result(),
+      result(),
+      context(campaignA),
+      context(campaignA),
+    );
+    expect(same.context.campaignCompatibility).toBe('same');
+    expect(same.context.gameVersionCompatibility).toBe('same');
+
+    const different = compareAnalysisResults(
+      'a',
+      'b',
+      result(),
+      result(),
+      context(campaignA, '1.19.2'),
+      context(campaignB, '1.20.0'),
+    );
+    expect(different.context.campaignCompatibility).toBe('different');
+    expect(different.context.gameVersionCompatibility).toBe('different');
+
+    expect(compare().context).toMatchObject({
+      campaignCompatibility: 'unknown',
+      gameVersionCompatibility: 'unknown',
+    });
   });
 
   test('same result, unknowns and dates do not invent differences', () => {
@@ -175,6 +233,8 @@ describe('Analysis comparison', () => {
       by_country: [country('GER', { calculatedWarCasualtiesTotal: undefined })],
     });
     const data = compareAnalysisResults('a', 'a', same, same);
+    expect(data.context.sameAnalysis).toBe(true);
+    expect(data.context.chronology).toBe('same_date');
     expect(data.hasChanges).toBe(false);
     expect(data.countries[0].hasChanges).toBe(false);
     expect(data.summary.divisions.delta).toBe(0);

@@ -193,7 +193,8 @@ export class AnalyzeController {
     await validateSaveFile(filePath);
     const fileSizeBytes =
       uploadedSave?.size ?? (await fs.promises.stat(filePath)).size;
-    const { hash, result } = await this.analysis.analyzeWithHash(filePath);
+    const { hash, result, comparisonContext } =
+      await this.analysis.analyzeWithHash(filePath);
     // The interceptor owns cleanup, including pre-controller failures and disconnects.
     if (!response.destroyed) {
       await this.history.record(
@@ -203,6 +204,7 @@ export class AnalyzeController {
           fileSizeBytes,
         },
         result,
+        comparisonContext,
       );
     }
     return result;
