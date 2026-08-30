@@ -16,6 +16,8 @@ const entry = {
   divisionCount: 3250,
   shipCount: 1539,
   navalLossCount: 993,
+  manpowerInField: 31_378_714,
+  aircraftCount: 53_095,
   hasPersistedResult: false,
   pinned: false,
 };
@@ -142,19 +144,44 @@ describe("Recent Analyses", () => {
     expect(section().querySelector("table")).toBeNull();
   });
 
-  test("renders metadata, locale timestamps and distinct same-name entries without hash or reopen action", async () => {
+  test("renders useful metadata, removes dense legacy columns and keeps distinct same-name entries", async () => {
     await render();
     await respond(0, [entry, { ...entry, hash: "b".repeat(64) }]);
     expect(section().querySelectorAll("tbody tr")).toHaveLength(2);
     expect(section().textContent).toContain(entry.fileName);
     expect(section().textContent).toContain(entry.gameDate);
-    expect(section().textContent).toContain((3250).toLocaleString());
-    expect(section().textContent).toContain((1539).toLocaleString());
+    expect(section().textContent).toContain((31_378_714).toLocaleString());
+    expect(section().textContent).toContain((53_095).toLocaleString());
+    const headers = [...section().querySelectorAll("th")].map(
+      (header) => header.textContent,
+    );
+    expect(headers).toContain("Manpower in field");
+    expect(headers).toContain("Aircraft");
+    expect(headers).not.toContain("Divisions");
+    expect(headers).not.toContain("Ships");
+    expect(headers).not.toContain("Naval losses");
     expect(section().innerHTML).not.toContain(entry.hash);
     expect(section().querySelector("time")?.dateTime).toBe(entry.analyzedAt);
     expect(section().querySelector('[aria-label^="Open analysis"]')).toBeNull();
     expect(section().textContent).toContain(
       "Original save files are not stored",
+    );
+  });
+
+  test("legacy records render missing manpower and aircraft as unavailable, never zero", async () => {
+    const legacy: Partial<typeof entry> = { ...entry };
+    delete legacy.manpowerInField;
+    delete legacy.aircraftCount;
+    await render();
+    await respond(0, [legacy]);
+    expect(
+      section().querySelector(".analyzer-recent-manpower")?.textContent,
+    ).toBe("—");
+    expect(
+      section().querySelector(".analyzer-recent-aircraft")?.textContent,
+    ).toBe("—");
+    expect(section().querySelectorAll('[data-recent-icon="aircraft"]')).toHaveLength(
+      1,
     );
   });
 
@@ -540,7 +567,12 @@ describe("Recent Analyses", () => {
     expect(section().textContent).toContain("Unavailable");
     expect(section().textContent).toContain("MiB");
     expect(section().textContent).toContain("1 KiB");
-    expect(section().textContent).toContain((993).toLocaleString());
+    expect(section().textContent).toContain(
+      entry.manpowerInField.toLocaleString(),
+    );
+    expect(section().textContent).toContain(entry.aircraftCount.toLocaleString());
+    expect(section().querySelector('[data-recent-icon="aircraft"]')).not.toBeNull();
+    expect(section().querySelector('[data-recent-icon="history"]')).not.toBeNull();
     expect(
       section().querySelector('label[for="recent-analysis-search"]')
         ?.textContent,

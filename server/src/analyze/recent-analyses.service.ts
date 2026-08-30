@@ -19,6 +19,8 @@ export interface RecentAnalysis {
   divisionCount: number;
   shipCount: number;
   navalLossCount: number;
+  manpowerInField: number | null;
+  aircraftCount: number | null;
   hasPersistedResult: boolean;
   pinned: boolean;
 }
@@ -43,6 +45,8 @@ function readItem(value: unknown): RecentAnalysis {
     }
     return value;
   };
+  const optionalCount = (key: string): number | null =>
+    item[key] == null ? null : count(key);
   if (
     typeof item.hash !== 'string' ||
     !/^[a-f0-9]{64}$/.test(item.hash) ||
@@ -62,6 +66,8 @@ function readItem(value: unknown): RecentAnalysis {
     divisionCount: count('divisionCount'),
     shipCount: count('shipCount'),
     navalLossCount: count('navalLossCount'),
+    manpowerInField: optionalCount('manpowerInField'),
+    aircraftCount: optionalCount('aircraftCount'),
     hasPersistedResult: item.hasPersistedResult === true,
     pinned: item.pinned === true,
   };
@@ -152,6 +158,8 @@ export class RecentAnalysesService {
       divisionCount: result.totals.divisions,
       shipCount: result.totals.ships,
       navalLossCount: result.navalLosses.length,
+      manpowerInField: result.totals.manpowerInField,
+      aircraftCount: result.totals.aircraft,
       hasPersistedResult: false,
       pinned: false,
     };

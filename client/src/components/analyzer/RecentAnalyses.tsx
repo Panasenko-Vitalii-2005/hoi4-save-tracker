@@ -48,6 +48,130 @@ function fileSize(bytes: number): string {
   return `${(bytes / divisor).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit}`;
 }
 
+type RecentIconName =
+  | "history"
+  | "search"
+  | "calendar"
+  | "clock"
+  | "manpower"
+  | "aircraft"
+  | "available"
+  | "unavailable"
+  | "open"
+  | "share"
+  | "pin"
+  | "delete";
+
+function RecentIcon({ name }: { name: RecentIconName }) {
+  return (
+    <svg
+      className="recent-icon"
+      data-recent-icon={name}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {name === "history" && (
+        <>
+          <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+          <path d="M3 3v5h5M12 7v5l3 2" />
+        </>
+      )}
+      {name === "search" && (
+        <>
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-4-4" />
+        </>
+      )}
+      {name === "calendar" && (
+        <>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M16 3v4M8 3v4M3 10h18" />
+        </>
+      )}
+      {name === "clock" && (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </>
+      )}
+      {name === "manpower" && (
+        <>
+          <circle cx="9" cy="8" r="3" />
+          <path d="M3.5 20v-2a5.5 5.5 0 0 1 11 0v2M16 5.3a3 3 0 0 1 0 5.4M17 14a5 5 0 0 1 3.5 4.8V20" />
+        </>
+      )}
+      {name === "aircraft" && (
+        <path d="m22 16-9-5.5V4.8c0-1.4-.4-2.8-1-2.8s-1 1.4-1 2.8v5.7L2 16v2l9-2.8V20l-2 1.5V23l3-1 3 1v-1.5L13 20v-4.8l9 2.8Z" />
+      )}
+      {name === "available" && (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="m8 12 2.5 2.5L16 9" />
+        </>
+      )}
+      {name === "unavailable" && (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9 9l6 6M15 9l-6 6" />
+        </>
+      )}
+      {name === "open" && (
+        <>
+          <path d="M5 12h14M14 7l5 5-5 5" />
+          <path d="M5 5H3v14h2" />
+        </>
+      )}
+      {name === "share" && (
+        <>
+          <circle cx="18" cy="5" r="2.5" />
+          <circle cx="6" cy="12" r="2.5" />
+          <circle cx="18" cy="19" r="2.5" />
+          <path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5" />
+        </>
+      )}
+      {name === "pin" && (
+        <>
+          <path d="m14 4 6 6-3 1-4 4-1 4-2-2-2-2 4-1 4-4Z" />
+          <path d="m9 15-5 5" />
+        </>
+      )}
+      {name === "delete" && (
+        <>
+          <path d="M4 7h16M9 7V4h6v3M6.5 7l1 14h9l1-14M10 11v6M14 11v6" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function recentCount(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value.toLocaleString()
+    : "—";
+}
+
+function analyzedDate(value: string): { date: string; time: string } {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return { date: "—", time: "" };
+  return {
+    date: date.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }),
+    time: date.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  };
+}
+
 export function RecentAnalyses({
   refreshVersion,
   onOpen,
@@ -210,8 +334,20 @@ export function RecentAnalyses({
         aria-label="Recent Analyses"
         aria-busy={loading || mutation !== null}
       >
-        <div className="panel-head">
-          <h2>Recent Analyses</h2>
+        <div className="analyzer-recent-header">
+          <div className="analyzer-recent-heading">
+            <span className="analyzer-recent-heading-icon">
+              <RecentIcon name="history" />
+            </span>
+            <div>
+              <h2>Recent Analyses</h2>
+              <p className="micro-copy">
+                Reopen a saved analysis without uploading again.
+                <br />
+                Original save files are not stored.
+              </p>
+            </div>
+          </div>
           {failed && (
             <button
               className="button button-secondary"
@@ -221,20 +357,19 @@ export function RecentAnalyses({
             </button>
           )}
         </div>
-        <p className="micro-copy">
-          Reopen a saved analysis without uploading again. Original save files
-          are not stored.
-        </p>
         <div className="analyzer-recent-controls">
           <label htmlFor="recent-analysis-search">
             Search analyses
-            <input
-              id="recent-analysis-search"
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Filename or game date"
-            />
+            <span className="analyzer-recent-control">
+              <RecentIcon name="search" />
+              <input
+                id="recent-analysis-search"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Filename or game date"
+              />
+            </span>
           </label>
           <label htmlFor="recent-analysis-sort">
             Sort analyses
@@ -258,26 +393,28 @@ export function RecentAnalyses({
           Pinned analyses appear first. Pins are retained when possible, within
           history limits.
         </p>
-        <div className="micro-copy" role="status" aria-live="polite">
-          {loading
-            ? "Loading recent analyses…"
-            : failed
-              ? "Recent history is unavailable. You can still analyze saves."
-              : items.length === 0
-                ? "No recent analyses yet."
-                : visibleItems.length === 0
-                  ? "No analyses found."
-                  : `Showing ${visibleItems.length} of ${items.length} analyses.`}
-        </div>
-        <div className="micro-copy" role="status" aria-live="polite">
-          {openingHash ? "Opening saved analysis…" : openError}
-        </div>
-        <div className="micro-copy" role="status" aria-live="polite">
-          {mutation
-            ? mutation.action === "delete"
-              ? "Deleting saved analysis…"
-              : "Updating pin…"
-            : actionMessage}
+        <div className="analyzer-recent-statuses">
+          <div className="micro-copy" role="status" aria-live="polite">
+            {loading
+              ? "Loading recent analyses…"
+              : failed
+                ? "Recent history is unavailable. You can still analyze saves."
+                : items.length === 0
+                  ? "No recent analyses yet."
+                  : visibleItems.length === 0
+                    ? "No analyses found."
+                    : `Showing ${visibleItems.length} of ${items.length} analyses.`}
+          </div>
+          <div className="micro-copy" role="status" aria-live="polite">
+            {openingHash ? "Opening saved analysis…" : openError}
+          </div>
+          <div className="micro-copy" role="status" aria-live="polite">
+            {mutation
+              ? mutation.action === "delete"
+                ? "Deleting saved analysis…"
+                : "Updating pin…"
+              : actionMessage}
+          </div>
         </div>
         {visibleItems.length > 0 && (
           <div
@@ -292,59 +429,92 @@ export function RecentAnalyses({
                   <th>Save file</th>
                   <th>Game date</th>
                   <th>Analyzed</th>
-                  <th className="numeric-cell">Divisions</th>
-                  <th className="numeric-cell">Ships</th>
-                  <th className="numeric-cell">Naval losses</th>
+                  <th className="numeric-cell">Manpower in field</th>
+                  <th className="numeric-cell">Aircraft</th>
                   <th>Result</th>
                   <th className="analyzer-recent-action">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleItems.map((item) => (
-                  <tr
+                {visibleItems.map((item) => {
+                  const analyzed = analyzedDate(item.analyzedAt);
+                  return (
+                    <tr
                     key={item.hash}
                     aria-busy={
                       openingHash === item.hash || mutation?.hash === item.hash
                     }
                   >
                     <td>
-                      <span className="analyzer-recent-name">
-                        {item.fileName}
-                      </span>
+                      <div className="analyzer-recent-name-line">
+                        <span className="analyzer-recent-name">
+                          {item.fileName}
+                        </span>
+                        {item.pinned && (
+                          <span
+                            className="analyzer-recent-pin-state"
+                            aria-label="Pinned analysis"
+                            title="Pinned analysis"
+                          >
+                            <RecentIcon name="pin" />
+                          </span>
+                        )}
+                      </div>
                       <div className="micro-copy">
                         {fileSize(item.fileSizeBytes)}
-                        {item.pinned ? " · Pinned" : ""}
                       </div>
                     </td>
-                    <td>{item.gameDate || "—"}</td>
+                    <td>
+                      <span className="analyzer-recent-meta">
+                        <RecentIcon name="calendar" />
+                        <span>{item.gameDate || "—"}</span>
+                      </span>
+                    </td>
                     <td>
                       <time dateTime={item.analyzedAt}>
-                        {new Date(item.analyzedAt).toLocaleString(undefined, {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                        <span className="analyzer-recent-meta">
+                          <RecentIcon name="clock" />
+                          <span>
+                            <span className="analyzer-recent-date">
+                              {analyzed.date}
+                            </span>
+                            {analyzed.time && (
+                              <span className="micro-copy">
+                                {analyzed.time}
+                              </span>
+                            )}
+                          </span>
+                        </span>
                       </time>
                     </td>
-                    <td className="numeric-cell">
-                      {item.divisionCount.toLocaleString()}
+                    <td className="numeric-cell analyzer-recent-manpower">
+                      <span className="analyzer-recent-metric">
+                        <RecentIcon name="manpower" />
+                        <span>{recentCount(item.manpowerInField)}</span>
+                      </span>
                     </td>
-                    <td className="numeric-cell">
-                      {item.shipCount.toLocaleString()}
-                    </td>
-                    <td className="numeric-cell">
-                      {item.navalLossCount.toLocaleString()}
+                    <td className="numeric-cell analyzer-recent-aircraft">
+                      <span className="analyzer-recent-metric">
+                        <RecentIcon name="aircraft" />
+                        <span>{recentCount(item.aircraftCount)}</span>
+                      </span>
                     </td>
                     <td>
                       <span
+                        className={`analyzer-recent-result ${item.hasPersistedResult ? "available" : "unavailable"}`}
                         title={
                           item.hasPersistedResult
                             ? "Saved analysis can be opened."
                             : "Analyze the original save again to make this result available."
                         }
                       >
+                        <RecentIcon
+                          name={
+                            item.hasPersistedResult
+                              ? "available"
+                              : "unavailable"
+                          }
+                        />
                         {item.hasPersistedResult ? "Available" : "Unavailable"}
                       </span>
                     </td>
@@ -353,7 +523,7 @@ export function RecentAnalyses({
                         {item.hasPersistedResult === true ? (
                           <>
                             <button
-                              className="button button-secondary"
+                              className="button analyzer-recent-open"
                               aria-label={`Open analysis ${item.fileName}`}
                               disabled={
                                 openingHash !== null ||
@@ -365,6 +535,7 @@ export function RecentAnalyses({
                                 if (!mutationInFlight.current) onOpen(item);
                               }}
                             >
+                              <RecentIcon name="open" />
                               {openingHash === item.hash
                                 ? "Opening…"
                                 : "Open result"}
@@ -380,6 +551,7 @@ export function RecentAnalyses({
                               }
                               onClick={() => setShareItem(item)}
                             >
+                              <RecentIcon name="share" />
                               Share
                             </button>
                           </>
@@ -395,6 +567,7 @@ export function RecentAnalyses({
                           }
                           onClick={() => void manage(item, "pin")}
                         >
+                          <RecentIcon name="pin" />
                           {mutation?.hash === item.hash &&
                           mutation.action === "pin"
                             ? "Updating…"
@@ -412,6 +585,7 @@ export function RecentAnalyses({
                           }
                           onClick={() => void manage(item, "delete")}
                         >
+                          <RecentIcon name="delete" />
                           {mutation?.hash === item.hash &&
                           mutation.action === "delete"
                             ? "Deleting…"
@@ -419,8 +593,9 @@ export function RecentAnalyses({
                         </button>
                       </div>
                     </td>
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

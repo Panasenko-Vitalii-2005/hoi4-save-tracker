@@ -77,6 +77,8 @@ describe('RecentAnalysesService', () => {
         divisionCount: 0,
         shipCount: 0,
         navalLossCount: 0,
+        manpowerInField: 0,
+        aircraftCount: 0,
         hasPersistedResult: true,
         pinned: false,
       },
@@ -102,6 +104,21 @@ describe('RecentAnalysesService', () => {
     expect(await files.readdir(join(directory, 'data'))).toEqual([
       'recent.json',
     ]);
+  });
+
+  test('records manpower and aircraft from existing AnalyzeResult totals', async () => {
+    await history.record(input('metrics'), {
+      ...result,
+      totals: {
+        ...result.totals,
+        manpowerInField: 31_378_714,
+        aircraft: 53_095,
+      },
+    });
+    expect((await history.list())[0]).toMatchObject({
+      manpowerInField: 31_378_714,
+      aircraftCount: 53_095,
+    });
   });
 
   test('same hash updates name, timestamp, stats and recency without duplicates', async () => {
@@ -251,6 +268,8 @@ describe('RecentAnalysesService', () => {
     const legacy = { ...(await history.list())[0] } as Record<string, unknown>;
     delete legacy.hasPersistedResult;
     delete legacy.pinned;
+    delete legacy.manpowerInField;
+    delete legacy.aircraftCount;
     await results.delete(input('a').hash);
     await files.writeFile(file, JSON.stringify({ items: [legacy] }));
     history = new RecentAnalysesService(results);
@@ -258,6 +277,8 @@ describe('RecentAnalysesService', () => {
       hash: input('a').hash,
       hasPersistedResult: false,
       pinned: false,
+      manpowerInField: null,
+      aircraftCount: null,
     });
     expect(await history.getResult(input('a').hash)).toBeNull();
     await history.record(input('a'), result);

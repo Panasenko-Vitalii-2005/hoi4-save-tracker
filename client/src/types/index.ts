@@ -8,6 +8,8 @@ export interface RecentAnalysis {
   divisionCount: number;
   shipCount: number;
   navalLossCount: number;
+  manpowerInField?: number | null;
+  aircraftCount?: number | null;
   hasPersistedResult: boolean;
   pinned: boolean;
 }
