@@ -490,10 +490,9 @@ select {
 }
 
 .analyzer-shell :is(.analysis-comparison-controls, .analysis-comparison-results) {
-  position: relative;
-  left: 50%;
-  width: min(1760px, calc(100vw - 40px));
-  transform: translateX(-50%);
+  width: 100%;
+  max-width: 1760px;
+  margin-inline: auto;
 }
 
 .analysis-comparison-results {
@@ -1203,10 +1202,6 @@ select {
 }
 
 @media (max-width: 760px) {
-  .analyzer-shell :is(.analysis-comparison-controls, .analysis-comparison-results) {
-    width: calc(100vw - 24px);
-  }
-
   .comparison-save-picker,
   .comparison-sidebar {
     grid-template-columns: minmax(0, 1fr);
