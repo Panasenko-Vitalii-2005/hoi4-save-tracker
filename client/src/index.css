@@ -496,11 +496,26 @@ select {
   transform: translateX(-50%);
 }
 
+.analysis-comparison-results {
+  --comparison-increase: #2f7d5b;
+  --comparison-decrease: #b9534e;
+}
+
+[data-theme="dark"] .analysis-comparison-results {
+  --comparison-increase: #7bc49c;
+  --comparison-decrease: #e2877f;
+}
+
 .comparison-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 9px;
+}
+
+.comparison-actions .button {
+  min-height: 36px;
+  padding-inline: 17px;
 }
 
 .comparison-actions .button:disabled {
@@ -567,16 +582,28 @@ select {
   min-width: 0;
   padding: 10px 12px 9px;
   border: 1px solid var(--intel-line-strong, var(--line));
-  border-radius: 10px;
+  border-radius: 9px;
   background: var(--intel-surface-raised, var(--paper-strong));
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.035),
+    0 6px 16px rgba(0, 0, 0, 0.07);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.comparison-save-card:focus-within {
+  border-color: color-mix(in srgb, var(--accent-2) 58%, var(--intel-line));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent-2) 16%, transparent),
+    0 7px 18px rgba(0, 0, 0, 0.09);
 }
 
 .comparison-save-role,
 .comparison-metric-label {
   color: var(--muted);
   font-family: "IBM Plex Mono", monospace;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -594,7 +621,9 @@ select {
   font: inherit;
   font-size: 13px;
   font-weight: 650;
+  line-height: 1.3;
   text-overflow: ellipsis;
+  cursor: pointer;
 }
 
 .comparison-save-date {
@@ -629,10 +658,8 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 10px;
-  border: 1px solid var(--intel-line);
-  border-radius: 10px;
-  background: var(--intel-surface-deep);
+  padding: 2px 2px 10px;
+  border-bottom: 1px solid var(--intel-line);
 }
 
 .comparison-direction {
@@ -689,7 +716,7 @@ select {
   display: grid;
   align-content: start;
   gap: 7px;
-  min-height: 112px;
+  min-height: 114px;
   padding: 14px 14px 13px;
   border: 1px solid var(--intel-line, var(--line));
   border-radius: 11px;
@@ -698,7 +725,9 @@ select {
     color-mix(in srgb, var(--intel-surface-raised) 96%, white),
     var(--intel-surface-raised)
   );
-  box-shadow: 0 9px 22px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.035),
+    0 8px 19px rgba(0, 0, 0, 0.085);
 }
 
 .comparison-metric-card::before {
@@ -711,10 +740,16 @@ select {
 }
 
 .comparison-metric-range {
-  color: var(--muted);
+  color: color-mix(in srgb, var(--muted) 86%, var(--ink));
   font-family: "IBM Plex Mono", monospace;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+.comparison-metric-label {
+  min-height: 2.6em;
+  line-height: 1.3;
 }
 
 .comparison-delta-value {
@@ -733,11 +768,11 @@ select {
 }
 
 .comparison-delta-value.increase {
-  color: var(--intel-success, var(--accent-2));
+  color: var(--comparison-increase, var(--intel-success));
 }
 
 .comparison-delta-value.decrease {
-  color: var(--intel-danger, var(--accent));
+  color: var(--comparison-decrease, var(--intel-danger));
 }
 
 .comparison-delta-value.no-change,
@@ -771,7 +806,7 @@ select {
   grid-template-columns: auto minmax(170px, 0.8fr) minmax(190px, 0.55fr);
   gap: 8px;
   align-items: center;
-  padding: 10px 12px;
+  padding: 9px 10px;
   border-bottom: 1px solid var(--intel-line, var(--line));
   background: color-mix(in srgb, var(--intel-surface-deep) 66%, transparent);
 }
@@ -780,12 +815,13 @@ select {
   display: inline-flex;
   padding: 3px;
   border: 1px solid var(--intel-line, var(--line));
-  border-radius: 10px;
+  border-radius: 9px;
   background: var(--intel-surface-deep, var(--paper));
 }
 
 .comparison-scope-tabs button {
-  padding: 8px 10px;
+  min-height: 34px;
+  padding: 7px 10px;
   border: 0;
   border-radius: 7px;
   background: transparent;
@@ -800,7 +836,9 @@ select {
   background: var(--intel-surface-raised, var(--paper-strong));
   color: var(--ink);
   font-weight: 700;
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.13);
+  box-shadow:
+    inset 0 -2px color-mix(in srgb, var(--accent-2) 72%, transparent),
+    0 1px 4px rgba(0, 0, 0, 0.11);
 }
 
 .comparison-search,
@@ -815,7 +853,8 @@ select {
 .comparison-sort select {
   width: 100%;
   min-width: 0;
-  padding: 8px 10px;
+  height: 36px;
+  padding: 7px 10px;
   border: 1px solid var(--intel-line, var(--line));
   border-radius: 9px;
   background: var(--intel-surface-deep, var(--paper));
@@ -823,25 +862,38 @@ select {
   font: inherit;
 }
 
+.comparison-search input::placeholder {
+  color: color-mix(in srgb, var(--muted) 84%, transparent);
+}
+
 .comparison-sort-cluster {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
-  gap: 5px;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 0;
   min-width: 0;
+}
+
+.comparison-sort-cluster .comparison-sort select {
+  border-radius: 9px 0 0 9px;
 }
 
 .comparison-sort-direction {
   display: grid;
   place-items: center;
-  width: 34px;
-  min-height: 34px;
+  width: 36px;
+  min-height: 36px;
   padding: 0;
   border: 1px solid var(--intel-line-strong);
-  border-radius: 8px;
+  border-left-color: var(--intel-line);
+  border-radius: 0 9px 9px 0;
   background: var(--intel-surface-deep);
   color: var(--ink);
   font-size: 16px;
   cursor: pointer;
+}
+
+.comparison-sort-direction:hover {
+  background: color-mix(in srgb, var(--intel-surface-deep) 78%, var(--accent-2) 8%);
 }
 
 .comparison-table-scroll {
@@ -873,6 +925,18 @@ select {
   cursor: pointer;
 }
 
+.analyzer-shell
+  .recent-table.comparison-country-table
+  tbody
+  tr:hover:not(.selected)
+  td {
+  background: color-mix(
+    in srgb,
+    var(--intel-surface-raised) 96%,
+    var(--accent-2) 4%
+  );
+}
+
 .analyzer-shell .recent-table.comparison-country-table tbody tr.selected td {
   background: color-mix(
     in srgb,
@@ -890,6 +954,13 @@ select {
 }
 
 .analyzer-shell
+  .recent-table.comparison-country-table
+  tbody
+  tr[tabindex]:focus-visible {
+  outline-color: var(--accent-2);
+}
+
+.analyzer-shell
   .comparison-country-table
   tbody
   tr.selected
@@ -900,6 +971,12 @@ select {
 .comparison-country-table th,
 .comparison-country-table td {
   padding-block: 8px !important;
+}
+
+.analyzer-shell .comparison-country-table thead th {
+  padding-block: 10px !important;
+  font-size: 10px;
+  letter-spacing: 0.06em;
 }
 
 .comparison-column-sort {
@@ -914,9 +991,14 @@ select {
   text-transform: inherit;
 }
 
+.comparison-column-sort:hover,
+.comparison-column-sort:focus-visible {
+  color: var(--ink);
+}
+
 .comparison-country-name {
   display: block;
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .comparison-country-tag {
@@ -954,18 +1036,26 @@ select {
 .comparison-sidebar {
   display: grid;
   gap: 12px;
+  align-items: start;
   position: sticky;
   top: 14px;
 }
 
 .comparison-detail,
 .comparison-about {
-  padding: 14px;
+  padding: 13px;
 }
 
 .comparison-detail h3 {
   margin-top: 6px;
-  font-size: 21px;
+  font-size: 22px;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+
+.comparison-detail h3 .country-display-tag {
+  margin-top: 3px;
+  font-size: 10px;
 }
 
 .comparison-detail-summary {
@@ -980,9 +1070,8 @@ select {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 7px;
-  border-radius: 7px;
-  background: var(--intel-surface-deep, var(--paper));
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--intel-line);
 }
 
 .comparison-detail-summary > div > span:first-child {
@@ -990,13 +1079,21 @@ select {
   font-size: 11px;
 }
 
+.comparison-detail-summary .comparison-delta-value {
+  font-size: 14px;
+}
+
 .comparison-detail h4 {
-  margin: 0 0 8px;
+  margin: 1px 0 7px;
   font-size: 13px;
+  font-weight: 700;
 }
 
 .analyzer-shell .table-wrap.comparison-detail-scroll {
   overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .comparison-detail-table {
@@ -1007,6 +1104,7 @@ select {
   font-family: "IBM Plex Mono", monospace;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  border-top: 1px solid var(--intel-line);
 }
 
 .comparison-detail-table th,
@@ -1027,13 +1125,30 @@ select {
 
 .comparison-detail-table thead th {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 9.5px;
+  letter-spacing: 0.045em;
   text-transform: uppercase;
 }
 
 .comparison-about {
   display: grid;
-  gap: 7px;
+  gap: 6px;
+}
+
+.comparison-about h3 {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.comparison-about > p:not(.micro-copy) {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.comparison-about .micro-copy {
+  font-size: 10.5px;
+  line-height: 1.45;
 }
 
 .comparison-about dl {
@@ -1041,6 +1156,7 @@ select {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px 10px;
   margin: 0;
+  font-size: 12px;
 }
 
 .comparison-about dl > div {
