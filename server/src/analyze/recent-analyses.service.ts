@@ -83,6 +83,7 @@ export class RecentAnalysesService {
   private items: RecentAnalysis[] = [];
   private pending: Promise<void>;
   private warnedWrite = false;
+  private readonly metricBackfillsAttempted = new Set<string>();
 
   constructor(
     private readonly results: PersistedAnalysisResultService,
@@ -270,7 +271,7 @@ export class RecentAnalysesService {
   private async reconcile(): Promise<void> {
     try {
       const available = await this.reconcileResults(this.items);
-      let changed = false;
+      let changed = await this.backfillMissingMetrics(available);
       for (const item of this.items) {
         if (item.hasPersistedResult && !available.has(item.hash)) {
           item.hasPersistedResult = false;
@@ -283,6 +284,47 @@ export class RecentAnalysesService {
       for (const item of this.items) item.hasPersistedResult = false;
       this.warnWrite();
     }
+  }
+
+  private async backfillMissingMetrics(
+    available: ReadonlySet<string>,
+  ): Promise<boolean> {
+    let changed = false;
+    for (const item of this.items) {
+      if (
+        (item.manpowerInField != null && item.aircraftCount != null) ||
+        !available.has(item.hash) ||
+        this.metricBackfillsAttempted.has(item.hash)
+      ) {
+        continue;
+      }
+      this.metricBackfillsAttempted.add(item.hash);
+      const result = await this.results.get(item.hash).catch(() => null);
+      if (!result) {
+        if (item.hasPersistedResult) {
+          item.hasPersistedResult = false;
+          changed = true;
+        }
+        continue;
+      }
+      if (
+        item.manpowerInField == null &&
+        Number.isSafeInteger(result.totals.manpowerInField) &&
+        result.totals.manpowerInField >= 0
+      ) {
+        item.manpowerInField = result.totals.manpowerInField;
+        changed = true;
+      }
+      if (
+        item.aircraftCount == null &&
+        Number.isSafeInteger(result.totals.aircraft) &&
+        result.totals.aircraft >= 0
+      ) {
+        item.aircraftCount = result.totals.aircraft;
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   private async retention(items: readonly RecentAnalysis[]): Promise<{

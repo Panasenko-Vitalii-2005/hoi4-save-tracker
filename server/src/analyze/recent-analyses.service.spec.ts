@@ -23,6 +23,18 @@ describe('RecentAnalysesService', () => {
     fileName,
     fileSizeBytes: 100,
   });
+  const rewriteStoredItem = async (
+    hash: string,
+    update: (item: Record<string, unknown>) => void,
+  ) => {
+    const stored = JSON.parse(await files.readFile(file, 'utf8')) as {
+      items: Record<string, unknown>[];
+    };
+    const item = stored.items.find((entry) => entry.hash === hash);
+    if (!item) throw new Error('Missing stored test item');
+    update(item);
+    await files.writeFile(file, JSON.stringify(stored));
+  };
 
   beforeEach(async () => {
     directory = await files.mkdtemp(join(tmpdir(), 'hoi4-recent-'));
@@ -119,6 +131,174 @@ describe('RecentAnalysesService', () => {
       manpowerInField: 31_378_714,
       aircraftCount: 53_095,
     });
+  });
+
+  test('backfills both missing legacy metrics from the persisted result and persists them', async () => {
+    const metrics = {
+      ...result,
+      totals: {
+        ...result.totals,
+        manpowerInField: 31_378_714,
+        aircraft: 53_095,
+      },
+    };
+    await history.record(input('legacy-both'), metrics);
+    await rewriteStoredItem(input('legacy-both').hash, (item) => {
+      delete item.manpowerInField;
+      delete item.aircraftCount;
+    });
+    const get = jest.spyOn(results, 'get');
+
+    history = new RecentAnalysesService(results);
+    expect((await history.list())[0]).toMatchObject({
+      manpowerInField: 31_378_714,
+      aircraftCount: 53_095,
+    });
+    expect(get).toHaveBeenCalledTimes(1);
+
+    history = new RecentAnalysesService(results);
+    expect((await history.list())[0]).toMatchObject({
+      manpowerInField: 31_378_714,
+      aircraftCount: 53_095,
+    });
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  test('backfills only missing manpower and preserves existing aircraft metadata', async () => {
+    await history.record(input('legacy-manpower'), {
+      ...result,
+      totals: {
+        ...result.totals,
+        manpowerInField: 8_786_707,
+        aircraft: 9_526,
+      },
+    });
+    await rewriteStoredItem(input('legacy-manpower').hash, (item) => {
+      delete item.manpowerInField;
+      item.aircraftCount = 123;
+    });
+
+    history = new RecentAnalysesService(results);
+    expect((await history.list())[0]).toMatchObject({
+      manpowerInField: 8_786_707,
+      aircraftCount: 123,
+    });
+  });
+
+  test('backfills only missing aircraft and preserves existing manpower metadata', async () => {
+    await history.record(input('legacy-aircraft'), {
+      ...result,
+      totals: {
+        ...result.totals,
+        manpowerInField: 8_308_467,
+        aircraft: 9_077,
+      },
+    });
+    await rewriteStoredItem(input('legacy-aircraft').hash, (item) => {
+      item.manpowerInField = 456;
+      delete item.aircraftCount;
+    });
+
+    history = new RecentAnalysesService(results);
+    expect((await history.list())[0]).toMatchObject({
+      manpowerInField: 456,
+      aircraftCount: 9_077,
+    });
+  });
+
+  test('missing persisted result leaves legacy metrics unavailable without failing', async () => {
+    await history.record(input('legacy-missing'), result);
+    await rewriteStoredItem(input('legacy-missing').hash, (item) => {
+      delete item.manpowerInField;
+      delete item.aircraftCount;
+    });
+    await results.delete(input('legacy-missing').hash);
+    const get = jest.spyOn(results, 'get');
+
+    history = new RecentAnalysesService(results);
+    await expect(history.list()).resolves.toEqual([
+      expect.objectContaining({
+        manpowerInField: null,
+        aircraftCount: null,
+        hasPersistedResult: false,
+      }),
+    ]);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  test('corrupt persisted result leaves legacy metrics unavailable without failing', async () => {
+    await history.record(input('legacy-corrupt'), result);
+    await rewriteStoredItem(input('legacy-corrupt').hash, (item) => {
+      delete item.manpowerInField;
+      delete item.aircraftCount;
+    });
+    await files.writeFile(
+      join(directory, 'results', `${input('legacy-corrupt').hash}.json.gz`),
+      'corrupt',
+    );
+
+    history = new RecentAnalysesService(results);
+    await expect(history.list()).resolves.toEqual([
+      expect.objectContaining({
+        manpowerInField: null,
+        aircraftCount: null,
+        hasPersistedResult: false,
+      }),
+    ]);
+  });
+
+  test('incompatible non-finite persisted metrics remain unavailable', async () => {
+    await history.record(input('legacy-incompatible'), result);
+    await rewriteStoredItem(input('legacy-incompatible').hash, (item) => {
+      delete item.manpowerInField;
+      delete item.aircraftCount;
+    });
+    jest.spyOn(results, 'get').mockResolvedValue({
+      ...result,
+      totals: {
+        ...result.totals,
+        manpowerInField: Number.NaN,
+        aircraft: Number.POSITIVE_INFINITY,
+      },
+    });
+
+    history = new RecentAnalysesService(results);
+    await expect(history.list()).resolves.toEqual([
+      expect.objectContaining({
+        manpowerInField: null,
+        aircraftCount: null,
+      }),
+    ]);
+  });
+
+  test('finite zero is backfilled as a valid metric value', async () => {
+    await history.record(input('legacy-zero'), result);
+    await rewriteStoredItem(input('legacy-zero').hash, (item) => {
+      delete item.manpowerInField;
+      delete item.aircraftCount;
+    });
+
+    history = new RecentAnalysesService(results);
+    expect((await history.list())[0]).toMatchObject({
+      manpowerInField: 0,
+      aircraftCount: 0,
+    });
+  });
+
+  test('backfill uses only persisted results and does not repeatedly reload a successful migration', async () => {
+    await history.record(input('legacy-direct'), result);
+    await rewriteStoredItem(input('legacy-direct').hash, (item) => {
+      delete item.manpowerInField;
+      delete item.aircraftCount;
+    });
+    const get = jest.spyOn(results, 'get');
+
+    history = new RecentAnalysesService(results);
+    await history.list();
+    await history.list();
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith(input('legacy-direct').hash);
   });
 
   test('same hash updates name, timestamp, stats and recency without duplicates', async () => {
