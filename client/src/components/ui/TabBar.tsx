@@ -1,7 +1,7 @@
 import type { TabId } from "@/types";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "chart", label: "Chart" },
+  { id: "chart", label: "Campaign Trends" },
   { id: "soldiers", label: "Soldiers by Country" },
   { id: "analyzer", label: "Save Analyzer" },
 ];
@@ -19,6 +19,7 @@ export function TabBar({
         <button
           key={t.id}
           className={`tab-btn${active === t.id ? " active" : ""}`}
+          aria-current={active === t.id ? "page" : undefined}
           onClick={() => onChange(t.id)}
         >
           {t.label}

@@ -436,13 +436,3 @@ export interface AnalyzeResult {
 }
 
 export type TabId = "chart" | "soldiers" | "analyzer";
-export type XMode = "save_index" | "real_time" | "game_date";
-export interface Preset {
-  metrics: string[];
-  xMode: XMode;
-  maWindow: number;
-  normalize: boolean;
-  uniqueGameDateOnly: boolean;
-  separateScale: boolean;
-  description: string;
-}

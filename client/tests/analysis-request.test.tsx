@@ -7,7 +7,12 @@ import App from "../src/App";
 // Test the actual request UI; plotting and the unrelated telemetry request are not needed.
 vi.mock("react-plotly.js", () => ({ default: () => null }));
 vi.mock("@/hooks/useRecords", () => ({
-  useRecords: () => ({ records: [], loading: false, reload: () => {} }),
+  useRecords: () => ({
+    records: [],
+    loading: false,
+    error: null,
+    reload: () => {},
+  }),
 }));
 
 function snapshot(gameDate = "1944.5.1") {
@@ -59,6 +64,10 @@ describe("analysis request lifecycle", () => {
       vi.fn((url: string, init?: RequestInit) => {
         if (url === "/api/analyze/recent")
           return Promise.resolve(Response.json({ items: [] }));
+        if (url === "/api/analyze/trends")
+          return Promise.resolve(
+            Response.json({ snapshotCount: 0, campaigns: [] }),
+          );
         if (url === "/api/saves")
           return Promise.resolve(
             Response.json({
@@ -331,7 +340,7 @@ describe("analysis request lifecycle", () => {
     await render(true);
     await act(async () => button("Save Analyzer").click());
     await start();
-    await act(async () => button("Chart").click());
+    await act(async () => button("Campaign Trends").click());
     expect(
       container.querySelector(".analyzer-shell")?.parentElement?.hidden,
     ).toBe(true);

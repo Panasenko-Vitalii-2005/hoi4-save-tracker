@@ -19,7 +19,6 @@ export function useRecords() {
       setRecords(Array.isArray(data.records) ? data.records : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      setRecords([]);
     } finally {
       setLoading(false);
     }

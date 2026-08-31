@@ -18,6 +18,8 @@ import { AnalysisComparisonService } from './analyze/analysis-comparison.service
 import { SaveUploadInterceptor } from './analyze/save-upload.interceptor';
 import { SharedAnalysesController } from './analyze/shared-analyses.controller';
 import { SharedAnalysesService } from './analyze/shared-analyses.service';
+import { CampaignTrendsController } from './analyze/campaign-trends.controller';
+import { CampaignTrendsService } from './analyze/campaign-trends.service';
 
 @Module({
   imports: [
@@ -32,6 +34,7 @@ import { SharedAnalysesService } from './analyze/shared-analyses.service';
     SoldiersController,
     AnalyzeController,
     SharedAnalysesController,
+    CampaignTrendsController,
     HealthController,
     SavesController,
   ],
@@ -43,6 +46,7 @@ import { SharedAnalysesService } from './analyze/shared-analyses.service';
     PersistedAnalysisResultService,
     SharedAnalysesService,
     AnalysisComparisonService,
+    CampaignTrendsService,
     SaveUploadInterceptor,
   ],
 })
