@@ -140,6 +140,32 @@ describe("Save comparison UI", () => {
       requests[0].resolve(Response.json({ items: entries })),
     );
   };
+
+  test("initial options failure is not presented as an empty comparison history", async () => {
+    const retry = vi.fn();
+    await act(async () =>
+      root.render(
+        <AnalysisComparison
+          items={[]}
+          busy={false}
+          optionsUnavailable
+          onUnavailable={() => undefined}
+          onRetryOptions={retry}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("Comparison options unavailable");
+    expect(container.textContent).not.toContain(
+      "Analyze at least two saves before comparing",
+    );
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((item) => item.textContent === "Try again")!
+        .click(),
+    );
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
   const select = async (id: string, value: string) => {
     await act(async () => {
       const control = container.querySelector<HTMLSelectElement>(`#${id}`)!;
@@ -731,6 +757,17 @@ describe("Save comparison UI", () => {
       by_country: [],
       equipment_by_country: {},
       world_equipment: {},
+      stockpileSummaries: [],
+      militaryProductionSummaries: [],
+      divisionSummaries: [],
+      divisionTemplateCatalog: [],
+      divisionEquipmentCatalog: [],
+      armyHierarchySummaries: [],
+      navalLosses: [],
+      navalLossSummaries: [],
+      navalKills: [],
+      navalKillSummaries: [],
+      navalKillerShipSummaries: [],
     };
     await act(async () =>
       container

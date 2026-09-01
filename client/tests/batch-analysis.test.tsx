@@ -213,6 +213,80 @@ describe("BatchAnalysisPanel", () => {
     expect(container.textContent).toContain("Cancelled");
   });
 
+  test("network failure stays local, later files continue, and Retry failed retries only that file", async () => {
+    const attempted: string[] = [];
+    let firstAttempt = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === "/api/analyze/batch/preflight")
+          return Response.json({ knownHashes: [] });
+        if (!(init?.body instanceof FormData))
+          throw new Error("Missing upload form");
+        const file = init.body.get("file") as File;
+        attempted.push(file.name);
+        if (file.name === "offline.hoi4" && firstAttempt) {
+          firstAttempt = false;
+          throw new Error("Worker stack C:/private/upload");
+        }
+        return Response.json(
+          {
+            hash: hash(file.name === "offline.hoi4" ? "offline" : "good"),
+            gameDate: "1944.5.1",
+            campaignId: null,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    await act(async () => root.render(<BatchAnalysisPanel />));
+    await select([
+      save("offline.hoi4", "offline"),
+      save("good.hoi4", "good"),
+    ]);
+    await act(async () => button("Analyze 2 new saves").click());
+    await waitFor(() => container.textContent?.includes("Batch complete") === true);
+
+    expect(attempted).toEqual(["offline.hoi4", "good.hoi4"]);
+    expect(container.textContent).toContain("1 analyzed successfully · 1 failed");
+    expect(container.textContent).toContain("Cannot reach the analyzer service");
+    expect(container.textContent).not.toMatch(/Worker|private/);
+
+    await act(async () => button("Retry failed").click());
+    await waitFor(() => container.textContent?.includes("0 failed") === true);
+    expect(attempted).toEqual([
+      "offline.hoi4",
+      "good.hoi4",
+      "offline.hoi4",
+    ]);
+  });
+
+  test("preflight network failure uploads nothing and can be retried", async () => {
+    let preflightAttempt = 0;
+    let uploads = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/analyze/batch/preflight") {
+          if (preflightAttempt++ === 0)
+            throw new Error("C:/private/preflight");
+          return Response.json({ knownHashes: [] });
+        }
+        uploads++;
+        return Response.json({});
+      }),
+    );
+    await act(async () => root.render(<BatchAnalysisPanel />));
+    await select([save("one.hoi4", "one")]);
+    expect(container.textContent).toContain("Cannot reach the analyzer service");
+    expect(container.textContent).not.toContain("private");
+    expect(uploads).toBe(0);
+
+    await act(async () => button("Try again").click());
+    await waitFor(() => button("Analyze 1 new save") !== undefined);
+    expect(uploads).toBe(0);
+  });
+
   test("renders a compact accessible 100-file known batch without uploads", async () => {
     const files = Array.from({ length: 100 }, (_, index) =>
       save(`autosave_${index}.hoi4`, `save-${index}`),

@@ -1,40 +1,15 @@
 import { useEffect, useState } from "react";
 import type { AnalyzeResult } from "@/types";
+import { isAnalyzeResult } from "@/lib/analyze-result";
+import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
 import { AnalyzerTab } from "./AnalyzerTab";
 
 const PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function isAnalyzeResult(value: unknown): value is AnalyzeResult {
-  if (!isObject(value) || typeof value.game_date !== "string") return false;
-  if (
-    !isObject(value.totals) ||
-    !isObject(value.equipment_by_country) ||
-    !isObject(value.world_equipment)
-  )
-    return false;
-  return [
-    "by_country",
-    "stockpileSummaries",
-    "militaryProductionSummaries",
-    "divisionSummaries",
-    "divisionTemplateCatalog",
-    "divisionEquipmentCatalog",
-    "armyHierarchySummaries",
-    "navalLosses",
-    "navalLossSummaries",
-    "navalKills",
-    "navalKillSummaries",
-    "navalKillerShipSummaries",
-  ].every((key) => Array.isArray(value[key]));
-}
-
 export function SharedAnalysisPage({ publicId }: { publicId: string }) {
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failure, setFailure] = useState("");
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
@@ -50,12 +25,14 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
   useEffect(() => {
     if (!PUBLIC_ID.test(publicId)) {
       setResult(null);
+      setFailure("This shared-analysis link is invalid.");
       setLoading(false);
       return;
     }
     let active = true;
     const controller = new AbortController();
     setResult(null);
+    setFailure("");
     setLoading(true);
     void (async () => {
       try {
@@ -63,12 +40,37 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
           `/api/share/${encodeURIComponent(publicId)}`,
           { signal: controller.signal },
         );
-        if (!response.ok) throw new Error("Shared analysis unavailable");
-        const data: unknown = await response.json();
-        if (!isAnalyzeResult(data)) throw new Error("Invalid shared analysis");
-        if (active) setResult(data);
+        if (response.status === 404 || response.status === 410) {
+          if (active)
+            setFailure(
+              "This link is invalid, revoked, or its saved result is no longer available.",
+            );
+          return;
+        }
+        if (!response.ok) {
+          if (active)
+            setFailure(
+              "The shared analysis is temporarily unavailable. Try again.",
+            );
+          return;
+        }
+        const data: unknown = await response.json().catch(() => null);
+        if (!isAnalyzeResult(data)) {
+          if (active)
+            setFailure(
+              "This shared analysis cannot be read. Ask its owner to create a new share link.",
+            );
+          return;
+        }
+        if (active) {
+          setResult(data);
+          setFailure("");
+        }
       } catch {
-        if (active) setResult(null);
+        if (active) {
+          setResult(null);
+          setFailure(ANALYZER_UNAVAILABLE_MESSAGE);
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -103,10 +105,7 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
       ) : (
         <section className="panel shared-analysis-state" role="alert">
           <h2>Shared analysis unavailable</h2>
-          <p>
-            This link may be invalid, revoked, unavailable because its stored
-            result was removed, or temporarily inaccessible.
-          </p>
+          <p>{failure}</p>
           <button
             className="button button-secondary"
             onClick={() => setRetry((value) => value + 1)}

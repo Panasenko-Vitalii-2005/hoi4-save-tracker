@@ -38,6 +38,17 @@ const snapshot = {
   by_country: [],
   equipment_by_country: {},
   world_equipment: {},
+  stockpileSummaries: [],
+  militaryProductionSummaries: [],
+  divisionSummaries: [],
+  divisionTemplateCatalog: [],
+  divisionEquipmentCatalog: [],
+  armyHierarchySummaries: [],
+  navalLosses: [],
+  navalLossSummaries: [],
+  navalKills: [],
+  navalKillSummaries: [],
+  navalKillerShipSummaries: [],
 };
 
 describe("Recent Analyses", () => {
@@ -244,6 +255,27 @@ describe("Recent Analyses", () => {
     expect(
       container.querySelector(".analyzer-view-date strong")?.textContent,
     ).toBe(snapshot.game_date);
+  });
+
+  test("failed refresh preserves the existing Recent list and offers an explicit retry", async () => {
+    await render();
+    await respond(0, [entry]);
+    await render(1);
+    await act(async () =>
+      historyRequests[1].reject(new Error("C:/private/history")),
+    );
+
+    expect(section().textContent).toContain(entry.fileName);
+    expect(section().textContent).toContain(
+      "The existing list remains available below",
+    );
+    expect(section().textContent).not.toContain("C:/private");
+    await act(async () =>
+      [...section().querySelectorAll("button")]
+        .find((item) => item.textContent === "Try again")!
+        .click(),
+    );
+    expect(historyRequests).toHaveLength(3);
   });
 
   test("history errors do not disable analysis or overwrite its successful result", async () => {

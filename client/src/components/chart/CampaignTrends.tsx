@@ -17,6 +17,7 @@ import type {
 } from "@/types/campaign-trends";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
 import { countryFullName } from "@/lib/utils";
+import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -377,10 +378,12 @@ export function CampaignTrends({
     request.current = controller;
     setLoading(true);
     setError("");
+    let reachedService = false;
     try {
       const response = await fetch("/api/analyze/trends", {
         signal: controller.signal,
       });
+      reachedService = true;
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok || !isTrendsDto(body))
         throw new Error("Could not load campaign trend data.");
@@ -393,7 +396,9 @@ export function CampaignTrends({
     } catch (failure: unknown) {
       if ((failure as DOMException).name !== "AbortError")
         setError(
-          "Campaign trends are temporarily unavailable. Try refreshing.",
+          reachedService
+            ? "Campaign trend data could not be loaded. Try again."
+            : `Campaign trends are temporarily unavailable. ${ANALYZER_UNAVAILABLE_MESSAGE}`,
         );
     } finally {
       if (request.current === controller) {
@@ -658,15 +663,37 @@ export function CampaignTrends({
         </div>
       </header>
 
-      {error && (
-        <p className="campaign-message warning" role="status">
-          {error}
-        </p>
+      {error && data && (
+        <div className="recovery-notice campaign-message warning" role="alert">
+          <div>
+            <strong>Could not refresh campaign trends</strong>
+            <span>{error} The existing campaign view remains available.</span>
+          </div>
+          <button
+            className="button button-secondary"
+            onClick={() => void load()}
+            disabled={loading}
+          >
+            Try again
+          </button>
+        </div>
       )}
       {loading && !data && (
         <section className="panel campaign-state" role="status">
           <h2>Loading campaign trends…</h2>
           <p>Reading saved analysis summaries.</p>
+        </section>
+      )}
+      {!loading && error && !data && (
+        <section className="panel campaign-state" role="alert">
+          <h2>Campaign trends unavailable</h2>
+          <p>{error}</p>
+          <button
+            className="button button-secondary"
+            onClick={() => void load()}
+          >
+            Try again
+          </button>
         </section>
       )}
       {!loading && data?.campaigns.length === 0 && (

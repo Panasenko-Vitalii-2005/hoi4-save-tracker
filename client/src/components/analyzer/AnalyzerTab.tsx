@@ -26,7 +26,13 @@ import {
   BatchAnalysisPanel,
   type BatchAnalysisPanelHandle,
 } from "./BatchAnalysisPanel";
-import { analysisError } from "@/lib/analysis-error";
+import {
+  ANALYZER_UNAVAILABLE_MESSAGE,
+  analysisError,
+  analysisNetworkError,
+  type AnalysisFailure,
+} from "@/lib/analysis-error";
+import { isAnalyzeResult } from "@/lib/analyze-result";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -35,6 +41,27 @@ interface SaveFile {
   path: string;
   size_mb: number;
   modified: string;
+}
+
+function isSaveBrowserData(
+  value: unknown,
+): value is { dir: string; exists: boolean; files: SaveFile[] } {
+  if (!value || typeof value !== "object") return false;
+  const data = value as Record<string, unknown>;
+  return (
+    typeof data.dir === "string" &&
+    typeof data.exists === "boolean" &&
+    Array.isArray(data.files) &&
+    data.files.every(
+      (file) =>
+        !!file &&
+        typeof file === "object" &&
+        typeof (file as Record<string, unknown>).name === "string" &&
+        typeof (file as Record<string, unknown>).path === "string" &&
+        typeof (file as Record<string, unknown>).size_mb === "number" &&
+        typeof (file as Record<string, unknown>).modified === "string",
+    )
+  );
 }
 type SortCol = keyof CountryStats;
 type AnalysisView =
@@ -127,21 +154,30 @@ function SaveBrowser({
   const [page, setPage] = useState(1);
   const [exists, setExists] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const PAGE_SIZE = 10;
 
   const loadDir = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
+    let reachedService = false;
     try {
-      const data = (await fetch("/api/saves").then((r) => r.json())) as {
-        dir: string;
-        exists: boolean;
-        files: SaveFile[];
-      };
+      const response = await fetch("/api/saves");
+      reachedService = true;
+      const data: unknown = await response.json().catch(() => null);
+      if (!response.ok || !isSaveBrowserData(data))
+        throw new Error("Local saves unavailable");
       setDir(data.dir);
       setExists(data.exists);
       setFiles([...data.files].reverse());
       setPage(1);
+    } catch {
+      setLoadError(
+        reachedService
+          ? "Could not load local saves. You can still choose a .hoi4 file from this device."
+          : ANALYZER_UNAVAILABLE_MESSAGE,
+      );
     } finally {
       setLoading(false);
     }
@@ -198,6 +234,7 @@ function SaveBrowser({
         <button
           className="button button-secondary analyzer-save-action"
           onClick={loadDir}
+          disabled={loading}
         >
           ↻ Refresh
         </button>
@@ -210,21 +247,33 @@ function SaveBrowser({
           {dir || "…"}
         </div>
       </div>
-      {loading ? (
+      {loadError && (
+        <div className="recovery-notice" role="alert">
+          <span>{loadError}</span>
+          <button
+            className="button button-secondary"
+            onClick={() => void loadDir()}
+            disabled={loading}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+      {loading && files.length === 0 ? (
         <div className="micro-copy" style={{ padding: "16px 0" }}>
           Scanning…
         </div>
-      ) : !exists ? (
+      ) : !loadError && !exists ? (
         <div className="micro-copy" style={{ padding: "16px 0" }}>
           Local saves directory is unavailable.
           <br />
           You can still upload a .hoi4 save.
         </div>
-      ) : files.length === 0 ? (
+      ) : !loadError && files.length === 0 ? (
         <div className="micro-copy" style={{ padding: "16px 0" }}>
           No .hoi4 files found.
         </div>
-      ) : (
+      ) : files.length > 0 ? (
         <>
           <div className="panel-head analyzer-save-pagination">
             <div />
@@ -309,7 +358,7 @@ function SaveBrowser({
             </table>
           </div>
         </>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -331,8 +380,14 @@ export function AnalyzerTab({
   const [status, setStatus] = useState<{
     type: "idle" | "loading" | "ok" | "error" | "busy";
     msg: string;
+    recovery?: AnalysisFailure["recovery"];
   }>({ type: "idle", msg: "" });
   const analysisInFlight = useRef(false);
+  const lastAnalysis = useRef<{
+    filePath: string;
+    fileName: string;
+    uploadedFile?: File;
+  } | null>(null);
   const resultRequestVersion = useRef(0);
   const openingRequest = useRef<AbortController | null>(null);
   const [openingHash, setOpeningHash] = useState<string | null>(null);
@@ -417,13 +472,26 @@ export function AnalyzerTab({
       );
       if (version !== resultRequestVersion.current) return;
       if (response.status === 404 || response.status === 410) {
-        setOpenError("The saved analysis result is no longer available.");
+        setOpenError(
+          "The saved analysis result is no longer available. The original .hoi4 file was not stored; analyze it again to recreate the result.",
+        );
         setHistoryVersion((value) => value + 1);
         return;
       }
-      if (!response.ok) throw new Error("Result unavailable");
-      const data = (await response.json()) as AnalyzeResult;
+      if (!response.ok) {
+        setOpenError(
+          "Could not open the saved analysis. Your currently displayed result is unchanged. Try again.",
+        );
+        return;
+      }
+      const data: unknown = await response.json().catch(() => null);
       if (version !== resultRequestVersion.current) return;
+      if (!isAnalyzeResult(data)) {
+        setOpenError(
+          "Could not open the saved analysis because its stored result cannot be read. The original .hoi4 file was not stored; analyze it again to recreate the result.",
+        );
+        return;
+      }
       applyResult(data);
       setStatus({
         type: "ok",
@@ -431,7 +499,9 @@ export function AnalyzerTab({
       });
     } catch {
       if (version === resultRequestVersion.current)
-        setOpenError("Could not open the saved analysis. Please try again.");
+        setOpenError(
+          "Could not open the saved analysis. Cannot reach the analyzer service. Your currently displayed result is unchanged; check that the application is running and try again.",
+        );
     } finally {
       if (openingRequest.current === controller) {
         openingRequest.current = null;
@@ -448,6 +518,7 @@ export function AnalyzerTab({
     // Guard synchronously: multiple events can arrive before React rerenders.
     if (analysisInFlight.current || batchRunning) return;
     analysisInFlight.current = true;
+    lastAnalysis.current = { filePath, fileName, uploadedFile };
     resultRequestVersion.current++;
     openingRequest.current?.abort();
     openingRequest.current = null;
@@ -471,21 +542,29 @@ export function AnalyzerTab({
             },
       );
       if (!resp.ok) {
-        setStatus(await analysisError(resp));
+        const failure = await analysisError(resp);
+        if (failure.recovery === "choose-file") lastAnalysis.current = null;
+        setStatus(failure);
         return;
       }
-      const data = (await resp.json()) as AnalyzeResult;
+      const data: unknown = await resp.json().catch(() => null);
+      if (!isAnalyzeResult(data)) {
+        setStatus({
+          type: "error",
+          msg: "The analysis response could not be read. Your previous result is unchanged; try the analysis again.",
+          recovery: "retry",
+        });
+        return;
+      }
       applyResult(data);
+      lastAnalysis.current = null;
       setHistoryVersion((value) => value + 1);
       setStatus({
         type: "ok",
         msg: `✓ ${fileName}  —  ${data.parse_seconds}s · ${data.file_size_mb} MB · ${data.game_date}`,
       });
     } catch {
-      setStatus({
-        type: "error",
-        msg: "Could not analyze the save. Please try again.",
-      });
+      setStatus(analysisNetworkError());
     } finally {
       analysisInFlight.current = false;
     }
@@ -770,7 +849,33 @@ export function AnalyzerTab({
                 {status.type === "loading" && (
                   <span className="spinner" aria-hidden="true" />
                 )}
-                {status.msg}
+                <span>{status.msg}</span>
+                {status.recovery && status.type !== "loading" && (
+                  <button
+                    className="button button-secondary analyzer-status-action"
+                    onClick={() => {
+                      if (status.recovery === "choose-file") {
+                        document
+                          .querySelector<HTMLButtonElement>(
+                            "#analyze-one-save .button-primary",
+                          )
+                          ?.click();
+                        return;
+                      }
+                      const attempt = lastAnalysis.current;
+                      if (attempt)
+                        void analyze(
+                          attempt.filePath,
+                          attempt.fileName,
+                          attempt.uploadedFile,
+                        );
+                    }}
+                  >
+                    {status.recovery === "choose-file"
+                      ? "Choose another file"
+                      : "Retry analysis"}
+                  </button>
+                )}
               </div>
             )}
           </div>

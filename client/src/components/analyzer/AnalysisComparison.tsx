@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RecentAnalysis } from "@/types";
 import type { AnalysisComparisonDto } from "@/types/analysis-comparison";
+import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
 import { AnalysisComparisonResults } from "./AnalysisComparisonResults";
 
 function compareGameDates(
@@ -33,17 +34,24 @@ export function AnalysisComparison({
   items,
   busy,
   onUnavailable,
+  optionsLoading = false,
+  optionsUnavailable = false,
+  onRetryOptions,
   onAnalyzeSave,
 }: {
   items: RecentAnalysis[];
   busy: boolean;
   onUnavailable: () => void;
+  optionsLoading?: boolean;
+  optionsUnavailable?: boolean;
+  onRetryOptions?: () => void;
   onAnalyzeSave?: () => void;
 }) {
   const [baseHash, setBaseHash] = useState("");
   const [targetHash, setTargetHash] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [errorRetryable, setErrorRetryable] = useState(false);
   const [completed, setCompleted] = useState<{
     data: AnalysisComparisonDto;
     baseName: string;
@@ -83,12 +91,14 @@ export function AnalysisComparison({
       setError(
         "A selected result is no longer available. Choose another analysis.",
       );
+      setErrorRetryable(false);
     }
   }, [baseHash, targetHash, base, target, cancel]);
 
   const select = (side: "base" | "target", hash: string) => {
     cancel();
     setError("");
+    setErrorRetryable(false);
     if (side === "base") setBaseHash(hash);
     else setTargetHash(hash);
   };
@@ -98,6 +108,8 @@ export function AnalysisComparison({
     pending.current = controller;
     setLoading(true);
     setError("");
+    setErrorRetryable(false);
+    let reachedService = false;
     try {
       const query = new URLSearchParams({
         base: base.hash,
@@ -106,11 +118,13 @@ export function AnalysisComparison({
       const response = await fetch(`/api/analyze/compare?${query}`, {
         signal: controller.signal,
       });
+      reachedService = true;
       if (pending.current !== controller) return;
       if (response.status === 404 || response.status === 410) {
         setError(
           "One or both saved results are no longer available. Refreshing recent analyses…",
         );
+        setErrorRetryable(false);
         onUnavailable();
         return;
       }
@@ -131,8 +145,14 @@ export function AnalysisComparison({
         targetName: target.fileName,
       });
     } catch {
-      if (pending.current === controller)
-        setError("Could not compare saved analyses. Please try again.");
+      if (pending.current === controller) {
+        setError(
+          reachedService
+            ? "Could not compare saved analyses. The saved results are unchanged. Try again."
+            : ANALYZER_UNAVAILABLE_MESSAGE,
+        );
+        setErrorRetryable(true);
+      }
     } finally {
       if (pending.current === controller) {
         pending.current = null;
@@ -142,6 +162,46 @@ export function AnalysisComparison({
   };
 
   if (available.length < 2) {
+    if (optionsUnavailable) {
+      return (
+        <section
+          className="panel analysis-comparison-controls analysis-comparison-empty"
+          aria-label="Compare saves"
+        >
+          <div>
+            <span className="eyebrow">Saved analysis comparison</span>
+            <h2>Comparison options unavailable</h2>
+            <p>
+              Recent analyses could not be loaded. Existing saved data has not
+              been changed.
+            </p>
+          </div>
+          {onRetryOptions && (
+            <button
+              className="button button-secondary"
+              onClick={onRetryOptions}
+            >
+              Try again
+            </button>
+          )}
+        </section>
+      );
+    }
+    if (optionsLoading) {
+      return (
+        <section
+          className="panel analysis-comparison-controls analysis-comparison-empty"
+          aria-label="Compare saves"
+          aria-busy="true"
+        >
+          <div>
+            <span className="eyebrow">Saved analysis comparison</span>
+            <h2>Loading comparison options…</h2>
+            <p>Reading saved analyses.</p>
+          </div>
+        </section>
+      );
+    }
     const noneAvailable = available.length === 0;
     return (
       <section
@@ -223,6 +283,7 @@ export function AnalysisComparison({
                 onClick={() => {
                   cancel();
                   setError("");
+                  setErrorRetryable(false);
                   setBaseHash(targetHash);
                   setTargetHash(baseHash);
                 }}
@@ -243,8 +304,22 @@ export function AnalysisComparison({
           </div>
         </div>
         <p className="micro-copy" role="status" aria-live="polite">
-          {loading ? "Loading saved analyses for comparison…" : error}
+          {loading ? "Loading saved analyses for comparison…" : ""}
         </p>
+        {error && (
+          <div className="recovery-notice" role="alert">
+            <span>{error}</span>
+            {errorRetryable && (
+              <button
+                className="button button-secondary"
+                onClick={() => void compare()}
+                disabled={loading || busy || !base || !target}
+              >
+                Try again
+              </button>
+            )}
+          </div>
+        )}
         {base && target && !completedMatchesSelection && (
           <div
             className="comparison-context comparison-selection-context"

@@ -14,15 +14,35 @@ const MESSAGES: Record<string, string> = {
   ANALYZER_BUSY:
     "The analyzer is busy with another save. Please try again in a few seconds.",
   PERSISTENCE_FAILED:
-    "The analysis completed but could not be saved. Check server storage and retry.",
+    "The analysis completed but could not be saved. Your previous result is safe; try again.",
   ANALYSIS_FAILED: "Could not analyze the save. Please try again.",
   SAVE_NOT_FOUND:
     "The selected save is no longer available. Refresh the list or upload it again.",
 };
 
+export const ANALYZER_UNAVAILABLE_MESSAGE =
+  "Cannot reach the analyzer service. Check that the application is running and try again.";
+
+export type AnalysisFailure = {
+  type: "error" | "busy";
+  msg: string;
+  recovery: "retry" | "choose-file";
+};
+
+const CHOOSE_ANOTHER_FILE = new Set([
+  "EMPTY_FILE",
+  "UNSUPPORTED_FILE_TYPE",
+  "INVALID_SAVE",
+  "CORRUPT_ARCHIVE",
+  "UNSUPPORTED_SAVE",
+  "DECOMPRESSED_SIZE_LIMIT",
+  "FILE_TOO_LARGE",
+  "SAVE_NOT_FOUND",
+]);
+
 export async function analysisError(
   response: Response,
-): Promise<{ type: "error" | "busy"; msg: string }> {
+): Promise<AnalysisFailure> {
   // Only allowlisted codes/numeric limits are consumed. Never render server messages/stacks.
   const body: unknown = await response.json().catch(() => null);
   const data =
@@ -32,6 +52,7 @@ export async function analysisError(
     const limit = data.maxUploadBytes;
     return {
       type: "error",
+      recovery: "choose-file",
       msg:
         "This save is too large to analyze." +
         (typeof limit === "number" &&
@@ -46,15 +67,37 @@ export async function analysisError(
     return {
       type: code === "ANALYZER_BUSY" ? "busy" : "error",
       msg: MESSAGES[code],
+      recovery: CHOOSE_ANOTHER_FILE.has(code) ? "choose-file" : "retry",
     };
   if (response.status === 503)
-    return { type: "busy", msg: MESSAGES.ANALYZER_BUSY };
+    return {
+      type: "busy",
+      msg: MESSAGES.ANALYZER_BUSY,
+      recovery: "retry",
+    };
   if (response.status === 413)
     return {
       type: "error",
       msg: "This save is too large to upload. Please choose a smaller file.",
+      recovery: "choose-file",
     };
   if (response.status === 404)
-    return { type: "error", msg: MESSAGES.SAVE_NOT_FOUND };
-  return { type: "error", msg: MESSAGES.ANALYSIS_FAILED };
+    return {
+      type: "error",
+      msg: MESSAGES.SAVE_NOT_FOUND,
+      recovery: "choose-file",
+    };
+  return {
+    type: "error",
+    msg: MESSAGES.ANALYSIS_FAILED,
+    recovery: "retry",
+  };
+}
+
+export function analysisNetworkError(): AnalysisFailure {
+  return {
+    type: "error",
+    msg: ANALYZER_UNAVAILABLE_MESSAGE,
+    recovery: "retry",
+  };
 }

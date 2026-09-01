@@ -478,4 +478,21 @@ describe("Campaign Trends", () => {
     expect(text()).toContain("temporarily unavailable");
     expect(text()).not.toContain("private path");
   });
+
+  test("initial load failure is distinct from empty data and recovers explicitly", async () => {
+    fail = true;
+    await render();
+
+    expect(text()).toContain("Campaign trends unavailable");
+    expect(text()).toContain("Cannot reach the analyzer service");
+    expect(text()).not.toContain("No campaign trend data yet");
+    expect(container.querySelector('[data-testid="trend-plot"]')).toBeNull();
+
+    fail = false;
+    const retry = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Try again",
+    )!;
+    await act(async () => retry.click());
+    expect(container.querySelector('[data-testid="trend-plot"]')).not.toBeNull();
+  });
 });

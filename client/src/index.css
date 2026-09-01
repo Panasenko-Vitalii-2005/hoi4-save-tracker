@@ -445,6 +445,40 @@ select {
   gap: 6px 16px;
 }
 
+.recovery-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 13px;
+  border-left: 3px solid var(--intel-danger, var(--accent));
+  border-radius: 0 9px 9px 0;
+  background: color-mix(in srgb, var(--intel-danger, var(--accent)) 8%, transparent);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.recovery-notice > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.recovery-notice strong,
+.recovery-notice span {
+  line-height: 1.4;
+}
+
+.recovery-notice span {
+  color: var(--muted);
+}
+
+.recovery-notice .button {
+  min-height: 36px;
+  flex: none;
+  padding: 8px 13px;
+}
+
 .recent-icon {
   width: 16px;
   height: 16px;
@@ -4132,6 +4166,23 @@ button {
   border-left-color: var(--intel-success);
 }
 
+.batch-failure-summary {
+  margin-bottom: 14px;
+  padding: 11px 14px;
+  border-left: 3px solid var(--intel-danger);
+  background: color-mix(in srgb, var(--intel-danger) 8%, transparent);
+  border-radius: 0 9px 9px 0;
+  font-size: 12px;
+}
+
+.batch-failure-summary ul {
+  display: grid;
+  gap: 3px;
+  margin: 5px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
 .batch-analysis-actions,
 .batch-analysis-toolbar-actions {
   display: flex;
@@ -4269,11 +4320,26 @@ button {
 }
 
 .analyzer-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-top: 0;
   background: var(--intel-surface-deep) !important;
   border-left: 3px solid var(--intel-line-strong) !important;
   border-radius: 12px !important;
   box-shadow: none !important;
+}
+
+.analyzer-status > span:not(.spinner) {
+  min-width: 0;
+  flex: 1;
+}
+
+.analyzer-status-action {
+  min-height: 34px;
+  flex: none;
+  padding: 7px 12px;
 }
 
 .analyzer-status.ok {
@@ -5212,6 +5278,16 @@ button {
 
   .batch-analysis-summary {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .recovery-notice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .recovery-notice .button,
+  .analyzer-status-action {
+    width: 100%;
   }
 
   .batch-analysis-head .button,

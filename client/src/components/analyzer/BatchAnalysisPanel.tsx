@@ -5,7 +5,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { analysisError } from "@/lib/analysis-error";
+import {
+  ANALYZER_UNAVAILABLE_MESSAGE,
+  analysisError,
+} from "@/lib/analysis-error";
 
 type BatchStatus =
   | "identifying"
@@ -34,6 +37,8 @@ interface BatchAcknowledgement {
 }
 
 const PREFLIGHT_CHUNK_SIZE = 200;
+const PREFLIGHT_UNAVAILABLE =
+  "Could not check existing analyses. No saves were uploaded.";
 
 const STATUS_COPY: Record<BatchStatus, { symbol: string; label: string }> = {
   identifying: { symbol: "…", label: "Identifying" },
@@ -144,6 +149,29 @@ export const BatchAnalysisPanel = forwardRef<
       cancelled: count("cancelled"),
     };
   }, [items]);
+  const failureGroups = useMemo(() => {
+    const groups = new Map<string, number>();
+    for (const item of items) {
+      if (item.status !== "failed" || !item.error) continue;
+      groups.set(item.error, (groups.get(item.error) ?? 0) + 1);
+    }
+    return [...groups].map(([message, count]) => ({ message, count }));
+  }, [items]);
+  const completionSummary = useMemo(
+    () =>
+      [
+        `${counts.selected} selected`,
+        counts.known ? `${counts.known} already analyzed` : "",
+        `${counts.completed} analyzed successfully`,
+        `${counts.failed} failed`,
+        counts.cancelled ? `${counts.cancelled} cancelled` : "",
+        counts.invalid ? `${counts.invalid} invalid` : "",
+        counts.duplicates ? `${counts.duplicates} duplicates skipped` : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    [counts],
+  );
 
   const visibleItems = useMemo(
     () =>
@@ -172,19 +200,24 @@ export const BatchAnalysisPanel = forwardRef<
     const known = new Set<string>();
     for (let index = 0; index < hashes.length; index += PREFLIGHT_CHUNK_SIZE) {
       const chunk = hashes.slice(index, index + PREFLIGHT_CHUNK_SIZE);
-      const response = await fetch("/api/analyze/batch/preflight", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hashes: chunk }),
-      });
-      if (!response.ok) throw new Error("Preflight unavailable");
+      let response: Response;
+      try {
+        response = await fetch("/api/analyze/batch/preflight", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hashes: chunk }),
+        });
+      } catch {
+        throw new Error(ANALYZER_UNAVAILABLE_MESSAGE);
+      }
+      if (!response.ok) throw new Error(PREFLIGHT_UNAVAILABLE);
       const value: unknown = await response.json();
       if (
         !value ||
         typeof value !== "object" ||
         !Array.isArray((value as Record<string, unknown>).knownHashes)
       )
-        throw new Error("Invalid preflight response");
+        throw new Error(PREFLIGHT_UNAVAILABLE);
       for (const hash of (value as { knownHashes: unknown[] }).knownHashes) {
         if (typeof hash === "string" && chunk.includes(hash)) known.add(hash);
       }
@@ -249,10 +282,13 @@ export const BatchAnalysisPanel = forwardRef<
 
     try {
       await runPreflight(prepared, generation);
-    } catch {
+    } catch (error: unknown) {
       if (generation !== generationRef.current) return;
       setPreflightError(
-        "Could not check existing analyses. No saves were uploaded.",
+        error instanceof Error &&
+          error.message === ANALYZER_UNAVAILABLE_MESSAGE
+          ? error.message
+          : PREFLIGHT_UNAVAILABLE,
       );
       setPhase("review");
     }
@@ -264,9 +300,12 @@ export const BatchAnalysisPanel = forwardRef<
     setPhase("identifying");
     try {
       await runPreflight(itemsRef.current, generation);
-    } catch {
+    } catch (error: unknown) {
       setPreflightError(
-        "Could not check existing analyses. No saves were uploaded.",
+        error instanceof Error &&
+          error.message === ANALYZER_UNAVAILABLE_MESSAGE
+          ? error.message
+          : PREFLIGHT_UNAVAILABLE,
       );
       setPhase("review");
     }
@@ -289,6 +328,7 @@ export const BatchAnalysisPanel = forwardRef<
               : entry,
           ),
         );
+        let failureMessage = ANALYZER_UNAVAILABLE_MESSAGE;
         try {
           const formData = new FormData();
           formData.append("file", item.file);
@@ -298,11 +338,15 @@ export const BatchAnalysisPanel = forwardRef<
           });
           if (!response.ok) {
             const safe = await analysisError(response);
+            failureMessage = safe.msg;
             throw new Error(safe.msg);
           }
+          failureMessage =
+            "The analysis response could not be read. Try this save again.";
           const acknowledgement: unknown = await response.json();
-          if (!validAcknowledgement(acknowledgement, item.hash))
-            throw new Error("The server returned an invalid batch response.");
+          if (!validAcknowledgement(acknowledgement, item.hash)) {
+            throw new Error(failureMessage);
+          }
           completedThisRun++;
           updateItems((currentItems) =>
             currentItems.map((entry) =>
@@ -315,17 +359,14 @@ export const BatchAnalysisPanel = forwardRef<
                 : entry,
             ),
           );
-        } catch (error: unknown) {
+        } catch {
           updateItems((currentItems) =>
             currentItems.map((entry) =>
               entry.id === id
                 ? {
                     ...entry,
                     status: "failed",
-                    error:
-                      error instanceof Error
-                        ? error.message
-                        : "Could not analyze the save. Please try again.",
+                    error: failureMessage,
                   }
                 : entry,
             ),
@@ -490,11 +531,7 @@ export const BatchAnalysisPanel = forwardRef<
             <div className="batch-analysis-complete" role="status">
               <div>
                 <strong>Batch complete</strong>
-                <span>
-                  {counts.selected} selected · {counts.known} already analyzed ·{" "}
-                  {counts.completed} analyzed successfully · {counts.failed}{" "}
-                  failed
-                </span>
+                <span>{completionSummary}</span>
               </div>
               <div className="batch-analysis-actions">
                 {counts.failed > 0 && (
@@ -524,6 +561,19 @@ export const BatchAnalysisPanel = forwardRef<
                   </button>
                 )}
               </div>
+            </div>
+          )}
+
+          {phase === "complete" && failureGroups.length > 0 && (
+            <div className="batch-failure-summary" role="alert">
+              <strong>Files that need attention</strong>
+              <ul>
+                {failureGroups.map(({ message, count }) => (
+                  <li key={message}>
+                    {count} {count === 1 ? "file" : "files"}: {message}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

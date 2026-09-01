@@ -140,6 +140,40 @@ describe("analysis request lifecycle", () => {
     expect(requests).toHaveLength(0);
   });
 
+  test("local-save discovery failure is safe, keeps upload available, and retries explicitly", async () => {
+    let savesAttempts = 0;
+    vi.mocked(fetch).mockImplementation((url: string) => {
+      if (url === "/api/analyze/recent")
+        return Promise.resolve(Response.json({ items: [] }));
+      if (url === "/api/saves") {
+        if (savesAttempts++ === 0)
+          return Promise.reject(new Error("C:/private/backend stack"));
+        return Promise.resolve(
+          Response.json({
+            dir: "/saves",
+            exists: true,
+            files: [
+              {
+                name: "recovered.hoi4",
+                path: "/saves/recovered.hoi4",
+                size_mb: 1,
+                modified: "2026-01-01T00:00:00Z",
+              },
+            ],
+          }),
+        );
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    await render();
+    expect(container.textContent).toContain("Cannot reach the analyzer service");
+    expect(container.textContent).not.toMatch(/private|stack/);
+    expect(button("Analyze Save").disabled).toBe(false);
+    await act(async () => button("Try again").click());
+    expect(container.textContent).toContain("recovered.hoi4");
+  });
+
   test("shows indeterminate analysis, disables input/rows and submits the path", async () => {
     await render();
     await start();
@@ -261,11 +295,19 @@ describe("analysis request lifecycle", () => {
             Response.json({ message: secret }, { status: 500 }),
           );
       });
-      expect(status().textContent).toContain("Could not analyze the save.");
+      expect(status().textContent).toContain(
+        kind === "network"
+          ? "Cannot reach the analyzer service"
+          : kind === "non-json"
+            ? "analysis response could not be read"
+            : "Could not analyze the save.",
+      );
       expect(status().textContent).not.toMatch(/Worker|private|STACK/);
       expect(date()).toBe("1944.5.1");
       expect(button("Analyze Save").disabled).toBe(false);
-      await start();
+      if (kind === "network")
+        await act(async () => button("Retry analysis").click());
+      else await start();
       await respond(2, snapshot("1944.6.1"));
       expect(date()).toBe("1944.6.1");
       expect(status().textContent).not.toContain("Could not");
@@ -318,6 +360,18 @@ describe("analysis request lifecycle", () => {
       expect(status().getAttribute("aria-live")).toBe("polite");
       expect(date()).toBe("1944.5.1");
       expect(button("Analyze Save").disabled).toBe(false);
+      const chooseAnother = new Set([
+        "FILE_TOO_LARGE",
+        "EMPTY_FILE",
+        "UNSUPPORTED_FILE_TYPE",
+        "INVALID_SAVE",
+        "CORRUPT_ARCHIVE",
+        "UNSUPPORTED_SAVE",
+        "DECOMPRESSED_SIZE_LIMIT",
+      ]).has(String(code));
+      expect(
+        button(chooseAnother ? "Choose another file" : "Retry analysis"),
+      ).toBeDefined();
       expect(requests).toHaveLength(2); // Never auto-retry.
       await act(async () => chooseFile());
       await respond(2, snapshot("1944.6.1"));

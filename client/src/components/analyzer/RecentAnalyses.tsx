@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RecentAnalysis } from "@/types";
+import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
 import { AnalysisComparison } from "./AnalysisComparison";
 import {
   ShareAnalysisDialog,
@@ -192,6 +193,7 @@ export function RecentAnalyses({
   const [items, setItems] = useState<RecentAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [failureMessage, setFailureMessage] = useState("");
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
@@ -222,18 +224,28 @@ export function RecentAnalyses({
     const controller = new AbortController();
     setLoading(true);
     setFailed(false);
+    setFailureMessage("");
     void (async () => {
+      let reachedService = false;
       try {
         const response = await fetch("/api/analyze/recent", {
           signal: controller.signal,
         });
+        reachedService = true;
         if (!response.ok) throw new Error("History unavailable");
         const data = (await response.json()) as { items: RecentAnalysis[] };
         if (!Array.isArray(data.items))
           throw new Error("Invalid history response");
         if (active) setItems(data.items);
       } catch {
-        if (active) setFailed(true);
+        if (active) {
+          setFailed(true);
+          setFailureMessage(
+            reachedService
+              ? "Recent analyses could not be loaded. Check the analyzer storage and try again."
+              : ANALYZER_UNAVAILABLE_MESSAGE,
+          );
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -353,15 +365,31 @@ export function RecentAnalyses({
               </p>
             </div>
           </div>
-          {failed && (
+        </div>
+        {failed && (
+          <div className="recovery-notice" role="alert">
+            <div>
+              <strong>
+                {items.length
+                  ? "Could not refresh recent analyses"
+                  : "Recent analyses unavailable"}
+              </strong>
+              <span>
+                {failureMessage}
+                {items.length
+                  ? " The existing list remains available below."
+                  : " You can still analyze saves."}
+              </span>
+            </div>
             <button
               className="button button-secondary"
               onClick={() => setRetry((value) => value + 1)}
+              disabled={loading}
             >
-              Retry history
+              Try again
             </button>
-          )}
-        </div>
+          </div>
+        )}
         {items.length > 0 && (
           <>
             <div className="analyzer-recent-controls">
@@ -406,16 +434,14 @@ export function RecentAnalyses({
           <div className="micro-copy" role="status" aria-live="polite">
             {loading
               ? "Loading recent analyses…"
-              : failed
-                ? "Recent history is unavailable. You can still analyze saves."
-                : items.length === 0
+              : items.length === 0
                   ? ""
                   : visibleItems.length === 0
                     ? "No analyses found."
                     : `Showing ${visibleItems.length} of ${items.length} analyses.`}
           </div>
           <div className="micro-copy" role="status" aria-live="polite">
-            {openingHash ? "Opening saved analysis…" : openError}
+            {openingHash ? "Opening saved analysis…" : ""}
           </div>
           <div className="micro-copy" role="status" aria-live="polite">
             {mutation
@@ -425,6 +451,23 @@ export function RecentAnalyses({
               : actionMessage}
           </div>
         </div>
+        {openError && (
+          <div className="recovery-notice" role="alert">
+            <div>
+              <strong>Saved analysis unavailable</strong>
+              <span>{openError}</span>
+            </div>
+            {onAnalyzeSave && (
+              <button
+                className="button button-secondary"
+                onClick={onAnalyzeSave}
+                disabled={analyzing || openingHash !== null}
+              >
+                Analyze save again
+              </button>
+            )}
+          </div>
+        )}
         {!loading && !failed && items.length === 0 && (
           <div className="product-empty-state">
             <div>
@@ -651,6 +694,9 @@ export function RecentAnalyses({
           analyzing
         }
         onUnavailable={() => setRetry((value) => value + 1)}
+        optionsLoading={loading}
+        optionsUnavailable={failed}
+        onRetryOptions={() => setRetry((value) => value + 1)}
         onAnalyzeSave={onAnalyzeSave}
       />
       {shareItem && (
