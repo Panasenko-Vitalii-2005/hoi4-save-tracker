@@ -112,6 +112,7 @@ describe('PersistedAnalysisResultService', () => {
     const comparisonContext = {
       campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
       gameVersion: 'Operation Postern v1.19.2.0.a729 (d245)',
+      playerCountryTag: 'GER',
     };
     await service.save(hash('a'), result, [], { comparisonContext });
     expect(await service.getWithContext(hash('a'))).toEqual({

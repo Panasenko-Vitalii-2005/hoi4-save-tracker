@@ -3,6 +3,7 @@ import { readDirectScalar } from './naval-loss/global-history.parser';
 export interface SaveComparisonContext {
   campaignId: string | null;
   gameVersion: string | null;
+  playerCountryTag?: string | null;
 }
 
 const CONTEXT_PREFIX_BYTES = 64 * 1024;
@@ -28,6 +29,12 @@ function gameVersion(value: unknown): string | null {
     : null;
 }
 
+function playerCountryTag(value: unknown): string | null {
+  return typeof value === 'string' && /^[A-Z][A-Z0-9]{2}$/.test(value)
+    ? value
+    : null;
+}
+
 /** Read immutable comparison context from the decoded save while it is in memory. */
 export function parseSaveComparisonContext(
   saveText: string,
@@ -38,6 +45,9 @@ export function parseSaveComparisonContext(
       readDirectScalar(saveText, 0, end, 'game_unique_id'),
     ),
     gameVersion: gameVersion(readDirectScalar(saveText, 0, end, 'version')),
+    playerCountryTag: playerCountryTag(
+      readDirectScalar(saveText, 0, end, 'player'),
+    ),
   };
 }
 
@@ -51,14 +61,26 @@ export function normalizeSaveComparisonContext(
     record.campaignId == null ? null : campaignId(record.campaignId);
   const normalizedGameVersion =
     record.gameVersion == null ? null : gameVersion(record.gameVersion);
+  const hasPlayerCountryTag = Object.prototype.hasOwnProperty.call(
+    record,
+    'playerCountryTag',
+  );
+  const normalizedPlayerCountryTag =
+    record.playerCountryTag == null
+      ? null
+      : playerCountryTag(record.playerCountryTag);
   if (
     (record.campaignId != null && normalizedCampaignId === null) ||
-    (record.gameVersion != null && normalizedGameVersion === null)
+    (record.gameVersion != null && normalizedGameVersion === null) ||
+    (record.playerCountryTag != null && normalizedPlayerCountryTag === null)
   ) {
     return null;
   }
   return {
     campaignId: normalizedCampaignId,
     gameVersion: normalizedGameVersion,
+    ...(hasPlayerCountryTag
+      ? { playerCountryTag: normalizedPlayerCountryTag }
+      : {}),
   };
 }

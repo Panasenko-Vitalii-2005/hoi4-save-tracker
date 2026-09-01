@@ -31,7 +31,8 @@ const item = (
 const context = (
   campaignId: string | null,
   gameVersion = '1.19.2',
-): SaveComparisonContext => ({ campaignId, gameVersion });
+  playerCountryTag?: string | null,
+): SaveComparisonContext => ({ campaignId, gameVersion, playerCountryTag });
 
 describe('CampaignTrendsService', () => {
   const campaignA = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
@@ -64,11 +65,12 @@ describe('CampaignTrendsService', () => {
     entry: RecentAnalysis,
     campaignId: string | null,
     result = comparisonResult({ game_date: entry.gameDate }),
+    playerCountryTag?: string | null,
   ) => {
     entries.push(entry);
     artifacts.set(entry.hash, {
       result,
-      comparisonContext: context(campaignId),
+      comparisonContext: context(campaignId, '1.19.2', playerCountryTag),
     });
   };
 
@@ -103,6 +105,46 @@ describe('CampaignTrendsService', () => {
       true,
     );
     expect(campaigns.map(({ snapshotCount }) => snapshotCount)).toEqual([1, 1]);
+  });
+
+  test('exposes one consistent player country as presentation metadata without changing UUID grouping', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      comparisonResult(),
+      'GER',
+    );
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignA,
+      comparisonResult(),
+      'GER',
+    );
+    const campaigns = (await service.build()).campaigns;
+    expect(campaigns).toHaveLength(1);
+    expect(campaigns[0]).toMatchObject({
+      campaignId: campaignA,
+      playerCountryTag: 'GER',
+      snapshotCount: 2,
+    });
+  });
+
+  test('does not invent a primary country when persisted campaign tags conflict', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      comparisonResult(),
+      'GER',
+    );
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignA,
+      comparisonResult(),
+      'USA',
+    );
+    const campaigns = (await service.build()).campaigns;
+    expect(campaigns).toHaveLength(1);
+    expect(campaigns[0].playerCountryTag).toBeNull();
   });
 
   test('preserves same-date snapshots and deterministically places malformed dates last', async () => {

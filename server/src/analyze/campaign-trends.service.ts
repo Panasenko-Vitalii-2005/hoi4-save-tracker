@@ -119,6 +119,7 @@ function compareSnapshots(
 function campaign(
   key: string,
   campaignId: string | null,
+  playerCountryTags: ReadonlySet<string>,
   snapshots: CampaignTrendSnapshot[],
 ): CampaignTrend {
   snapshots.sort(compareSnapshots);
@@ -126,6 +127,8 @@ function campaign(
   return {
     key,
     campaignId,
+    playerCountryTag:
+      playerCountryTags.size === 1 ? [...playerCountryTags][0] : null,
     relationship: campaignId ? 'known' : 'unknown',
     snapshotCount: snapshots.length,
     firstGameDate: valid[0]?.gameDate ?? null,
@@ -154,7 +157,11 @@ export class CampaignTrendsService {
     );
     const groups = new Map<
       string,
-      { campaignId: string | null; snapshots: CampaignTrendSnapshot[] }
+      {
+        campaignId: string | null;
+        playerCountryTags: Set<string>;
+        snapshots: CampaignTrendSnapshot[];
+      }
     >();
 
     // Load sequentially so a history containing large AnalyzeResults does not
@@ -168,7 +175,16 @@ export class CampaignTrendsService {
       const key = campaignId
         ? `campaign:${campaignId}`
         : `unknown:${item.hash}`;
-      const group = groups.get(key) ?? { campaignId, snapshots: [] };
+      const group = groups.get(key) ?? {
+        campaignId,
+        playerCountryTags: new Set<string>(),
+        snapshots: [],
+      };
+      if (persisted.comparisonContext.playerCountryTag) {
+        group.playerCountryTags.add(
+          persisted.comparisonContext.playerCountryTag,
+        );
+      }
       group.snapshots.push(
         snapshot(item, persisted.result, persisted.comparisonContext),
       );
@@ -176,7 +192,14 @@ export class CampaignTrendsService {
     }
 
     const campaigns = [...groups.entries()]
-      .map(([key, group]) => campaign(key, group.campaignId, group.snapshots))
+      .map(([key, group]) =>
+        campaign(
+          key,
+          group.campaignId,
+          group.playerCountryTags,
+          group.snapshots,
+        ),
+      )
       .sort(
         (left, right) =>
           right.snapshotCount - left.snapshotCount ||

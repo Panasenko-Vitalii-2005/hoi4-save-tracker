@@ -75,6 +75,7 @@ const dto = (
     {
       key: `campaign:${campaignId}`,
       campaignId,
+      playerCountryTag: "GER",
       relationship: "known",
       snapshotCount: snapshots.length,
       firstGameDate: snapshots[0]?.gameDate ?? null,
@@ -191,6 +192,7 @@ describe("Campaign Trends", () => {
   test("renders heading, campaign summary, timeline, and an accessible multi-save chart", async () => {
     await render();
     expect(text()).toContain("Campaign Trends");
+    expect(text()).toContain("Germany");
     expect(text()).toContain("1936.6.1 → 1936.11.1");
     expect(traces()).toHaveLength(4);
     expect(
@@ -226,9 +228,46 @@ describe("Campaign Trends", () => {
     });
     await render();
     expect(select("Campaign").options).toHaveLength(2);
+    expect(select("Campaign").options[0].text).toBe(
+      "Germany · 1936.6.1 → 1936.11.1 · 3 saves",
+    );
     await choose(select("Campaign"), "campaign:different");
     expect(text()).toContain("1948.4.1 → 1948.4.1");
     expect(text()).toContain("One campaign snapshot available");
+  });
+
+  test("uses safe known and legacy labels when player metadata is unavailable", async () => {
+    const known = dto().campaigns[0];
+    const legacySnapshot = snapshot("z", "1935.1.1", 1);
+    response = {
+      snapshotCount: 4,
+      campaigns: [
+        { ...known, playerCountryTag: null },
+        {
+          ...dto([legacySnapshot]).campaigns[0],
+          key: `unknown:${legacySnapshot.hash}`,
+          campaignId: null,
+          playerCountryTag: null,
+          relationship: "unknown",
+        },
+      ],
+    };
+
+    await render();
+
+    expect(select("Campaign").options[0].text).toContain("Known campaign");
+    expect(select("Campaign").options[0].text).not.toContain(campaignId);
+    expect(select("Campaign").options[1].text).toContain("Legacy campaign");
+    expect(select("Campaign").options[1].text).not.toContain("z.hoi4");
+  });
+
+  test("falls back to an exact dynamic country tag when no display name exists", async () => {
+    response = dto();
+    response.campaigns[0].playerCountryTag = "D01";
+
+    await render();
+
+    expect(text()).toContain("D01");
   });
 
   test("supports presets and compact multi-select metrics", async () => {
@@ -315,6 +354,8 @@ describe("Campaign Trends", () => {
     await render();
 
     expect(traces()[0].x).toHaveLength(179);
+    expect(text()).toContain("Germany");
+    expect(text()).toContain("179 saves");
     expect(traces()[0].x[0]).toBe("1936-01-01");
     expect(traces()[0].x.at(-1)).toBe("1950-11-01");
     expect(traces()[0].customdata[0][2]).toBe("1936.1.1");

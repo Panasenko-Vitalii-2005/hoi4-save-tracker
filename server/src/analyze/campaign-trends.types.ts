@@ -38,6 +38,7 @@ export interface CampaignTrendSnapshot {
 export interface CampaignTrend {
   key: string;
   campaignId: string | null;
+  playerCountryTag: string | null;
   relationship: 'known' | 'unknown';
   snapshotCount: number;
   firstGameDate: string | null;

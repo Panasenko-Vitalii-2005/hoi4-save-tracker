@@ -201,9 +201,24 @@ function shortCampaignId(value: string): string {
 }
 
 function campaignLabel(campaign: CampaignTrend): string {
-  if (campaign.campaignId)
-    return `Campaign ${shortCampaignId(campaign.campaignId)}`;
-  return `Unknown campaign · ${campaign.snapshots[0]?.fileName ?? "saved analysis"}`;
+  if (campaign.playerCountryTag)
+    return countryFullName(campaign.playerCountryTag);
+  return campaign.campaignId ? "Known campaign" : "Legacy campaign";
+}
+
+function campaignDateRange(campaign: CampaignTrend): string {
+  const first = campaign.firstGameDate ?? "Unknown date";
+  const latest = campaign.latestGameDate ?? "Unknown date";
+  return `${first} → ${latest}`;
+}
+
+function campaignOptionLabel(campaign: CampaignTrend): string {
+  const saves = `save${campaign.snapshotCount === 1 ? "" : "s"}`;
+  return [
+    campaignLabel(campaign),
+    campaignDateRange(campaign),
+    `${campaign.snapshotCount} ${saves}`,
+  ].join(" · ");
 }
 
 function availableMetrics(scope: TrendScope): MetricDefinition[] {
@@ -621,10 +636,10 @@ export function CampaignTrends({
               className="campaign-range"
               aria-label="Selected campaign range"
             >
-              <strong>{campaign.snapshotCount} analyzed saves</strong>
+              <strong>{campaignLabel(campaign)}</strong>
               <span>
-                {campaign.firstGameDate ?? "Unknown"} →{" "}
-                {campaign.latestGameDate ?? "Unknown"}
+                {campaignDateRange(campaign)} · {campaign.snapshotCount} save
+                {campaign.snapshotCount === 1 ? "" : "s"}
               </span>
             </div>
           )}
@@ -674,8 +689,7 @@ export function CampaignTrends({
                 >
                   {data.campaigns.map((entry) => (
                     <option key={entry.key} value={entry.key}>
-                      {campaignLabel(entry)} · {entry.snapshotCount} save
-                      {entry.snapshotCount === 1 ? "" : "s"}
+                      {campaignOptionLabel(entry)}
                     </option>
                   ))}
                 </select>
@@ -696,10 +710,10 @@ export function CampaignTrends({
             <article>
               <span>Analyzed saves</span>
               <strong>{campaign.snapshotCount}</strong>
-              <small>
-                {campaign.relationship === "known"
-                  ? "Known campaign UUID"
-                  : "Campaign unknown"}
+              <small title={campaign.campaignId ?? undefined}>
+                {campaign.campaignId
+                  ? `Campaign ID ${shortCampaignId(campaign.campaignId)}`
+                  : "Campaign identity unavailable"}
               </small>
             </article>
             <article>

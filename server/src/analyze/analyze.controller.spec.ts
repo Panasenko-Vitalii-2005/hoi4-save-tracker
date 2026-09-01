@@ -65,6 +65,7 @@ interface AnalyzeResponse {
 function navalSave(shipName: string): string {
   return `HOI4txt
 date="1944.5.1.2"
+player="GER"
 version="Operation Postern v1.19.2.0.a729 (d245)"
 game_unique_id="0731c3c7-035e-46b1-b07b-6c35b27e8dc2"
 history={
@@ -211,6 +212,7 @@ describe('AnalyzeController uploads', () => {
       ).toEqual({
         campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
         gameVersion: 'Operation Postern v1.19.2.0.a729 (d245)',
+        playerCountryTag: 'GER',
       });
       const cached = await request(app.getHttpServer())
         .post('/api/analyze')
