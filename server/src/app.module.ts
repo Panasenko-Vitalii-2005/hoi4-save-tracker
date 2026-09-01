@@ -20,6 +20,7 @@ import { SharedAnalysesController } from './analyze/shared-analyses.controller';
 import { SharedAnalysesService } from './analyze/shared-analyses.service';
 import { CampaignTrendsController } from './analyze/campaign-trends.controller';
 import { CampaignTrendsService } from './analyze/campaign-trends.service';
+import { BatchAnalysisController } from './analyze/batch-analysis.controller';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { CampaignTrendsService } from './analyze/campaign-trends.service';
     AnalyzeController,
     SharedAnalysesController,
     CampaignTrendsController,
+    BatchAnalysisController,
     HealthController,
     SavesController,
   ],

@@ -31,6 +31,10 @@ import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { AnalysisComparisonService } from './analysis-comparison.service';
 import { SaveUploadInterceptor } from './save-upload.interceptor';
+import { BatchAnalysisController } from './batch-analysis.controller';
+import { CampaignTrendsController } from './campaign-trends.controller';
+import { CampaignTrendsService } from './campaign-trends.service';
+import type { CampaignTrendsDto } from './campaign-trends.types';
 
 class TrackedWorkerService extends Hoi4AnalysisWorkerService {
   created = 0;
@@ -111,13 +115,18 @@ describe('AnalyzeController uploads', () => {
     process.env.HOI4_ANALYSIS_RESULTS_DIR = join(localSaveRoot, 'results');
     delete process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
     const moduleRef = await Test.createTestingModule({
-      controllers: [AnalyzeController],
+      controllers: [
+        AnalyzeController,
+        BatchAnalysisController,
+        CampaignTrendsController,
+      ],
       providers: [
         { provide: Hoi4AnalysisWorkerService, useClass: TrackedWorkerService },
         AnalysisResultCacheService,
         RecentAnalysesService,
         PersistedAnalysisResultService,
         AnalysisComparisonService,
+        CampaignTrendsService,
         SaveUploadInterceptor,
       ],
     }).compile();
@@ -262,6 +271,80 @@ describe('AnalyzeController uploads', () => {
     expect(Number.isFinite(parse_seconds)).toBe(true);
     expect(Number.isFinite(directSeconds)).toBe(true);
     expect(semantic).toEqual(direct);
+  });
+
+  test('preflights persisted hashes without invoking the Worker or parser', async () => {
+    const payload = Buffer.from(navalSave('Batch known fixture'));
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', payload, 'known.hoi4')
+      .expect(201);
+    const known = createHash('sha256').update(payload).digest('hex');
+    const before = analysis.created;
+
+    const response = await request(app.getHttpServer())
+      .post('/api/analyze/batch/preflight')
+      .send({ hashes: [known, 'f'.repeat(64), known.toUpperCase()] })
+      .expect(201);
+
+    expect(response.body).toEqual({ knownHashes: [known] });
+    expect(analysis.created).toBe(before);
+  });
+
+  test('returns a compact persisted acknowledgement for batch uploads', async () => {
+    const payload = Buffer.from(navalSave('Batch summary fixture'));
+    const response = await request(app.getHttpServer())
+      .post('/api/analyze?response=batch')
+      .attach('file', payload, 'batch.hoi4')
+      .expect(201);
+    const hash = createHash('sha256').update(payload).digest('hex');
+
+    expect(response.body).toEqual({
+      hash,
+      gameDate: '1944.5.1',
+      campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+    });
+    expect((await history.list())[0]).toMatchObject({
+      hash,
+      fileName: 'batch.hoi4',
+      hasPersistedResult: true,
+    });
+    expect(await results.exists(hash)).toBe(true);
+  });
+
+  test('persists each batch success immediately and lets Trends group mixed campaigns', async () => {
+    const secondCampaign = '1731c3c7-035e-46b1-b07b-6c35b27e8dc2';
+    await request(app.getHttpServer())
+      .post('/api/analyze?response=batch')
+      .attach('file', Buffer.from(navalSave('Campaign A')), 'a.hoi4')
+      .expect(201);
+    let trends = await request(app.getHttpServer())
+      .get('/api/analyze/trends')
+      .expect(200);
+    expect((trends.body as CampaignTrendsDto).snapshotCount).toBe(1);
+
+    await request(app.getHttpServer())
+      .post('/api/analyze?response=batch')
+      .attach(
+        'file',
+        Buffer.from(
+          navalSave('Campaign B').replace(
+            '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+            secondCampaign,
+          ),
+        ),
+        'b.hoi4',
+      )
+      .expect(201);
+    trends = await request(app.getHttpServer())
+      .get('/api/analyze/trends')
+      .expect(200);
+    const trendBody = trends.body as CampaignTrendsDto;
+    expect(trendBody).toMatchObject({ snapshotCount: 2 });
+    expect(trendBody.campaigns.map((campaign) => campaign.campaignId)).toEqual([
+      '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+      secondCampaign,
+    ]);
   });
 
   test('rejects path traversal outside the configured save root', async () => {
@@ -489,6 +572,35 @@ describe('AnalyzeController uploads', () => {
       await request(app.getHttpServer())
         .get(`/api/analyze/recent/${item.hash}/result`)
         .expect(404);
+    } finally {
+      save.mockRestore();
+    }
+  });
+
+  test('batch upload reports persistence failure safely and still cleans its temp file', async () => {
+    const existingUploads = readdirSync(UPLOAD_DIRECTORY).sort();
+    const payload = Buffer.from(navalSave('Batch result write failure'));
+    const before = analysis.created;
+    const save = jest.spyOn(results, 'save').mockResolvedValueOnce(false);
+    try {
+      const response = await request(app.getHttpServer())
+        .post('/api/analyze?response=batch')
+        .attach('file', payload, 'failure.hoi4')
+        .expect(503);
+      expect(response.body).toMatchObject({ code: 'PERSISTENCE_FAILED' });
+      expect(JSON.stringify(response.body)).not.toMatch(
+        /hoi4-save-tracker|stack|temporaryPath/i,
+      );
+      expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
+      await request(app.getHttpServer())
+        .post('/api/analyze?response=batch')
+        .attach('file', payload, 'failure-retry.hoi4')
+        .expect(201);
+      expect(analysis.created).toBe(before + 1); // Retry reuses the RAM result.
+      expect((await history.list())[0]).toMatchObject({
+        fileName: 'failure-retry.hoi4',
+        hasPersistedResult: true,
+      });
     } finally {
       save.mockRestore();
     }

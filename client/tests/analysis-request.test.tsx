@@ -294,6 +294,7 @@ describe("analysis request lifecycle", () => {
     ["UPLOAD_TIMEOUT", 408, "upload took too long"],
     ["ANALYSIS_TIMEOUT", 504, "Analysis took too long and was stopped"],
     ["ANALYZER_BUSY", 503, "busy with another save"],
+    ["PERSISTENCE_FAILED", 503, "could not be saved"],
     ["ANALYSIS_FAILED", 500, "Could not analyze the save"],
     ["UNKNOWN_SERVER_BUG", 500, "Could not analyze the save"],
   ])(

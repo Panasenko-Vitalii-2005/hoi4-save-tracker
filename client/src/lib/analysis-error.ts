@@ -13,6 +13,8 @@ const MESSAGES: Record<string, string> = {
   ANALYSIS_TIMEOUT: "Analysis took too long and was stopped.",
   ANALYZER_BUSY:
     "The analyzer is busy with another save. Please try again in a few seconds.",
+  PERSISTENCE_FAILED:
+    "The analysis completed but could not be saved. Check server storage and retry.",
   ANALYSIS_FAILED: "Could not analyze the save. Please try again.",
   SAVE_NOT_FOUND:
     "The selected save is no longer available. Refresh the list or upload it again.",

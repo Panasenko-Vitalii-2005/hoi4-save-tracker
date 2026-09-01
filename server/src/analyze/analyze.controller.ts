@@ -24,6 +24,7 @@ import { AnalysisComparisonService } from './analysis-comparison.service';
 import type { AnalysisComparisonDto } from './analysis-comparison.types';
 import { SaveUploadInterceptor } from './save-upload.interceptor';
 import { validateSaveFile } from '../hoi4/save-container';
+import { SaveInputError } from '../hoi4/save-input.error';
 
 interface AnalyzeRequest {
   path: string;
@@ -163,6 +164,7 @@ export class AnalyzeController {
     @Body() body: AnalyzeRequest,
     @Res({ passthrough: true }) response: Response,
     @UploadedFile() uploadedSave?: UploadedSave,
+    @Query('response') responseMode?: unknown,
   ) {
     const requestedPath =
       typeof body?.path === 'string' ? body.path.trim() : '';
@@ -196,16 +198,30 @@ export class AnalyzeController {
     const { hash, result, comparisonContext } =
       await this.analysis.analyzeWithHash(filePath);
     // The interceptor owns cleanup, including pre-controller failures and disconnects.
+    let persisted = false;
     if (!response.destroyed) {
-      await this.history.record(
-        {
-          hash,
-          fileName: uploadedSave?.originalname ?? path.basename(filePath),
-          fileSizeBytes,
-        },
-        result,
-        comparisonContext,
-      );
+      const record = {
+        hash,
+        fileName: uploadedSave?.originalname ?? path.basename(filePath),
+        fileSizeBytes,
+      };
+      if (responseMode === 'batch') {
+        persisted = await this.history.recordWithStatus(
+          record,
+          result,
+          comparisonContext,
+        );
+      } else {
+        await this.history.record(record, result, comparisonContext);
+      }
+    }
+    if (responseMode === 'batch') {
+      if (!persisted) throw new SaveInputError('PERSISTENCE_FAILED');
+      return {
+        hash,
+        gameDate: result.game_date,
+        campaignId: comparisonContext.campaignId,
+      };
     }
     return result;
   }

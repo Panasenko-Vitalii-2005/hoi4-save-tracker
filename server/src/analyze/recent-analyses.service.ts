@@ -90,9 +90,9 @@ export class RecentAnalysesService {
     private readonly results: PersistedAnalysisResultService,
     @Optional() private readonly shares?: SharedAnalysesService,
   ) {
-    const configured = Number(process.env.HOI4_RECENT_ANALYSES_LIMIT ?? 20);
+    const configured = Number(process.env.HOI4_RECENT_ANALYSES_LIMIT ?? 200);
     this.limit =
-      Number.isSafeInteger(configured) && configured > 0 ? configured : 20;
+      Number.isSafeInteger(configured) && configured > 0 ? configured : 200;
     this.pending = this.load();
   }
 
@@ -151,6 +151,14 @@ export class RecentAnalysesService {
     result: AnalyzeResult,
     comparisonContext?: SaveComparisonContext,
   ): Promise<void> {
+    await this.recordWithStatus(input, result, comparisonContext);
+  }
+
+  async recordWithStatus(
+    input: Pick<RecentAnalysis, 'hash' | 'fileName' | 'fileSizeBytes'>,
+    result: AnalyzeResult,
+    comparisonContext?: SaveComparisonContext,
+  ): Promise<boolean> {
     const item: RecentAnalysis = {
       hash: input.hash,
       fileName: safeFileName(input.fileName),
@@ -167,6 +175,7 @@ export class RecentAnalysesService {
       pinned: false,
     };
     try {
+      let persisted = false;
       await this.enqueue(async () => {
         // Read the latest pin state inside the mutation queue, not at request start.
         item.pinned =
@@ -195,11 +204,14 @@ export class RecentAnalysesService {
           entry.hasPersistedResult &&= available.has(entry.hash);
         await this.persist(next);
         this.items = next;
+        persisted = next.includes(item) && item.hasPersistedResult;
       });
+      return persisted;
     } catch {
       this.warnWrite();
       // A result written before a failed metadata commit must not become an orphan.
       await this.enqueue(() => this.reconcile());
+      return false;
     }
   }
 

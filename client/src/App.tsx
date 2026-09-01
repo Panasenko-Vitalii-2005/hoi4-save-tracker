@@ -48,7 +48,7 @@ function Dashboard() {
       {tab === "soldiers" && <SoldiersTab />}
       {analyzerOpened && (
         <div hidden={tab !== "analyzer"}>
-          <AnalyzerTab />
+          <AnalyzerTab onNavigateToCampaignTrends={() => setTab("chart")} />
         </div>
       )}
     </div>

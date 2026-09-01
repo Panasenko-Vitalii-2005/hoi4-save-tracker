@@ -330,6 +330,7 @@ export function RecentAnalyses({
   return (
     <>
       <section
+        id="recent-analyses"
         className="panel analyzer-recent"
         aria-label="Recent Analyses"
         aria-busy={loading || mutation !== null}

@@ -24,6 +24,10 @@ export const SAVE_ERRORS = {
     503,
     'The analyzer is busy. Please try again in a few seconds.',
   ],
+  PERSISTENCE_FAILED: [
+    503,
+    'The analysis completed but could not be saved. Please try again.',
+  ],
   ANALYSIS_FAILED: [500, 'Could not analyze the save. Please try again.'],
 } as const;
 

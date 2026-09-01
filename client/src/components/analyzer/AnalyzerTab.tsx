@@ -22,6 +22,10 @@ import { StockpileTab } from "./StockpileTab";
 import { LandForcesTab } from "./LandForcesTab";
 import { CountryDisplay } from "./CountryDisplay";
 import { RecentAnalyses } from "./RecentAnalyses";
+import {
+  BatchAnalysisPanel,
+  type BatchAnalysisPanelHandle,
+} from "./BatchAnalysisPanel";
 import { analysisError } from "@/lib/analysis-error";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
@@ -109,10 +113,12 @@ function AnalyzerViewContext({
 function SaveBrowser({
   onSelect,
   onUpload,
+  onBatchUpload,
   analyzing,
 }: {
   onSelect: (p: string, n: string) => void;
   onUpload: (file: File) => void;
+  onBatchUpload: () => void;
   analyzing: boolean;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -160,6 +166,13 @@ function SaveBrowser({
           onClick={() => fileInput.current?.click()}
         >
           Upload .hoi4
+        </button>
+        <button
+          className="button button-secondary analyzer-save-action"
+          disabled={analyzing}
+          onClick={onBatchUpload}
+        >
+          Import Multiple Saves
         </button>
         <input
           ref={fileInput}
@@ -295,8 +308,10 @@ function SaveBrowser({
 
 export function AnalyzerTab({
   readOnlyResult,
+  onNavigateToCampaignTrends,
 }: {
   readOnlyResult?: AnalyzeResult;
+  onNavigateToCampaignTrends?: () => void;
 } = {}) {
   const readOnly = readOnlyResult !== undefined;
   const BASE = usePlotTheme();
@@ -310,6 +325,8 @@ export function AnalyzerTab({
   const [openingHash, setOpeningHash] = useState<string | null>(null);
   const [openError, setOpenError] = useState("");
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [batchRunning, setBatchRunning] = useState(false);
+  const batchPanelRef = useRef<BatchAnalysisPanelHandle>(null);
   const [result, setResult] = useState<AnalyzeResult | null>(
     readOnlyResult ?? null,
   );
@@ -405,7 +422,7 @@ export function AnalyzerTab({
     uploadedFile?: File,
   ) => {
     // Guard synchronously: multiple events can arrive before React rerenders.
-    if (analysisInFlight.current) return;
+    if (analysisInFlight.current || batchRunning) return;
     analysisInFlight.current = true;
     resultRequestVersion.current++;
     openingRequest.current?.abort();
@@ -706,9 +723,18 @@ export function AnalyzerTab({
       {!readOnly && (
         <>
           <SaveBrowser
-            analyzing={status.type === "loading"}
+            analyzing={status.type === "loading" || batchRunning}
             onSelect={analyze}
             onUpload={(file) => analyze("", file.name, file)}
+            onBatchUpload={() => batchPanelRef.current?.openPicker()}
+          />
+
+          <BatchAnalysisPanel
+            ref={batchPanelRef}
+            disabled={status.type === "loading"}
+            onRunningChange={setBatchRunning}
+            onHistoryChanged={() => setHistoryVersion((value) => value + 1)}
+            onNavigateToCampaignTrends={onNavigateToCampaignTrends}
           />
 
           <div role="status" aria-live="polite" aria-atomic="true">
@@ -730,7 +756,7 @@ export function AnalyzerTab({
             onOpen={(item) => void openResult(item)}
             openingHash={openingHash}
             openError={openError}
-            analyzing={status.type === "loading"}
+            analyzing={status.type === "loading" || batchRunning}
           />
         </>
       )}

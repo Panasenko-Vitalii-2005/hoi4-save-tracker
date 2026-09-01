@@ -369,20 +369,26 @@ describe('RecentAnalysesService', () => {
     expect(await results.exists(input('b').hash)).toBe(false);
   });
 
-  test.each([undefined, '', '0', '-1', '1.5', 'abc', 'Infinity'])(
-    'uses bounded default 20 for missing/invalid limit %j',
-    async (limit) => {
-      if (limit !== undefined) process.env.HOI4_RECENT_ANALYSES_LIMIT = limit;
+  test('uses a batch-capable bounded default of 200', async () => {
+    history = new RecentAnalysesService(results);
+    expect(history['limit']).toBe(200);
+    await Promise.all(
+      Array.from({ length: 40 }, (_, i) =>
+        history.record(input(String(i)), result),
+      ),
+    );
+    const items = await history.list();
+    expect(items).toHaveLength(40);
+    expect(items[0].hash).toBe(input('39').hash);
+    expect(items[39].hash).toBe(input('0').hash);
+  });
+
+  test.each(['', '0', '-1', '1.5', 'abc', 'Infinity'])(
+    'falls back to the 200-item default for invalid limit %j',
+    (limit) => {
+      process.env.HOI4_RECENT_ANALYSES_LIMIT = limit;
       history = new RecentAnalysesService(results);
-      await Promise.all(
-        Array.from({ length: 22 }, (_, i) =>
-          history.record(input(String(i)), result),
-        ),
-      );
-      const items = await history.list();
-      expect(items).toHaveLength(20);
-      expect(items[0].hash).toBe(input('21').hash);
-      expect(items[19].hash).toBe(input('2').hash);
+      expect(history['limit']).toBe(200);
     },
   );
 

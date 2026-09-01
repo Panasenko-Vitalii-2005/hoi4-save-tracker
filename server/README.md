@@ -148,6 +148,29 @@ indicator. The response shape is unchanged; upload, hashing and serialization
 still take time on a hit. No cache state or hashes are logged or added to the
 analysis response.
 
+### Batch save analysis
+
+Batch import is intentionally a browser-orchestrated sequence of ordinary,
+individually hardened uploads. It does not create a second parser or Worker queue.
+The browser hashes selected raw files sequentially with Web Crypto, submits at
+most 200 hashes per small `POST /api/analyze/batch/preflight` JSON request, and
+uploads only unknown content. Preflight returns `{ "knownHashes": [...] }` and
+does not read saves, invoke the parser or start a Worker.
+
+Each new file is submitted independently to
+`POST /api/analyze?response=batch`. The same upload validation, admission,
+decompression bound, timeout, Worker limit, cache/in-flight deduplication and
+temporary-file cleanup apply. A successful batch request is persisted through
+Recent Analyses before it returns the compact acknowledgement
+`{ hash, gameDate, campaignId }`; persistence failure is reported safely as
+`PERSISTENCE_FAILED` so one file can be retried without losing other successes.
+Ordinary `POST /api/analyze` responses remain the unchanged `AnalyzeResult`.
+
+Web Crypto currently requires one contiguous `ArrayBuffer`. Hashing is therefore
+strictly sequential: one selected save may be buffered in browser memory, never
+the entire batch. Uploading is also sequential by default. Backend admission and
+`HOI4_ANALYSIS_WORKERS` remain authoritative if a client ignores this behavior.
+
 ### Recent Analyses history
 
 Successful `POST /api/analyze` interactions also update a small persistent metadata
@@ -159,8 +182,10 @@ The existing analysis response and `parse_seconds` are unchanged.
 - `HOI4_RECENT_ANALYSES_FILE`: defaults to `data/recent-analyses.json`, relative to
   the backend working directory (`server/data/recent-analyses.json` when started
   from `server/`). An absolute path is recommended for deployments.
-- `HOI4_RECENT_ANALYSES_LIMIT`: positive integer, default **20**; invalid values
-  fall back to 20. The total includes pinned entries. Pins are retained first,
+- `HOI4_RECENT_ANALYSES_LIMIT`: positive integer, default **200**; invalid values
+  fall back to 200. The higher default supports campaign batch imports while the
+  independent compressed-result byte budget remains authoritative. The total
+  includes pinned entries. Pins are retained first,
   then newest unpinned entries. Oldest unpinned entries are evicted first; if
   pinned entries alone exceed a lowered limit, oldest pins are evicted too.
   If pins already fill the count limit, a new unpinned analysis is returned
