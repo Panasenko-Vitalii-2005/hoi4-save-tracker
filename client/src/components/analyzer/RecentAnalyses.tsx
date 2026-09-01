@@ -178,12 +178,16 @@ export function RecentAnalyses({
   openingHash = null,
   openError = "",
   analyzing = false,
+  onAnalyzeSave,
+  onImportCampaign,
 }: {
   refreshVersion: number;
   onOpen: (item: RecentAnalysis) => void;
   openingHash?: string | null;
   openError?: string;
   analyzing?: boolean;
+  onAnalyzeSave?: () => void;
+  onImportCampaign?: () => void;
 }) {
   const [items, setItems] = useState<RecentAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
@@ -358,42 +362,46 @@ export function RecentAnalyses({
             </button>
           )}
         </div>
-        <div className="analyzer-recent-controls">
-          <label htmlFor="recent-analysis-search">
-            Search analyses
-            <span className="analyzer-recent-control">
-              <RecentIcon name="search" />
-              <input
-                id="recent-analysis-search"
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Filename or game date"
-              />
-            </span>
-          </label>
-          <label htmlFor="recent-analysis-sort">
-            Sort analyses
-            <select
-              id="recent-analysis-sort"
-              value={sortOrder}
-              onChange={(event) =>
-                setSortOrder(event.target.value as SortOrder)
-              }
-            >
-              <option value="newest">Newest analyzed</option>
-              <option value="oldest">Oldest analyzed</option>
-              <option value="name-asc">Filename A–Z</option>
-              <option value="name-desc">Filename Z–A</option>
-              <option value="game-newest">Game date newest</option>
-              <option value="game-oldest">Game date oldest</option>
-            </select>
-          </label>
-        </div>
-        <p className="micro-copy">
-          Pinned analyses appear first. Pins are retained when possible, within
-          history limits.
-        </p>
+        {items.length > 0 && (
+          <>
+            <div className="analyzer-recent-controls">
+              <label htmlFor="recent-analysis-search">
+                Search analyses
+                <span className="analyzer-recent-control">
+                  <RecentIcon name="search" />
+                  <input
+                    id="recent-analysis-search"
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Filename or game date"
+                  />
+                </span>
+              </label>
+              <label htmlFor="recent-analysis-sort">
+                Sort analyses
+                <select
+                  id="recent-analysis-sort"
+                  value={sortOrder}
+                  onChange={(event) =>
+                    setSortOrder(event.target.value as SortOrder)
+                  }
+                >
+                  <option value="newest">Newest analyzed</option>
+                  <option value="oldest">Oldest analyzed</option>
+                  <option value="name-asc">Filename A–Z</option>
+                  <option value="name-desc">Filename Z–A</option>
+                  <option value="game-newest">Game date newest</option>
+                  <option value="game-oldest">Game date oldest</option>
+                </select>
+              </label>
+            </div>
+            <p className="micro-copy">
+              Pinned analyses appear first. Pins are retained when possible,
+              within history limits.
+            </p>
+          </>
+        )}
         <div className="analyzer-recent-statuses">
           <div className="micro-copy" role="status" aria-live="polite">
             {loading
@@ -401,7 +409,7 @@ export function RecentAnalyses({
               : failed
                 ? "Recent history is unavailable. You can still analyze saves."
                 : items.length === 0
-                  ? "No recent analyses yet."
+                  ? ""
                   : visibleItems.length === 0
                     ? "No analyses found."
                     : `Showing ${visibleItems.length} of ${items.length} analyses.`}
@@ -417,6 +425,37 @@ export function RecentAnalyses({
               : actionMessage}
           </div>
         </div>
+        {!loading && !failed && items.length === 0 && (
+          <div className="product-empty-state">
+            <div>
+              <h3>No analyses yet</h3>
+              <p>
+                Completed save analyses appear here, ready to reopen without
+                uploading the save again.
+              </p>
+            </div>
+            {(onAnalyzeSave || onImportCampaign) && (
+              <div className="product-empty-actions">
+                {onAnalyzeSave && (
+                  <button
+                    className="button button-primary"
+                    onClick={onAnalyzeSave}
+                  >
+                    Analyze Save
+                  </button>
+                )}
+                {onImportCampaign && (
+                  <button
+                    className="button button-secondary"
+                    onClick={onImportCampaign}
+                  >
+                    Import Campaign
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {visibleItems.length > 0 && (
           <div
             className="table-wrap analyzer-recent-scroll"
@@ -612,6 +651,7 @@ export function RecentAnalyses({
           analyzing
         }
         onUnavailable={() => setRetry((value) => value + 1)}
+        onAnalyzeSave={onAnalyzeSave}
       />
       {shareItem && (
         <ShareAnalysisDialog

@@ -133,15 +133,35 @@ describe("Recent Analyses", () => {
     });
   };
 
-  test("loads with a quiet loading state and then an empty state", async () => {
+  test("loads with a quiet loading state and then a useful empty state", async () => {
     await render();
     expect(historyRequests).toHaveLength(1);
     expect(section().getAttribute("aria-busy")).toBe("true");
     expect(section().textContent).toContain("Loading recent analyses");
     await respond(0);
     expect(section().getAttribute("aria-busy")).toBe("false");
-    expect(section().textContent).toContain("No recent analyses yet.");
+    expect(section().textContent).toContain("No analyses yet");
+    expect(section().textContent).toContain(
+      "Completed save analyses appear here",
+    );
+    expect(section().querySelector("#recent-analysis-search")).toBeNull();
     expect(section().querySelector("table")).toBeNull();
+  });
+
+  test("zero-analysis Analyzer clearly separates single-save and campaign workflows", async () => {
+    await act(async () => root.render(<AnalyzerTab />));
+    await respond(0);
+
+    expect(container.textContent).toContain("Analyze one save");
+    expect(container.textContent).toContain("Inspect one HOI4 save in detail");
+    expect(container.textContent).toContain("Import campaign");
+    expect(container.textContent).toContain(
+      "only new saves are analyzed and added to Campaign Trends",
+    );
+    expect(container.textContent).toContain("No analyses yet");
+    expect(container.textContent).toContain(
+      "Analyze at least two saves before comparing campaign snapshots",
+    );
   });
 
   test("renders useful metadata, removes dense legacy columns and keeps distinct same-name entries", async () => {

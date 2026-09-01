@@ -157,22 +157,30 @@ function SaveBrowser({
   };
 
   return (
-    <section className="panel analyzer-save-browser" aria-busy={analyzing}>
+    <section
+      id="analyze-one-save"
+      className="panel analyzer-save-browser"
+      aria-busy={analyzing}
+    >
       <div className="panel-head analyzer-save-browser-head">
-        <h2>Save Files</h2>
+        <div className="analyzer-save-browser-copy">
+          <span className="batch-analysis-eyebrow">Single save analysis</span>
+          <h2>Analyze one save</h2>
+          <p>Inspect one HOI4 save in detail.</p>
+        </div>
         <button
           className="button button-primary analyzer-save-action"
           disabled={analyzing}
           onClick={() => fileInput.current?.click()}
         >
-          Upload .hoi4
+          Analyze Save
         </button>
         <button
           className="button button-secondary analyzer-save-action"
           disabled={analyzing}
           onClick={onBatchUpload}
         >
-          Import Multiple Saves
+          Import Campaign
         </button>
         <input
           ref={fileInput}
@@ -309,9 +317,14 @@ function SaveBrowser({
 export function AnalyzerTab({
   readOnlyResult,
   onNavigateToCampaignTrends,
+  focusRequest,
 }: {
   readOnlyResult?: AnalyzeResult;
   onNavigateToCampaignTrends?: () => void;
+  focusRequest?: {
+    target: "analyze" | "import";
+    request: number;
+  } | null;
 } = {}) {
   const readOnly = readOnlyResult !== undefined;
   const BASE = usePlotTheme();
@@ -356,6 +369,17 @@ export function AnalyzerTab({
   const [landForcesDivisionKey, setLandForcesDivisionKey] = useState<
     string | null
   >(null);
+
+  useEffect(() => {
+    if (!focusRequest || readOnly) return;
+    const section = document.getElementById(
+      focusRequest.target === "import"
+        ? "import-campaign"
+        : "analyze-one-save",
+    );
+    section?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    section?.querySelector<HTMLButtonElement>("button")?.focus();
+  }, [focusRequest, readOnly]);
 
   useEffect(
     () => () => {
@@ -757,6 +781,14 @@ export function AnalyzerTab({
             openingHash={openingHash}
             openError={openError}
             analyzing={status.type === "loading" || batchRunning}
+            onAnalyzeSave={() =>
+              document
+                .querySelector<HTMLButtonElement>(
+                  "#analyze-one-save .button-primary",
+                )
+                ?.click()
+            }
+            onImportCampaign={() => batchPanelRef.current?.openPicker()}
           />
         </>
       )}

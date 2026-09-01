@@ -140,7 +140,13 @@ describe("Campaign Trends", () => {
     vi.unstubAllGlobals();
   });
 
-  const render = async (records: SaveRecord[] = []) => {
+  const render = async (
+    records: SaveRecord[] = [],
+    actions: {
+      onAnalyzeSave?: () => void;
+      onImportCampaign?: () => void;
+    } = {},
+  ) => {
     await act(async () =>
       root.render(
         <CampaignTrends
@@ -148,6 +154,7 @@ describe("Campaign Trends", () => {
           telemetryLoading={false}
           telemetryError={null}
           reloadTelemetry={() => undefined}
+          {...actions}
         />,
       ),
     );
@@ -193,6 +200,9 @@ describe("Campaign Trends", () => {
     await render();
     expect(text()).toContain("Campaign Trends");
     expect(text()).toContain("Germany");
+    expect(text()).not.toContain(
+      "Campaign Trends needs multiple analyzed saves",
+    );
     expect(text()).toContain("1936.6.1 → 1936.11.1");
     expect(traces()).toHaveLength(4);
     expect(
@@ -205,9 +215,27 @@ describe("Campaign Trends", () => {
 
   test("renders meaningful empty and single-save states without empty Plotly axes", async () => {
     response = { snapshotCount: 0, campaigns: [] };
-    await render();
+    const analyze = vi.fn();
+    const importCampaign = vi.fn();
+    await render([], {
+      onAnalyzeSave: analyze,
+      onImportCampaign: importCampaign,
+    });
     expect(text()).toContain("No campaign trend data yet");
+    expect(text()).toContain(
+      "Campaign Trends needs multiple analyzed saves from the same campaign",
+    );
     expect(container.querySelector('[data-testid="trend-plot"]')).toBeNull();
+    const importButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Import Campaign",
+    )!;
+    await act(async () => importButton.click());
+    expect(importCampaign).toHaveBeenCalledTimes(1);
+    const analyzeButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Analyze Save",
+    )!;
+    await act(async () => analyzeButton.click());
+    expect(analyze).toHaveBeenCalledTimes(1);
 
     response = dto([snapshot("a", "1936.6.1", 1)]);
     const refresh = [...container.querySelectorAll("button")].find((button) =>

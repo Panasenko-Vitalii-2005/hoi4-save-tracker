@@ -25,7 +25,19 @@ function useTheme(): [Theme, () => void] {
 function Dashboard() {
   const [tab, setTab] = useState<TabId>("chart");
   const [analyzerOpened, setAnalyzerOpened] = useState(false);
+  const [analyzerFocus, setAnalyzerFocus] = useState<{
+    target: "analyze" | "import";
+    request: number;
+  } | null>(null);
   const { records, loading, error, reload } = useRecords();
+  const openAnalyzer = (target: "analyze" | "import") => {
+    setAnalyzerOpened(true);
+    setAnalyzerFocus((current) => ({
+      target,
+      request: (current?.request ?? 0) + 1,
+    }));
+    setTab("analyzer");
+  };
 
   return (
     <div className="page-shell">
@@ -43,12 +55,17 @@ function Dashboard() {
           telemetryLoading={loading}
           telemetryError={error}
           reloadTelemetry={reload}
+          onAnalyzeSave={() => openAnalyzer("analyze")}
+          onImportCampaign={() => openAnalyzer("import")}
         />
       )}
       {tab === "soldiers" && <SoldiersTab />}
       {analyzerOpened && (
         <div hidden={tab !== "analyzer"}>
-          <AnalyzerTab onNavigateToCampaignTrends={() => setTab("chart")} />
+          <AnalyzerTab
+            focusRequest={analyzerFocus}
+            onNavigateToCampaignTrends={() => setTab("chart")}
+          />
         </div>
       )}
     </div>

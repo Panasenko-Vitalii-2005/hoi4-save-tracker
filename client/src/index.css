@@ -3891,8 +3891,21 @@ button {
   justify-content: flex-start;
 }
 
-.analyzer-save-browser-head h2 {
+.analyzer-save-browser-copy {
+  min-width: 240px;
+  flex: 1;
   margin-right: auto;
+}
+
+.analyzer-save-browser-copy h2 {
+  margin: 0 0 5px;
+}
+
+.analyzer-save-browser-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .analyzer-save-action {
@@ -3948,6 +3961,56 @@ button {
 .analyzer-save-meta {
   color: var(--muted);
   font-size: 12px;
+}
+
+.product-empty-state,
+.analysis-comparison-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px;
+  border: 1px dashed var(--intel-line-strong, var(--line));
+  border-radius: 12px;
+  background: var(--intel-surface-deep, var(--paper-strong));
+}
+
+.product-empty-state h3,
+.analysis-comparison-empty h2 {
+  margin: 0 0 5px;
+  color: var(--ink);
+  font-size: 18px;
+  letter-spacing: -0.025em;
+}
+
+.product-empty-state p,
+.analysis-comparison-empty p {
+  max-width: 660px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.product-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+}
+
+.product-empty-actions .button,
+.analysis-comparison-empty > .button {
+  white-space: nowrap;
+}
+
+.analysis-comparison-empty {
+  min-height: 150px;
+}
+
+.analysis-comparison-empty .eyebrow {
+  display: block;
+  margin-bottom: 5px;
 }
 
 /* Batch save import */
@@ -5101,7 +5164,9 @@ button {
 
   .batch-analysis-head,
   .batch-analysis-complete,
-  .batch-analysis-toolbar {
+  .batch-analysis-toolbar,
+  .product-empty-state,
+  .analysis-comparison-empty {
     align-items: stretch;
     flex-direction: column;
   }
@@ -5140,6 +5205,11 @@ button {
     margin-right: 0;
   }
 
+  .analyzer-save-browser-copy {
+    width: 100%;
+    margin-right: 0;
+  }
+
   .batch-analysis-summary {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -5148,7 +5218,10 @@ button {
   .batch-analysis-actions,
   .batch-analysis-actions > *,
   .batch-analysis-toolbar-actions,
-  .batch-analysis-toolbar-actions > * {
+  .batch-analysis-toolbar-actions > *,
+  .product-empty-actions,
+  .product-empty-actions > *,
+  .analysis-comparison-empty > .button {
     width: 100%;
   }
 

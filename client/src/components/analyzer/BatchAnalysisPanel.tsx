@@ -381,6 +381,7 @@ export const BatchAnalysisPanel = forwardRef<
 
   return (
     <section
+      id="import-campaign"
       className="panel batch-analysis-panel"
       aria-labelledby="batch-analysis-title"
       data-phase={phase}
@@ -394,10 +395,10 @@ export const BatchAnalysisPanel = forwardRef<
       <div className="panel-head batch-analysis-head">
         <div>
           <span className="batch-analysis-eyebrow">Campaign import</span>
-          <h2 id="batch-analysis-title">Analyze multiple saves</h2>
+          <h2 id="batch-analysis-title">Import campaign</h2>
           <p>
-            Select or drop a campaign timeline. Existing analyses are skipped by
-            content, and new saves run one at a time.
+            Select or drop multiple .hoi4 saves. Already analyzed saves are
+            skipped; only new saves are analyzed and added to Campaign Trends.
           </p>
         </div>
         <button
@@ -405,7 +406,7 @@ export const BatchAnalysisPanel = forwardRef<
           disabled={disabled || phase === "running" || phase === "identifying"}
           onClick={() => inputRef.current?.click()}
         >
-          Import Multiple Saves
+          Import Campaign
         </button>
         <input
           ref={inputRef}
@@ -425,7 +426,7 @@ export const BatchAnalysisPanel = forwardRef<
 
       {phase === "idle" ? (
         <div className="batch-analysis-drop-hint">
-          Drop .hoi4 files here, or use Import Multiple Saves.
+          Drop multiple .hoi4 saves here, or use Import Campaign.
         </div>
       ) : (
         <>

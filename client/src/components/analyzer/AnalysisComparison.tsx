@@ -33,10 +33,12 @@ export function AnalysisComparison({
   items,
   busy,
   onUnavailable,
+  onAnalyzeSave,
 }: {
   items: RecentAnalysis[];
   busy: boolean;
   onUnavailable: () => void;
+  onAnalyzeSave?: () => void;
 }) {
   const [baseHash, setBaseHash] = useState("");
   const [targetHash, setTargetHash] = useState("");
@@ -52,6 +54,7 @@ export function AnalysisComparison({
     () => items.filter((item) => item.hasPersistedResult === true),
     [items],
   );
+
   const base = available.find((item) => item.hash === baseHash);
   const target = available.find((item) => item.hash === targetHash);
   const selectedChronology =
@@ -137,6 +140,31 @@ export function AnalysisComparison({
       }
     }
   };
+
+  if (available.length < 2) {
+    const noneAvailable = available.length === 0;
+    return (
+      <section
+        className="panel analysis-comparison-controls analysis-comparison-empty"
+        aria-label="Compare saves"
+      >
+        <div>
+          <span className="eyebrow">Saved analysis comparison</span>
+          <h2>Compare Saves</h2>
+          <p>
+            {noneAvailable
+              ? "Analyze at least two saves before comparing campaign snapshots."
+              : "One saved analysis is ready. Analyze one more save to compare changes."}
+          </p>
+        </div>
+        {onAnalyzeSave && (
+          <button className="button button-primary" onClick={onAnalyzeSave}>
+            {noneAvailable ? "Analyze Save" : "Analyze Another Save"}
+          </button>
+        )}
+      </section>
+    );
+  }
 
   return (
     <>

@@ -66,6 +66,17 @@ describe("BatchAnalysisPanel", () => {
     );
   };
 
+  test("explains campaign import before files are selected", async () => {
+    await act(async () => root.render(<BatchAnalysisPanel />));
+
+    expect(container.textContent).toContain("Import campaign");
+    expect(container.textContent).toContain("Select or drop multiple .hoi4 saves");
+    expect(container.textContent).toContain("Already analyzed saves are skipped");
+    expect(container.textContent).toContain("added to Campaign Trends");
+    expect(button("Import Campaign")).toBeDefined();
+    expect(input().multiple).toBe(true);
+  });
+
   test("reviews, deduplicates and sequentially processes files with isolated retry", async () => {
     const knownContents = "known";
     const firstContents = "first";

@@ -134,7 +134,7 @@ describe("analysis request lifecycle", () => {
     await render();
     expect(status().textContent).toBe("");
     expect(status().getAttribute("aria-live")).toBe("polite");
-    expect(button("Upload .hoi4").disabled).toBe(false);
+    expect(button("Analyze Save").disabled).toBe(false);
     expect(picker().disabled).toBe(false);
     expect(row().tabIndex).toBe(0);
     expect(requests).toHaveLength(0);
@@ -148,7 +148,7 @@ describe("analysis request lifecycle", () => {
     expect(
       status().querySelector(".spinner")?.getAttribute("aria-hidden"),
     ).toBe("true");
-    expect(button("Upload .hoi4").disabled).toBe(true);
+    expect(button("Analyze Save").disabled).toBe(true);
     expect(picker().disabled).toBe(true);
     expect(row().getAttribute("aria-disabled")).toBe("true");
     expect(row().tabIndex).toBe(-1);
@@ -209,7 +209,7 @@ describe("analysis request lifecycle", () => {
     expect(date()).toBe("1944.5.1");
     expect(status().textContent).toContain("✓ first.hoi4");
     expect(status().querySelector(".spinner")).toBeNull();
-    expect(button("Upload .hoi4").disabled).toBe(false);
+    expect(button("Analyze Save").disabled).toBe(false);
     expect(row().getAttribute("aria-disabled")).toBe("false");
   });
 
@@ -238,7 +238,7 @@ describe("analysis request lifecycle", () => {
     );
     expect(status().textContent).toContain("busy with another save");
     expect(status().textContent).not.toMatch(/Worker|private/);
-    expect(button("Upload .hoi4").disabled).toBe(false);
+    expect(button("Analyze Save").disabled).toBe(false);
     await start();
     expect(status().textContent).not.toContain("busy");
     await respond(1, snapshot());
@@ -264,7 +264,7 @@ describe("analysis request lifecycle", () => {
       expect(status().textContent).toContain("Could not analyze the save.");
       expect(status().textContent).not.toMatch(/Worker|private|STACK/);
       expect(date()).toBe("1944.5.1");
-      expect(button("Upload .hoi4").disabled).toBe(false);
+      expect(button("Analyze Save").disabled).toBe(false);
       await start();
       await respond(2, snapshot("1944.6.1"));
       expect(date()).toBe("1944.6.1");
@@ -317,7 +317,7 @@ describe("analysis request lifecycle", () => {
       expect(status().textContent).not.toMatch(/STACK|private|server\/upload/);
       expect(status().getAttribute("aria-live")).toBe("polite");
       expect(date()).toBe("1944.5.1");
-      expect(button("Upload .hoi4").disabled).toBe(false);
+      expect(button("Analyze Save").disabled).toBe(false);
       expect(requests).toHaveLength(2); // Never auto-retry.
       await act(async () => chooseFile());
       await respond(2, snapshot("1944.6.1"));
@@ -348,7 +348,7 @@ describe("analysis request lifecycle", () => {
     await act(async () => button("Save Analyzer").click());
     await act(async () => row().click());
     expect(requests).toHaveLength(1);
-    expect(button("Upload .hoi4").disabled).toBe(true);
+    expect(button("Analyze Save").disabled).toBe(true);
     await respond(0, snapshot());
     expect(date()).toBe("1944.5.1");
   });

@@ -342,11 +342,15 @@ export function CampaignTrends({
   telemetryLoading,
   telemetryError,
   reloadTelemetry,
+  onAnalyzeSave,
+  onImportCampaign,
 }: {
   telemetry: SaveRecord[];
   telemetryLoading: boolean;
   telemetryError: string | null;
   reloadTelemetry: () => void;
+  onAnalyzeSave?: () => void;
+  onImportCampaign?: () => void;
 }) {
   const plotTheme = usePlotTheme();
   const request = useRef<AbortController | null>(null);
@@ -666,11 +670,35 @@ export function CampaignTrends({
         </section>
       )}
       {!loading && data?.campaigns.length === 0 && (
-        <section className="panel campaign-state" role="status">
-          <h2>No campaign trend data yet</h2>
+        <section
+          className="panel campaign-state"
+          aria-labelledby="campaign-empty-title"
+        >
+          <h2 id="campaign-empty-title">No campaign trend data yet</h2>
           <p>
-            Analyze multiple saves from the same campaign to build a timeline.
+            Campaign Trends needs multiple analyzed saves from the same
+            campaign. Import a group of .hoi4 saves to build its history.
           </p>
+          {(onImportCampaign || onAnalyzeSave) && (
+            <div className="product-empty-actions">
+              {onImportCampaign && (
+                <button
+                  className="button button-primary"
+                  onClick={onImportCampaign}
+                >
+                  Import Campaign
+                </button>
+              )}
+              {onAnalyzeSave && (
+                <button
+                  className="button button-secondary"
+                  onClick={onAnalyzeSave}
+                >
+                  Analyze Save
+                </button>
+              )}
+            </div>
+          )}
         </section>
       )}
 

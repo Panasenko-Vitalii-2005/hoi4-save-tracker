@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { RecentAnalyses } from "../src/components/analyzer/RecentAnalyses";
 import { AnalyzerTab } from "../src/components/analyzer/AnalyzerTab";
+import { AnalysisComparison } from "../src/components/analyzer/AnalysisComparison";
 import type {
   AnalysisComparisonDto,
   CountryComparison,
@@ -175,6 +176,42 @@ describe("Save comparison UI", () => {
     comparisonRows().find(
       (item) => item.querySelector(".comparison-country-tag")?.textContent === tag,
     )!;
+
+  test("explains Compare requirements with zero persisted analyses", async () => {
+    const analyze = vi.fn();
+    await act(async () =>
+      root.render(
+        <AnalysisComparison
+          items={[]}
+          busy={false}
+          onUnavailable={() => {}}
+          onAnalyzeSave={analyze}
+        />,
+      ),
+    );
+    const controls = container.querySelector('[aria-label="Compare saves"]')!;
+    expect(controls.textContent).toContain(
+      "Analyze at least two saves before comparing campaign snapshots",
+    );
+    expect(controls.querySelector("select")).toBeNull();
+    await act(async () => button("Analyze Save").click());
+    expect(analyze).toHaveBeenCalledTimes(1);
+  });
+
+  test("explains that one persisted analysis needs one more save", async () => {
+    await act(async () =>
+      root.render(
+        <AnalysisComparison
+          items={[entries[0]]}
+          busy={false}
+          onUnavailable={() => {}}
+        />,
+      ),
+    );
+    const controls = container.querySelector('[aria-label="Compare saves"]')!;
+    expect(controls.textContent).toContain("One saved analysis is ready");
+    expect(controls.querySelector("select")).toBeNull();
+  });
 
   test("two explicit slots offer only available analyses and require both selections", async () => {
     await render();
@@ -644,11 +681,11 @@ describe("Save comparison UI", () => {
         }),
       ),
     );
-    expect(
-      (container.querySelector("#compare-base") as HTMLSelectElement).value,
-    ).toBe("");
-    expect(button("Compare").disabled).toBe(true);
-    expect(container.textContent).toContain("no longer available");
+    expect(container.querySelector("#compare-base")).toBeNull();
+    expect(container.querySelector("#compare-target")).toBeNull();
+    expect(container.textContent).toContain(
+      "Analyze at least two saves before comparing campaign snapshots",
+    );
   });
 
   test("deleting a selected analysis cancels pending comparison and keeps other selection", async () => {
