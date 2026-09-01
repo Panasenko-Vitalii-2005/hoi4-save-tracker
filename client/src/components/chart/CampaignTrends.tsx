@@ -310,6 +310,18 @@ function activateRow(
   activate();
 }
 
+function plotDate(value: string): string | null {
+  const match = /^(\d{1,4})\.(\d{1,2})\.(\d{1,2})$/.exec(value);
+  if (!match) return null;
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const year = match[1].padStart(4, "0");
+  const normalizedMonth = match[2].padStart(2, "0");
+  const normalizedDay = match[3].padStart(2, "0");
+  return `${year}-${normalizedMonth}-${normalizedDay}`;
+}
+
 export function CampaignTrends({
   telemetry,
   telemetryLoading,
@@ -423,8 +435,16 @@ export function CampaignTrends({
     settings.separateScale &&
     !settings.normalize &&
     effectiveMetrics.length <= 3;
+  const plottedDates = snapshots.map((snapshot) =>
+    plotDate(snapshot.gameDate),
+  );
+  const useDateAxis =
+    settings.xMode === "game_date" &&
+    plottedDates.every((value): value is string => value !== null);
   const xValues = snapshots.map((snapshot, index) =>
-    settings.xMode === "game_date" ? snapshot.gameDate : index + 1,
+    settings.xMode === "game_date"
+      ? (plottedDates[index] ?? snapshot.gameDate)
+      : index + 1,
   );
 
   const traces = useMemo(
@@ -445,6 +465,7 @@ export function CampaignTrends({
           customdata: snapshots.map((snapshot, index) => [
             snapshot.fileName,
             raw[index] === null ? "Unavailable" : formatValue(raw[index]),
+            snapshot.gameDate,
           ]),
           connectgaps: false,
           yaxis: separateScale
@@ -465,7 +486,7 @@ export function CampaignTrends({
           },
           hovertemplate:
             `<b>${definition.label}</b><br>` +
-            `%{x}<br>Displayed: %{y:,.3f}<br>` +
+            `Date: %{customdata[2]}<br>Displayed: %{y:,.3f}<br>` +
             `Snapshot: %{customdata[1]}<br>%{customdata[0]}<extra></extra>`,
         };
       }),
@@ -492,7 +513,14 @@ export function CampaignTrends({
       legend: { orientation: "h", x: 0, y: 1.12 },
       xaxis: {
         title: settings.xMode === "game_date" ? "Game date" : "Save sequence",
-        type: settings.xMode === "game_date" ? "category" : "linear",
+        type: useDateAxis
+          ? "date"
+          : settings.xMode === "game_date"
+            ? "category"
+            : "linear",
+        tickmode: "auto",
+        nticks: settings.xMode === "game_date" ? 8 : undefined,
+        tickangle: 0,
         gridcolor: plotTheme.isDark
           ? "rgba(230,238,236,0.08)"
           : "rgba(23,34,38,0.08)",
@@ -526,6 +554,7 @@ export function CampaignTrends({
     separateScale,
     settings.normalize,
     settings.xMode,
+    useDateAxis,
   ]);
 
   const duplicateDates = useMemo(() => {

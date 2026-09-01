@@ -174,7 +174,19 @@ describe("Campaign Trends", () => {
       container
         .querySelector('[data-testid="trend-plot"]')
         ?.getAttribute("data-traces") ?? "[]",
-    ) as { name: string; x: unknown[]; y: (number | null)[] }[];
+    ) as {
+      name: string;
+      x: unknown[];
+      y: (number | null)[];
+      customdata: unknown[][];
+      hovertemplate: string;
+    }[];
+  const layout = () =>
+    JSON.parse(
+      container
+        .querySelector('[data-testid="trend-plot"]')
+        ?.getAttribute("data-layout") ?? "{}",
+    ) as { xaxis?: Record<string, unknown> };
 
   test("renders heading, campaign summary, timeline, and an accessible multi-save chart", async () => {
     await render();
@@ -268,13 +280,68 @@ describe("Campaign Trends", () => {
       snapshot("c", "1936.11.1", 3),
     ]);
     await render();
-    expect(traces()[0].x).toEqual(["1936.6.1", "1936.6.1", "1936.11.1"]);
+    expect(traces()[0].x).toEqual([
+      "1936-06-01",
+      "1936-06-01",
+      "1936-11-01",
+    ]);
+    expect(layout().xaxis?.type).toBe("date");
     await choose(select("X-axis"), "sequence");
     expect(traces()[0].x).toEqual([1, 2, 3]);
+    expect(layout().xaxis?.type).toBe("linear");
     await toggle(checkbox("One snapshot per game date"));
     expect(
       container.querySelectorAll(".campaign-timeline tbody tr"),
     ).toHaveLength(2);
+  });
+
+  test("uses a sparse automatic date axis without removing large-campaign points", async () => {
+    const largeCampaign = Array.from({ length: 179 }, (_, index) => {
+      const year = 1936 + Math.floor(index / 12);
+      const month = (index % 12) + 1;
+      return snapshot(
+        String.fromCharCode(97 + (index % 26)),
+        `${year}.${month}.1`,
+        index + 1,
+      );
+    }).map((entry, index) => ({
+      ...entry,
+      hash: index.toString(16).padStart(64, "0"),
+      fileName: `autosave_${index + 1}.hoi4`,
+      analyzedAt: new Date(Date.UTC(2026, 0, 1, index)).toISOString(),
+    }));
+    response = dto(largeCampaign);
+
+    await render();
+
+    expect(traces()[0].x).toHaveLength(179);
+    expect(traces()[0].x[0]).toBe("1936-01-01");
+    expect(traces()[0].x.at(-1)).toBe("1950-11-01");
+    expect(traces()[0].customdata[0][2]).toBe("1936.1.1");
+    expect(traces()[0].hovertemplate).toContain("Date: %{customdata[2]}");
+    expect(layout().xaxis).toMatchObject({
+      type: "date",
+      tickmode: "auto",
+      nticks: 8,
+      tickangle: 0,
+    });
+    expect(layout().xaxis).not.toHaveProperty("tickvals");
+    expect(layout().xaxis).not.toHaveProperty("ticktext");
+  });
+
+  test("keeps small campaigns on the same readable date axis", async () => {
+    await render();
+    expect(traces()[0].x).toEqual([
+      "1936-06-01",
+      "1936-08-01",
+      "1936-11-01",
+    ]);
+    expect(layout().xaxis).toMatchObject({ type: "date", tickmode: "auto" });
+    expect(traces()[0].customdata.map((data) => data[2])).toEqual([
+      "1936.6.1",
+      "1936.8.1",
+      "1936.11.1",
+    ]);
   });
 
   test("country focus uses exact tags and renders country absence as a gap", async () => {
