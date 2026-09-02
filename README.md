@@ -1,146 +1,195 @@
 # HOI4 Save Tracker
 
-HOI4 Save Tracker is a local analytics platform for **Hearts of Iron IV** save files, campaign progression, save comparison, and autosave performance telemetry. It turns large `.hoi4` saves into explorable military, industrial, logistics, and campaign-level snapshots while keeping the workflow local.
+HOI4 Save Tracker is a local-first analytics application for **Hearts of Iron IV** save files. It parses large plain-text or ZIP-compressed `.hoi4` saves, persists compact derived results, and turns a sequence of snapshots into explorable country statistics, comparisons, campaign trends, exports, and printable reports.
 
-## Key features
+The project is designed around explicit snapshot semantics: it shows what the save contains, preserves unavailable values as unavailable, and avoids presenting inferred history as fact.
 
-### Save intelligence
+## What it does
 
-- Analyze plain or compressed HOI4 saves through a responsive React interface.
-- Review country-level divisions, manpower in the field, aircraft, ships, and effective industry.
-- Inspect land forces, command hierarchies, division templates, current equipment, national stockpiles, and active land/air production lines.
-- Explore calculated war casualties by country, opponent, and bilateral war record.
-- Recover naval-loss events and safely credited naval kills from the data retained by a save.
-
-### Campaign workflows
-
-- Keep a durable **Recent Analyses** history and reopen results without the original save or another parser run.
-- Compare two persisted snapshots using explicit **Target − Base** semantics and campaign, chronology, and game-version context.
-- Build **Campaign Trends** from persisted analyses, with global or country metrics, presets, normalization, moving averages, and a save timeline.
-- Create revocable, read-only public share links for persisted analyses.
-- Import many saves with **Batch Analysis**; content hashes identify known results so only new saves are analyzed.
-
-### Engineering and operations
-
-- Run CPU-intensive parsing in bounded Node.js Worker Threads so the API event loop remains responsive.
-- Protect uploads with size, timeout, archive-layout, decompression, and temporary-file cleanup controls.
-- Deduplicate saves by raw-file SHA-256, share in-flight work, cache recent results in memory, and persist completed results locally.
-- Collect optional autosave write-time, CPU, RAM, and campaign telemetry with the independent Python tracker.
-- Protect parser behavior with focused unit, integration, upload, persistence, comparison, and regression tests.
+- Analyzes one save and exposes country, industry, land-force, stockpile, production, casualty, and naval-loss detail.
+- Imports a collection of saves as a bounded campaign workflow, reusing already known content hashes.
+- Reopens recent analyses from gzip-compressed local persistence without the original save or another parser run.
+- Compares two snapshots with explicit **Target − Base** deltas and compatibility context.
+- Builds campaign trends from every persisted snapshot in an exact `game_unique_id` group.
+- Manages local analysis storage, pins, campaign cleanup, and opt-in read-only share links.
+- Exports deterministic CSV/JSON data and renders human-readable single-save, comparison, and campaign reports for browser printing.
 
 ## Screenshots
 
-Project screenshots are not currently tracked in the repository. Useful additions would cover the Save Analyzer, Compare Saves, Campaign Trends, Recent Analyses, and Batch Analysis views.
+| Recent Analyses and storage | Compare Saves |
+| --- | --- |
+| ![Recent Analyses with local storage summary](docs/assets/recent-analyses.png) | ![Save comparison with country deltas](docs/assets/compare-saves.png) |
+
+| Campaign Trends | Analysis report |
+| --- | --- |
+| ![Campaign Trends across persisted snapshots](docs/assets/campaign-trends.png) | ![Human-readable save analysis report](docs/assets/analysis-report.png) |
+
+The screenshots use real parsed campaign data from a local read-only copy of the persistence store. Original `.hoi4` files are not included in the repository.
+
+## Core features
+
+### Single-save analysis
+
+The analyzer presents strategic totals and per-country data, plus focused views for:
+
+- effective civilian, military, and dockyard industry;
+- bilateral war-casualty records;
+- recoverable naval-loss events and conservatively credited kills;
+- national stockpiles and exact equipment designs;
+- current land/air military production lines, rates, efficiency, and shortages;
+- divisions, templates, equipment, manpower components, and army hierarchy.
+
+### Campaign workflow
+
+**Import Campaign** accepts multiple selected saves. The browser hashes files sequentially, asks the API which results already exist, and submits only unknown content through the same hardened upload pipeline. Each successful analysis is durable immediately; one failed save does not discard the others.
+
+**Recent Analyses** provides reopen, pin, delete, share, compare, report, export, and local-storage management actions. Bulk cleanup protects pinned analyses by default.
+
+**Campaign Trends** plots all persisted snapshots in chronological order. Global and per-country scopes support presets, optional normalization, moving averages, readable date ticks, hover detail, and an exact save timeline.
+
+### Compare, export, and reports
+
+- Compare uses the union of exact country tags and reports added, removed, changed, and unavailable values.
+- CSV and JSON exports are generated from the same loaded DTOs used by the UI; no second analysis is run.
+- Single Save, Compare, and Campaign reports share a document-oriented report shell.
+- Print uses the browser print dialog rather than a server-side PDF engine.
+
+### Upload and runtime hardening
+
+- admission control begins before multipart parsing;
+- raw upload, uncompressed payload, ZIP directory, and ZIP entry limits;
+- validation for plain and compressed HOI4 containers;
+- upload and Worker deadlines;
+- bounded Worker concurrency and V8 heap limits;
+- cleanup for success, validation errors, crashes, timeouts, and interrupted uploads;
+- safe public error messages without stack traces or local paths.
 
 ## Architecture
 
-### Save analysis
-
-```text
-.hoi4 upload or local save
-        ↓
-upload validation and resource limits
-        ↓
-SHA-256 identity and deduplication
-        ↓
-bounded Node.js Worker Thread
-        ↓
-HOI4 parser and deterministic aggregation
-        ↓
-AnalyzeResult
-        ↓
-in-memory cache + durable filesystem persistence
-        ↓
-Recent Analyses / Compare / Trends / Share Links
-        ↓
-React UI
+```mermaid
+flowchart LR
+  UI[React / Vite browser UI] --> API[NestJS API]
+  API --> Gate[Upload admission and validation]
+  Gate --> Hash[SHA-256 cache and in-flight deduplication]
+  Hash --> Worker[Bounded Worker Thread]
+  Worker --> Parser[HOI4 parser and aggregators]
+  Parser --> Result[AnalyzeResult]
+  Result --> Cache[In-memory LRU cache]
+  Result --> Store[Gzip result persistence]
+  Store --> Recent[Recent metadata]
+  Store --> Views[Compare / Trends / Reports / Export]
+  Store --> Share[Opt-in public share link]
 ```
 
-The backend stores recent-analysis metadata and gzip-compressed analysis results on the local filesystem. Docker uses a named volume for this data. It does not require a database, Redis, or an external queue.
+The browser owns presentation and batch orchestration. NestJS owns admission, validation, caching, persistence, and compact downstream DTOs. CPU-heavy decoding/parsing runs in a Worker Thread so the HTTP event loop stays responsive. The parser remains a deterministic backend boundary; the frontend never parses save text.
 
-### Batch analysis
+See [Architecture](docs/architecture.md) for component boundaries, persistence details, API routes, and failure behavior.
 
-```text
-multiple selected saves
-        ↓
-sequential browser SHA-256 preflight
-        ↓
-known hashes reused + new saves queued
-        ↓
-existing hardened analysis pipeline
-        ↓
-each successful result persisted immediately
-        ↓
-campaign grouping by game_unique_id
-        ↓
-Campaign Trends
-```
+## Analysis pipeline
 
-Batch import is browser-orchestrated and processes new files independently. A failure does not discard successful results, and reselecting the same collection naturally resumes through hash recognition.
+1. A multipart upload or validated local-save path enters the analyzer.
+2. Request admission and size/time limits are applied; uploaded bytes go to a managed temporary file.
+3. The container is validated as supported HOI4 plain text or ZIP, including actual decompressed-byte limits.
+4. SHA-256 of the original save bytes becomes the analysis identity.
+5. A completed in-memory result or matching in-flight request is reused when available.
+6. Otherwise a bounded Worker decodes the save once, builds shared structural indexes, parses it, and returns `AnalyzeResult` plus campaign context.
+7. The result is gzip-compressed and atomically persisted; compact Recent metadata is updated separately.
+8. Compare, Trends, Reports, Export, Storage, and Share read persisted results without rerunning the parser.
+9. Managed temporary uploads are removed on success and supported failure/abort paths.
 
-### Autosave telemetry
+## Campaign and data semantics
 
-The optional Python tracker watches the HOI4 autosave, measures file-write duration and process CPU/RAM, extracts lightweight save statistics, and writes `data/autosave_intervals.json`. The NestJS telemetry endpoints and React telemetry panel read that file.
+- Exact `game_unique_id` is authoritative for campaign grouping and comparison compatibility. Filenames, dates, and country names are never used to guess campaign identity.
+- Legacy results without campaign identity remain unknown and isolated.
+- Compare delta is always **Target − Base**; selecting an earlier Target does not reorder the inputs.
+- Compare is a comparison of two saved snapshots, not a reconstruction of every event between them.
+- War casualties are calculated from bilateral `war_relation` records retained in the save.
+- Naval losses reflect recoverable historical records; killer attribution is intentionally conservative and is unavailable for some events.
+- Missing numeric values remain `null`/unavailable rather than becoming zero.
+- Trend normalization and moving averages affect chart presentation only. Exports and report summaries retain raw snapshot values.
 
-Autosave telemetry is independent of Campaign Trends. Trends are built from persisted full save analyses, not from tracker records.
+## Demonstration path
 
-## Core product workflows
+1. Open **Save Analyzer** and analyze one `.hoi4` save.
+2. Use **Import Campaign** to select a sequence of saves.
+3. Reopen and manage snapshots in **Recent Analyses**.
+4. Choose Base and Target in **Compare Saves**.
+5. Explore the exact campaign in **Campaign Trends**.
+6. Open **View Report**, print it, or export CSV/JSON.
 
-### Analyze a save
+## Performance and scale
 
-Upload one `.hoi4` file, or select one from the configured local save directory, then inspect its overview and detailed War Casualties, Naval Losses, Stockpile, Production, and Land Forces views.
+Measurements below are engineering checkpoints from the same Windows development machine and the repository's approximately 104 MB control save; they are not cross-machine guarantees.
 
-### Build campaign history
+- The direct parser path was reduced historically from roughly **29–30 s** to roughly **3.3–3.4 s** through structural-index reuse and targeted scan elimination (about an 8× improvement).
+- At the Worker checkpoint, direct analysis measured about **3.327 s median** and Worker-backed analysis about **3.472 s median** (roughly 4.3% process-boundary overhead).
+- During analysis, median health-request latency improved from roughly **1.7 s** on the main thread to about **1.25 ms** with the Worker boundary.
+- The real campaign used for UI validation contains **179 persisted snapshots** spanning `1936.2.1` to `1950.11.1`.
+- Persisted results are gzip-compressed. A representative control result measured about **6.55 MiB JSON** and **481 KiB gzip** at the persistence checkpoint.
+- Storage status uses filesystem metadata for compressed artifacts; it does not inflate results, run the parser, or start a Worker.
 
-Select or drop multiple saves in Batch Analysis. The browser identifies duplicate content, the backend reuses persisted hashes, and only new saves enter the bounded analysis pipeline. Persisted snapshots with the same `game_unique_id` become one campaign timeline.
+These values were recorded during specific optimization checkpoints. Hardware, Node version, save compression, mods, and campaign size affect runtime and memory.
 
-### Compare saves
+## Correctness checkpoint
 
-Choose two persisted analyses as Base and Target. Every delta is calculated as:
+`autosave_100_temp.hoi4` is used locally as a regression fixture for end-to-end diagnostics (the file itself is ignored by Git):
 
-```text
-Delta = Target − Base
-```
+| Metric | Verified value |
+| --- | ---: |
+| Game date | `1944.5.1` |
+| Active countries | 96 |
+| Divisions | 3,250 |
+| Aircraft | 53,095 |
+| Ships | 1,539 |
+| Naval losses | 993 |
 
-The UI identifies reverse chronology, identical analyses, same-date snapshots, known campaign mismatch, and known game-version mismatch. Added and removed countries represent snapshot presence, not inferred creation or annexation events. Casualty and naval-loss deltas compare cumulative snapshot values; they do not prove that every difference occurred during the selected interval.
+Representative Germany industry totals:
 
-### Share an analysis
+| Military factories | Civilian factories | Dockyards |
+| ---: | ---: | ---: |
+| 286 | 228 | 39 |
 
-Create a read-only public link from a persisted Recent Analysis and revoke it when it is no longer needed. The link exposes the intended shared analysis route, not the original `.hoi4` file.
+These are regression checkpoints for one save, not universal expectations for HOI4 campaigns.
 
-## Project components
-
-- **`client/`** — React 19, TypeScript, Vite, Plotly, responsive analyzer views, comparisons, trends, recent-history management, sharing, and batch orchestration.
-- **`server/`** — NestJS API, save validation, Worker orchestration, parser modules, deterministic aggregators, filesystem persistence, comparison/trend DTOs, and share-link APIs.
-- **Python utilities** — `tracker.py` records detailed autosave telemetry; `hoi4_autosave_watcher.py` creates content-hash-aware indexed save copies; `dashboard.py` serves the legacy telemetry dashboard in `web/`.
-- **`diagnostics/`** — focused Python tools for validating unit, manpower, equipment, division, and industry interpretations against real saves.
-- **`server/scripts/`** — developer investigation scripts for war-casualty parsing and duplicate/mirror analysis.
-
-## Technology stack
+## Tech stack
 
 | Area | Technologies |
 | --- | --- |
-| Frontend | React, TypeScript, Vite, Plotly, Vitest, oxlint |
-| Backend | Node.js, NestJS, TypeScript, Worker Threads, Jest |
-| Parsing and storage | Custom HOI4 text/ZIP parser, SHA-256, gzip-compressed filesystem persistence |
-| Telemetry | Python, watchdog, psutil |
+| Frontend | React 19, TypeScript, Vite, Plotly, Vitest, oxlint |
+| Backend | Node.js 22, NestJS 11, TypeScript, Worker Threads, Jest |
+| Parsing | Custom HOI4 text/ZIP decoder, structural indexes, deterministic aggregators |
+| Persistence | SHA-256 identity, gzip, atomic filesystem writes |
 | Deployment | Docker Compose, nginx |
+| Optional telemetry | Python, watchdog, psutil |
 
-## Local development
+## Running locally
 
-There is no root Node package; install and run the backend and frontend separately.
+### Docker Compose (recommended)
 
-### Backend
+Requirements: Docker Desktop with Compose v2.
+
+```bash
+docker compose up --build
+```
+
+Open [http://localhost:8081](http://localhost:8081). Stop with `docker compose down`.
+
+- `./saves` is mounted read-only at `/app/saves` for optional local browsing. Create the directory if it is absent; browser upload works independently.
+- `analysis-history` is a named volume containing Recent metadata, compressed results, and share metadata.
+- Save files are excluded from both Docker images.
+- `docker compose down -v` also deletes the named persistence volume; use it only when that is intended.
+
+Set `FRONTEND_PORT` to change the host port, for example `FRONTEND_PORT=8090 docker compose up --build` in a shell that supports inline environment variables.
+
+### Native development
+
+Requirements: Node.js 22 and npm.
 
 ```bash
 cd server
 npm ci
 npm run start:dev
 ```
-
-The NestJS API listens on `http://localhost:3001` by default.
-
-### Frontend
 
 In another terminal:
 
@@ -150,97 +199,77 @@ npm ci
 npm run dev
 ```
 
-Vite serves the application at `http://localhost:5173` and proxies `/api` requests to the local backend.
+Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` to `http://localhost:3001`.
 
-### Optional Python autosave tools
+By default native persistence is relative to `server/` under `server/data/`. `HOI4_SAVES_DIR` controls the directory exposed by the local-save browser.
 
-The Python utilities currently keep local Windows save paths as constants near the top of their files. Update those paths before running them on another machine.
+## Configuration
 
-The lightweight content-hash watcher uses only the Python standard library:
+All values are optional; invalid numeric values fall back to the documented defaults unless noted.
 
-```bash
-python hoi4_autosave_watcher.py
-```
+| Group | Variable | Default | Purpose |
+| --- | --- | ---: | --- |
+| Server | `PORT` | `3001` | NestJS listen port |
+| Local saves | `HOI4_SAVES_DIR` | `../saves` from backend cwd | Read-only local-save browser root |
+| Upload | `HOI4_UPLOAD_DIRECTORY` | OS temp directory | Managed temporary uploads |
+| Upload | `HOI4_MAX_UPLOAD_BYTES` | 256 MiB | Raw uploaded-file limit |
+| Upload | `HOI4_MAX_UNCOMPRESSED_BYTES` | 512 MiB | Plain/decompressed content limit |
+| Upload | `HOI4_UPLOAD_TIMEOUT_MS` | 120,000 | Multipart receive deadline |
+| Admission | `HOI4_ANALYSIS_REQUESTS` | `2` | Concurrent admitted analysis requests per process |
+| Worker | `HOI4_ANALYSIS_WORKERS` | `1` | Active analysis Workers per process; invalid values fail startup |
+| Worker | `HOI4_ANALYSIS_TIMEOUT_MS` | 60,000 | Hard analysis deadline |
+| Worker | `HOI4_ANALYSIS_HEAP_MB` | 1,024 | V8 old-generation limit per Worker |
+| Cache | `HOI4_ANALYSIS_CACHE_ENTRIES` | `3` | Completed in-memory results |
+| Recent | `HOI4_RECENT_ANALYSES_FILE` | `data/recent-analyses.json` | Recent metadata file |
+| Recent | `HOI4_RECENT_ANALYSES_LIMIT` | `200` | Metadata retention count |
+| Results | `HOI4_ANALYSIS_RESULTS_DIR` | `data/analysis-results` | Gzip result directory |
+| Results | `HOI4_ANALYSIS_RESULTS_MAX_BYTES` | 128 MiB | Hard compressed-result budget |
+| Shares | `HOI4_SHARED_ANALYSES_FILE` | `data/shared-analyses.json` | Share metadata file |
+| Shares | `HOI4_SHARED_ANALYSES_LIMIT` | `1,000` | Active share-link limit |
+| Compose | `FRONTEND_PORT` | `8081` | Host port for nginx |
 
-The telemetry tracker additionally requires `watchdog` and `psutil`:
+Limits are per backend process. The result byte ceiling is authoritative: unpinned files are evicted oldest-first, pins and active shares receive stronger protection, and the hard ceiling can ultimately remove any result. Metadata may remain even when a result is no longer reopenable.
 
-```bash
-python -m pip install watchdog psutil
-python tracker.py
-```
+## Important API routes
 
-To view its legacy standalone web dashboard after telemetry data exists:
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/health` | Liveness check |
+| `GET` | `/api/saves` | List configured local `.hoi4` files |
+| `POST` | `/api/analyze` | Analyze multipart upload or validated local path |
+| `POST` | `/api/analyze/batch/preflight` | Return already persisted hashes for a bounded batch |
+| `GET` | `/api/analyze/recent` | List Recent metadata |
+| `GET` | `/api/analyze/recent/:hash/result` | Reopen a persisted result |
+| `PATCH` | `/api/analyze/recent/:hash` | Pin or unpin metadata |
+| `DELETE` | `/api/analyze/recent/:hash` | Delete one recent analysis |
+| `GET` | `/api/analyze/compare?base=&target=` | Compare two persisted results |
+| `GET` | `/api/analyze/trends` | Build compact campaign trend DTOs |
+| `GET` | `/api/analyze/storage` | Read compressed-result storage status |
+| `DELETE` | `/api/analyze/storage/unpinned` | Delete unpinned analyses |
+| `DELETE` | `/api/analyze/storage/campaign/:campaignId` | Delete one exact campaign group |
+| `POST` | `/api/analyze/recent/:hash/share` | Create/reuse a public link |
+| `DELETE` | `/api/analyze/recent/:hash/share` | Revoke a public link |
+| `GET` | `/api/share/:id` | Open a shared read-only analysis |
 
-```bash
-python dashboard.py
-```
+The API is currently an unauthenticated local application surface, not a multi-tenant public contract. See the security notes below.
 
-It serves `web/` at `http://127.0.0.1:8765`.
+## Persistence model
 
-## Docker
+The analysis store persists:
 
-Start the production-like two-container application from the repository root:
+- gzip-compressed derived `AnalyzeResult` envelopes, keyed by save-content SHA-256;
+- compact Recent metadata such as filename, dates, availability, pin, and campaign context;
+- separate opaque share-ID-to-hash metadata.
 
-```bash
-docker compose up --build
-```
+Writes use managed temporary files, fsync, and atomic rename. Mutations are serialized within one process. Reconciliation handles recognized stale temporary/orphan artifacts and does not traverse arbitrary files or symbolic links.
 
-Open [http://localhost:8081](http://localhost:8081).
+The analysis-result store does **not** retain uploaded original `.hoi4` files. The optional `./saves:/app/saves:ro` Compose mount is a separate user-provided source directory.
 
-- nginx serves the built React SPA and proxies `/api/*` to the internal NestJS service.
-- Browser uploads use temporary container storage and are removed after processing, including supported failure paths.
-- Save files are excluded from both images.
-- `./saves` is mounted read-only at `/app/saves` for optional local browsing; browser upload works independently of that mount.
-- Recent metadata, compressed results, and share-link metadata persist in the `analysis-history` named volume.
-- A Windows path entered in the browser cannot dynamically create a Docker mount. Change or override the Compose volume mapping instead.
-- Large late-game or modded saves can require substantial container memory while decoded and analyzed.
+There is no database and no cross-process storage lock. One backend should own a persistence directory.
 
-Stop the application with:
+## Testing
 
-```bash
-docker compose down
-```
-
-Removing the named volume with `docker compose down -v` also removes locally persisted analysis history, results, and share links.
-
-## Batch Analysis
-
-1. Select or drop multiple `.hoi4` files.
-2. The browser computes SHA-256 hashes sequentially and asks the backend which results already exist.
-3. Duplicate selections and already persisted saves are skipped.
-4. New files use the same upload validation, Worker limits, cache, and cleanup path as single-save analysis.
-5. Every successful result is persisted immediately.
-6. A failed file does not abort the remaining batch.
-7. Selecting the collection again resumes naturally because known hashes are reused.
-8. Persisted snapshots become available to Recent Analyses, Compare Saves, and Campaign Trends.
-
-## Campaign Trends
-
-- Trend snapshots come from durable analysis results.
-- `game_unique_id` is used as campaign identity when available; saves known to belong to different campaigns are not silently combined.
-- Legacy results without campaign identity remain unknown and isolated instead of being merged together.
-- Global and per-country metrics support presets, optional 0–1 normalization, moving averages over ordered snapshots, and an exact save timeline.
-- Values are discrete analyzed-save snapshots, not continuous gameplay telemetry.
-- Missing country or metric values remain unavailable gaps and are never fabricated as zero.
-
-## Compare Saves
-
-- Deltas always use **Target − Base**, including when Target is chronologically earlier.
-- The comparison reports same-analysis, same-date, reverse-chronology, campaign-compatibility, and game-version context when metadata is available.
-- Countries found in only one snapshot are marked Added or Removed; missing values are not converted to zero.
-- Casualty and recorded naval-loss differences remain snapshot comparisons, not asserted interval events.
-
-## Data and privacy
-
-- `.hoi4` files and `saves/` are excluded from Git and the Docker build context. Saves can be large and contain local campaign data; users provide their own files.
-- Uploaded raw saves are temporary and are removed after analysis. They are not retained as Recent Analysis data.
-- Recent metadata, compressed `AnalyzeResult` files, and share metadata are stored locally in `server/data/` by default, or in the Docker named volume under Compose.
-- Public share links are opt-in and read-only, but the current application has no user accounts or per-user ownership. Treat its local storage and deployment as shared application data.
-- Filenames, campaign identifiers, and parsed campaign statistics are still user data. Keep the storage directory and any generated share links appropriately private.
-
-## Tests and verification
-
-### Backend
+Backend:
 
 ```bash
 cd server
@@ -248,9 +277,7 @@ npm test
 npm run build
 ```
 
-Additional backend scripts include `npm run test:watch`, `npm run test:cov`, and `npm run test:e2e`.
-
-### Frontend
+Frontend:
 
 ```bash
 cd client
@@ -259,55 +286,63 @@ npm run lint
 npm run build
 ```
 
-The suites cover parser and aggregation semantics, upload boundaries, Worker behavior, caching and persistence, Recent Analyses, Compare, Campaign Trends, Share Links, Batch Analysis, and frontend interaction regressions.
+The suites cover parser/aggregation semantics, encoding and ZIP handling, upload admission and cleanup, Worker races, cache/deduplication, persistence and legacy compatibility, storage cleanup, share links, Compare, Campaign Trends, Batch Analysis, exports, reports, and interactive UI behavior.
 
-## Current limitations
-
-- The parser depends on HOI4's semi-structured save format. Game updates and mods can introduce fields or structures that require new fixtures and parser adjustments.
-- Exact historical equipment losses are not generally recoverable from one save; current equipment, stockpile, and production snapshots should not be interpreted as a complete loss history.
-- Calculated war casualties are sums of bilateral `war_relation` entries. They preserve the save's snapshot semantics rather than claiming a complete event ledger.
-- Recoverable naval events depend on the historical records retained in the save, and credited killer information is not available for every loss.
-- Campaign Trends include only saves that have been analyzed and successfully persisted. They are not continuous history.
-- Older persisted analyses may lack campaign identity or other newer context fields; unknown values remain explicit.
-- Browser Batch Analysis requires the user to select files; a browser cannot enumerate an arbitrary local directory automatically.
-- Persistence, admission limits, and caches are process-local filesystem/in-memory mechanisms, not multi-user or multi-instance cloud infrastructure.
-- Public hosting currently has no authentication or per-user data ownership. Production exposure would need TLS, external rate/connection limits, and deployment-level memory/disk controls.
-- Several diagnostic scripts are developer-oriented and encode assumptions for targeted save investigations.
-
-## Possible next steps
-
-- Add authentication and per-user ownership before multi-user public hosting.
-- Support shared persistence and distributed admission if multi-instance deployment becomes necessary.
-- Expand compatibility fixtures for new HOI4 versions and representative mods.
-- Externalize Python watcher configuration and consolidate the legacy telemetry utilities.
-- Add exportable reports and tracked product screenshots.
-- Investigate additional air or equipment loss history only where save evidence supports reliable semantics.
-
-## Repository structure
+## Project structure
 
 ```text
 save-tracker/
-├── client/                     # React/Vite application
-│   ├── src/components/analyzer # Save analysis, Recent, Compare, Batch
-│   ├── src/components/chart    # Campaign Trends and telemetry charts
-│   └── tests/                  # Frontend interaction tests
+├── client/
+│   ├── src/components/analyzer/   # Analyze, Recent, Compare, storage, domain views
+│   ├── src/components/chart/      # Campaign Trends and telemetry charts
+│   ├── src/components/reports/    # Single, Compare, Campaign reports
+│   ├── src/lib/                   # Validation, country names, CSV/JSON export
+│   └── tests/                     # Vitest UI/contract tests
 ├── server/
-│   ├── src/analyze/            # Analysis, history, comparison, trends, shares
-│   ├── src/hoi4/               # Parser, workers, domain parsers, aggregators
-│   ├── src/saves/              # Safe local-save browsing
-│   ├── scripts/                # Developer parser investigations
-│   └── test/                   # Backend end-to-end tests
-├── diagnostics/                # Standalone parser validation utilities
-├── web/                        # Legacy Python telemetry dashboard assets
-├── tracker.py                  # Autosave performance telemetry
-├── hoi4_autosave_watcher.py    # Content-aware autosave copier
-├── dashboard.py                # Standalone telemetry web server
-├── docker-compose.yml
-└── README.md
+│   ├── src/analyze/               # API, persistence, Compare, Trends, Batch, shares
+│   ├── src/hoi4/                  # Parser, Worker, indexes, domain parsers/aggregators
+│   ├── src/saves/                 # Safe local-save browsing
+│   └── scripts/                   # Focused reverse-engineering diagnostics
+├── diagnostics/                   # Independent save/game-data investigation tools
+├── docs/                          # Architecture and curated screenshots
+├── web/                           # Legacy Python telemetry dashboard
+├── tracker.py                     # Optional autosave performance telemetry
+├── hoi4_autosave_watcher.py       # Optional content-aware autosave copier
+└── docker-compose.yml
 ```
 
-Local saves, generated telemetry, persisted results, dependencies, coverage, and build output are intentionally omitted from this tree.
+Generated builds, dependencies, local persistence, telemetry output, and `.hoi4` saves are ignored by Git.
 
-## Engineering highlights
+## Security and deployment notes
 
-This repository demonstrates engineering around a large semi-structured save format: scoped parsing and deterministic aggregation, frontend/backend contract synchronization, normalized public payloads, Worker Thread isolation, bounded uploads and decompression, filesystem persistence, SHA-256 deduplication, resumable browser batch orchestration, campaign identity and compatibility rules, compact comparison/trend DTOs, responsive data-heavy UI, and regression-focused testing.
+Implemented safeguards include strict upload/container validation, byte and entry limits, decompression bounds based on actual output, request/Worker deadlines, bounded concurrency and heap, temporary-file cleanup, opaque share IDs, safe error responses, and a bounded result store.
+
+Important remaining limitations:
+
+- no authentication, authorization, accounts, or per-user data ownership;
+- Recent, storage-management, Compare, and share-management APIs are global to the process;
+- possession of a share link grants access to the complete derived analysis;
+- admission, caches, rate semantics, and mutation queues are process-local;
+- filesystem persistence has no multi-process locking or distributed coordination;
+- no application-level TLS, CSRF design for public hosting, or durable audit log;
+- nginx/reverse-proxy TLS, external connection/rate limits, container memory, and volume backup are deployment responsibilities.
+
+The current hardening is appropriate for a controlled local deployment. Public multi-user hosting requires a separate identity, ownership, isolation, and edge-security design.
+
+## Known limitations
+
+- HOI4 updates and mods can introduce unknown fields or structures; open-ended identifiers are preserved where possible, but new fixtures may be required.
+- A single save cannot reconstruct all historical equipment losses or every naval attribution.
+- Trends contain analyzed snapshots only and are not continuous gameplay telemetry.
+- Legacy persisted entries can lack campaign/player metadata and remain explicitly unknown.
+- Browser import requires explicit file selection; browsers cannot enumerate arbitrary local directories.
+- Reports print through the browser; there is no native PDF renderer.
+- Report and chart state is client-side and is not encoded as a permanent route/bookmark.
+- The optional Python telemetry utilities retain developer-oriented configuration and a separate legacy dashboard.
+
+## Roadmap
+
+- Add authentication and per-user ownership before any multi-user deployment.
+- Expand compatibility fixtures for newer HOI4 versions and representative mods.
+- Add shared persistence/admission only if multi-instance deployment becomes a real requirement.
+- Externalize and consolidate the optional Python telemetry configuration.

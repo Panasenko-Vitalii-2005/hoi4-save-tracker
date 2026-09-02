@@ -1,32 +1,45 @@
-# React + TypeScript + Vite
+# HOI4 Save Tracker frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React/Vite frontend for single-save exploration, Campaign Import, Recent Analyses, Compare Saves, Campaign Trends, storage management, CSV/JSON export, share pages, and printable reports.
 
-Currently, two official plugins are available:
+See the [root README](../README.md) for the product overview and [Architecture](../docs/architecture.md) for frontend/backend boundaries.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Run
 
-## React Compiler
+Requires Node.js 22 and the NestJS backend on `http://localhost:3001`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm ci
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Open `http://localhost:5173`. Vite proxies `/api` to the backend.
+
+Production verification:
+
+```bash
+npm test
+npm run lint
+npm run build
+```
+
+The production build is emitted to `server/client/dist` for Nest static serving; the frontend Docker image copies the same build into nginx.
+
+## UI architecture
+
+- `src/components/analyzer/` — upload, Campaign Import, Recent, Compare, storage, and domain analysis views.
+- `src/components/chart/` — Campaign Trends and optional autosave telemetry charts.
+- `src/components/reports/` — shared print-oriented report shell plus Single, Compare, and Campaign reports.
+- `src/lib/data-export.ts` — deterministic CSV/JSON mappings used by views and reports.
+- `src/types/` — frontend mirrors of intentional public API contracts.
+- `tests/` — Vitest/jsdom interaction and data-contract tests.
+
+The frontend consumes backend summaries directly. It does not parse `.hoi4` text, reconstruct industry formulas, or convert missing data to zero.
+
+## Routes and state
+
+The main application uses client-side view state for Campaign Trends, telemetry, and Save Analyzer. Public shares use `/share/:id`, with nginx and Nest static serving configured for SPA fallback. Report views are in-app states rather than permanent URLs.
+
+## Accessibility and responsive behavior
+
+Interactive table rows support keyboard activation where applicable, selected states are exposed with ARIA, tables scroll horizontally on narrow viewports, and destructive storage actions use an accessible confirmation dialog. Print CSS removes application navigation and interactive-only controls from reports.

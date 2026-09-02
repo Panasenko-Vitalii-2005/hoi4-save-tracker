@@ -1,510 +1,85 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# HOI4 Save Tracker backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS API for hardened HOI4 save ingestion, Worker-backed parsing, filesystem persistence, comparisons, campaign trends, storage management, and share links.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+For the product overview and verified checkpoints, see the [root README](../README.md). For service boundaries and request flows, see [Architecture](../docs/architecture.md).
 
-## Description
+## Run
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+Requires Node.js 22.
 
 ```bash
-$ npm install
+npm ci
+npm run start:dev
 ```
 
-## Compile and run the project
+The API listens on `http://localhost:3001` by default. Production build:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run build
-$ npm run start:prod
+npm run build
+npm run start:prod
 ```
 
-### Save analysis workers
+`start:prod` expects the Nest build output at `dist/src/main.js`.
 
-#### Public save-upload policy
-
-`POST /api/analyze` accepts user uploads only when the presentation filename ends
-in `.hoi4` (case-insensitive). The browser MIME value is not trusted and
-`application/octet-stream` is accepted. Original names are sanitized and retained
-only as presentation metadata; the file on disk always receives a random,
-server-generated name in a dedicated upload directory.
-
-The following positive-integer environment settings form one shared policy. An
-invalid, zero, negative, fractional or out-of-range value falls back to its safe
-default:
-
-- `HOI4_MAX_UPLOAD_BYTES`: **268435456** (256 MiB) raw request-file limit.
-- `HOI4_MAX_UNCOMPRESSED_BYTES`: **536870912** (512 MiB) limit for plain saves and
-  for the bytes actually produced by ZIP inflation.
-- `HOI4_UPLOAD_TIMEOUT_MS`: **120000** (two minutes) for receiving multipart data.
-- `HOI4_ANALYSIS_TIMEOUT_MS`: **60000** (one minute) hard Worker deadline.
-- `HOI4_ANALYSIS_REQUESTS`: **2** active analyze requests per backend process,
-  covering upload, validation, hashing, shared analysis, persistence and cleanup.
-- `HOI4_ANALYSIS_HEAP_MB`: **1024** MiB V8 old-generation limit per analysis
-  Worker. Node Worker resource limits do not bound Buffers or total process RSS;
-  deployment/container memory limits are still required.
-- `HOI4_UPLOAD_DIRECTORY`: dedicated temporary upload directory; defaults to
-  `hoi4-save-tracker` under the operating-system temporary directory.
-
-Plain saves must have a conservative `HOI4txt` header. Compressed saves are read
-without extracting files and must contain the single supported root payload
-(`gamestate` or one `.hoi4` entry). Encrypted, ZIP64, split, ambiguous, corrupt or
-unsupported archive layouts are rejected. Both declared expansion and actual
-inflation are bounded; CRC and actual byte count are checked after inflation.
-Unknown mod fields continue to be handled by the parser rather than rejected by
-the cheap boundary check.
-
-Request-owned uploads are removed after success, cache hit, validation failure,
-Worker failure/timeout, persistence failure and interrupted multipart input.
-Startup performs a bounded scan that removes only stale, recognizably named
-regular files from the dedicated directory; it never recursively clears the OS
-temporary directory. Raw uploaded save files are temporary and deleted after
-processing. Analysis results may be stored separately to support Recent Analyses
-and comparison features.
-
-Admission and Worker limits are process-local, with no distributed queue or IP
-rate limiting. Before public deployment, put the service behind TLS and a reverse
-proxy with request-rate, connection and total container memory/disk limits. CORS
-currently permits only the local Vite origin configured in `src/main.ts`; proxy/IP
-trust has deliberately not been enabled.
-
-On a cache miss, `POST /api/analyze` runs the existing save parser in a new Node.js
-Worker Thread. Only the file path is sent; the worker reads/decodes the save and
-returns the unchanged analysis result. Uploaded files are removed after analysis
-settles, including on cache hits, parse errors or crashes.
-
-`HOI4_ANALYSIS_WORKERS` is a positive integer, default **1**, limiting active
-analyses per backend process. Excess cache misses for different contents receive
-**503** and may be retried; there is no waiting queue or worker pool. With the
-default, two simultaneous distinct uncached saves admit one and reject one;
-five admit one and reject four. Identical contents share an in-flight analysis,
-and completed cache hits do not use a worker slot. Raising the
-limit permits parallel analyses but multiplies large-save heap usage and CPU
-demand. Do not size it solely by logical CPU count. Each Worker is terminated at
-the `HOI4_ANALYSIS_TIMEOUT_MS` deadline; the slot is released only after thread
-termination settles. Result deserialization and HTTP JSON serialization still use
-the main thread.
-
-Nest start/watch and production use emitted workers under
-`dist/src/hoi4/workers/`. `npm run start:prod` runs `dist/src/main.js`, matching
-the existing Docker entry. Source execution (including Jest) uses the existing
-dev-only `ts-node` loader; production workers do not require it.
-
-### Analysis result cache
-
-Both JSON/path requests and uploads use a streaming SHA-256 of the raw file bytes
-before analysis. Filenames, paths and timestamps are not cache keys. Identical
-bytes share a result even under different names; different compressed encodings
-of the same decoded save are separate entries. Hashing reads the file once in
-bounded chunks without allocating a full-file buffer; a cache miss then lets
-the worker read/decode the file as before. Local saves must remain unchanged
-during hashing and analysis; use a stable copy rather than a file being rewritten.
-
-`HOI4_ANALYSIS_CACHE_ENTRIES` is a positive integer, default **3**. Missing or
-invalid values fall back to 3. The cache holds only successful results, evicting
-the least recently accessed entry when full. It is **process-local memory**, not
-durable storage: restart clears it, and separate backend processes do not share
-it. The control save's result is about 6.55 MiB serialized / 11.1 MiB retained
-heap in a sample measurement; three such entries are roughly 33 MiB of result
-heap, in addition to workers, in-flight results and HTTP serialization. This is
-an entry-count bound, not a byte limit; modded results may be larger.
-
-Concurrent requests with the same hash await one analysis. Failures (including
-503 and worker crashes) are neither cached nor retained as in-flight entries,
-so a later request can retry. Each upload retains and cleans up only its own
-temporary file after its awaited analysis settles. A duplicate caller or client
-disconnect does not cancel the worker or delete another caller's file.
-
-Results are treated as immutable and serialized directly, without expensive
-deep copies. Cache code never modifies them. `parse_seconds` remains the duration
-of the original parser execution, **not** current request latency or a cache-hit
-indicator. The response shape is unchanged; upload, hashing and serialization
-still take time on a hit. No cache state or hashes are logged or added to the
-analysis response.
-
-### Batch save analysis
-
-Batch import is intentionally a browser-orchestrated sequence of ordinary,
-individually hardened uploads. It does not create a second parser or Worker queue.
-The browser hashes selected raw files sequentially with Web Crypto, submits at
-most 200 hashes per small `POST /api/analyze/batch/preflight` JSON request, and
-uploads only unknown content. Preflight returns `{ "knownHashes": [...] }` and
-does not read saves, invoke the parser or start a Worker.
-
-Each new file is submitted independently to
-`POST /api/analyze?response=batch`. The same upload validation, admission,
-decompression bound, timeout, Worker limit, cache/in-flight deduplication and
-temporary-file cleanup apply. A successful batch request is persisted through
-Recent Analyses before it returns the compact acknowledgement
-`{ hash, gameDate, campaignId }`; persistence failure is reported safely as
-`PERSISTENCE_FAILED` so one file can be retried without losing other successes.
-Ordinary `POST /api/analyze` responses remain the unchanged `AnalyzeResult`.
-
-Web Crypto currently requires one contiguous `ArrayBuffer`. Hashing is therefore
-strictly sequential: one selected save may be buffered in browser memory, never
-the entire batch. Uploading is also sequential by default. Backend admission and
-`HOI4_ANALYSIS_WORKERS` remain authoritative if a client ignores this behavior.
-
-### Recent Analyses history
-
-Successful `POST /api/analyze` interactions also update a small persistent metadata
-history, separate from the in-memory result cache. Cache hits refresh it too.
-Identity is the same raw-byte SHA-256: identical contents update one entry's name,
-timestamp and counters; different contents with the same name remain distinct.
-The existing analysis response and `parse_seconds` are unchanged.
-
-- `HOI4_RECENT_ANALYSES_FILE`: defaults to `data/recent-analyses.json`, relative to
-  the backend working directory (`server/data/recent-analyses.json` when started
-  from `server/`). An absolute path is recommended for deployments.
-- `HOI4_RECENT_ANALYSES_LIMIT`: positive integer, default **200**; invalid values
-  fall back to 200. The higher default supports campaign batch imports while the
-  independent compressed-result byte budget remains authoritative. The total
-  includes pinned entries. Pins are retained first,
-  then newest unpinned entries. Oldest unpinned entries are evicted first; if
-  pinned entries alone exceed a lowered limit, oldest pins are evicted too.
-  If pins already fill the count limit, a new unpinned analysis is returned
-  normally but is not added to history or durable storage.
-  This is independent of `HOI4_ANALYSIS_CACHE_ENTRIES`.
-- `GET /api/analyze/recent` returns `{ "items": [...] }` with hash, basename, exact
-  byte size, UTC ISO `analyzedAt`, game date, active-country count, division count,
-  ship count, naval-loss count, `hasPersistedResult` availability and `pinned`.
-- `DELETE /api/analyze/recent` clears metadata and durable result files that are
-  not protected by active public share links. Shared results remain available
-  until their links are revoked or the hard byte limit must evict them. It does
-  not remove original saves or evict the independent RAM cache. A later
-  successful analysis (including a cache hit) can add a persisted entry again.
-- `DELETE /api/analyze/recent/:hash` deletes one metadata entry, its completed
-  RAM-cache entry and, unless an active public share protects it, its durable
-  result, including when pinned. It is
-  idempotent: an unknown valid hash also returns **200**, with `{ "items": [...] }`.
-  Original saves and unrelated entries are untouched. Already rendered frontend
-  results remain visible. In-flight analyses are not cancelled: a subsequently
-  completing analysis can create a fresh history/cache entry again.
-- `PATCH /api/analyze/recent/:hash` accepts only `{ "pinned": true }` or
-  `{ "pinned": false }`, returning `{ "items": [...] }`. Unknown hashes return
-  **404**; malformed hashes or extra/non-boolean fields return **400**. Both
-  management endpoints reuse SHA-256 validation and return generic **503** errors
-  for failed writes, without storage paths. Pinning does not change analysis time.
-
-No raw saves, decoded save text, temporary upload paths, stack traces or Worker
-details are persisted. Full analysis results are stored separately as described
-below. Filenames and campaign data are local user data: keep storage private.
-The current deployment has one shared
-local history, not per-user ownership or authentication.
-
-Writes are serialized within one backend process, written to a unique adjacent
-temporary file, flushed with fsync, closed, then renamed over the store. A failed
-update leaves the previous store intact and does not fail save analysis. Missing
-files start empty; corrupt/unreadable files produce one startup warning and an
-empty history. The next successful write replaces corrupt history. Write errors
-produce one useful warning per service lifetime. Do not point multiple backend
-processes at the same file: cross-process locking is not provided.
-
-Only successful analyses are recorded; parser/hash errors, Worker crashes, 503s
-and callers disconnected before successful completion do not create entries.
-Request-specific temporary-file cleanup and shared in-flight analysis remain
-unchanged. A disconnect does not cancel another caller's analysis.
-
-The Analyzer's **Recent Analyses** section loads independently and refreshes after
-success. It shows filenames, game dates, locally formatted timestamps, divisions
-and ships. **Open result** loads a saved analysis without the original save or a
-Worker. Opening has its own loading/error state, guards duplicate clicks and
-replaces the current result only after success. A new upload supersedes a pending
-Open. An unavailable result refreshes history; legacy entries without availability
-remain visible with no Open action until re-analysis.
-
-Search matches filename (case-insensitive) or game date locally, never SHA-256.
-Sort by newest/oldest analysis, filename A–Z/Z–A, or newest/oldest game date. Game
-dates are compared as numeric year/month/day, not strings; missing/invalid dates
-stay last. Pinned entries lead in every sort mode, sorted within their group.
-Rows also show human-readable original file size, naval losses and explicit
-Available/Unavailable status. Search and sort have labels; actions use native
-buttons, async status announcements and a keyboard-focusable scrolling table.
-
-**Delete** requires confirmation and has a local failure message. **Pin/Unpin**
-is guarded while pending and updates only on success. Mutations cancel stale
-history-list reads and refetch afterward, so concurrent analysis completion is
-not lost. No Clear All UI was added; the existing DELETE collection API still
-clears pinned and unpinned entries. Missing `pinned` in old metadata defaults to
-false without requiring migration or rewriting just for the missing field.
-
-Delete, pin/unpin, analysis completion and clear share the existing serialized
-history mutation queue. A same-hash re-analysis reads the latest pin state inside
-that queue and preserves it. No database or cross-process synchronization is added.
-
-### Local analysis storage management
-
-`GET /api/analyze/storage` returns a compact filesystem-backed status without
-loading full `AnalyzeResult` values: Recent metadata count, recognized compressed
-result-file count and bytes, configured result byte budget, pin/share counts and
-known campaigns grouped only by exact `game_unique_id`. Legacy entries without a
-known UUID stay ungrouped. New Recent entries retain only lightweight campaign ID
-and player-tag context. Older V2 entries are backfilled once from the small gzip
-envelope prefix and atomically persisted; this does not parse a save or start a
-Worker. Subsequent status reads use only metadata plus file `stat` information.
-
-`DELETE /api/analyze/storage/campaign/:campaignId` accepts exactly
-`{ "includePinned": boolean }` and removes Recent entries for that exact UUID.
-Pinned entries require explicit opt-in. `DELETE /api/analyze/storage/unpinned`
-removes every unpinned Recent entry, including legacy entries, while retaining
-pins. Both operations also evict completed RAM-cache entries. Active public links
-keep their shared result artifact under the existing share-protection rules; the
-link remains available until revoked or hard byte-budget eviction. Original
-`.hoi4` files are never read or removed by these endpoints.
-
-All three operations reuse the existing per-process Recent/result/share mutation
-queues and atomic metadata writes. They return generic storage errors without
-paths. This remains local single-process persistence, not a cross-process
-transaction or database.
-
-Compose stores history in the `analysis-history` named volume at
-`/app/data/recent-analyses.json`, results at `/app/data/analysis-results`, and
-public-share metadata at `/app/data/shared-analyses.json`, surviving container
-recreation. Removing that volume (for example, `docker compose down -v`)
-removes history, results and public links. Runtime data is
-excluded from Git and Docker build context; no history is baked into images.
-
-### Durable analysis results
-
-Successful analyses, including RAM-cache hits, persist full JSON-compatible
-`AnalyzeResult` values as gzip-compressed UTF-8 JSON using Node's **async** zlib
-APIs with default compression. One file per validated raw-save SHA-256:
-`<hash>.json.gz`. The versioned envelope is
-`{ formatVersion: 1, hash, savedAt, result }`; the result shape and original
-`parse_seconds` are unchanged. Future incompatible formats must use a new version.
-Raw `.hoi4` files are **not** retained.
-
-- `HOI4_ANALYSIS_RESULTS_DIR`: defaults to `data/analysis-results` relative to the
-  backend working directory (`server/data/analysis-results` in local development).
-  Compose sets `/app/data/analysis-results` in the existing named data volume.
-- `HOI4_ANALYSIS_RESULTS_MAX_BYTES`: positive safe integer, default **134217728**
-  (128 MiB); invalid values fall back to that default. This bounds retained
-  compressed result files independently of the history-count limit. The control
-  result is about 6.55 MiB JSON / 481 KiB gzip; 20 such results need about 9.4 MiB,
-  leaving headroom for larger saves. One in-progress atomic replacement can
-  temporarily add one file. A separate 512 MiB uncompressed envelope safety ceiling
-  bounds gzip expansion; an oversized result is still returned by POST but not
-  persisted. No arbitrary-size result is assumed to fit.
-- `GET /api/analyze/recent/:hash/result`: returns the unchanged `AnalyzeResult`.
-  Hashes must be exactly 64 hexadecimal characters (uppercase is normalized).
-  Malformed hashes return **400**. Missing, corrupt, incompatible or unrecorded
-  results return **404**, with a generic message and no storage paths.
-
-Writes are serialized per process: JSON → async gzip → exclusive temporary file →
-fsync → close → atomic rename. Re-analyzing the same hash atomically replaces its
-one file. Storage failure never fails a successful analysis; metadata advertises
-`hasPersistedResult: false`. A failed metadata write is reconciled to avoid orphans.
-No cross-process locking is provided: use one backend per storage directory.
-
-Unpinned results are evicted by oldest analysis timestamp first to reserve space
-within the byte budget. Pins are protected when possible, but the hard byte cap
-still wins: oldest pinned results are removed if necessary, with metadata retained
-and `hasPersistedResult: false`. A new unpinned result is declined if retaining it
-would displace protected pins; its analysis still succeeds with unavailable reopen.
-History-count eviction deletes the corresponding files too; disk eviction
-keeps metadata but removes its Open availability. Loading/listing history reconciles
-missing files, lowered limits, orphan result files and stale managed temporary
-files. Only recognized regular files are deleted; unrelated files/directories and
-symlinks are not followed. Crash leftovers are cleaned at reconciliation.
-
-Read validation checks the envelope version, hash, timestamp and required result
-shape. Invalid gzip/JSON or incompatible data is unavailable, produces one generic
-read warning per service lifetime, and clears availability. Re-analysis can repair
-it. Legacy metadata requires no migration or original save on startup.
-
-### Public share links
-
-An analysis remains private to the application's global Recent Analyses view
-until a user explicitly creates a public link. `POST /api/analyze/recent/:hash/share`
-accepts the validated internal SHA-256 used by
-Recent Analyses, requires an already persisted result, and returns only a
-cryptographically random 22-character URL-safe ID plus a relative `/share/:id`
-path. The ID contains 128 bits of randomness, is collision-checked, and is not
-derived from the hash. Repeating Share for the same hash returns its one active
-link, including after restart.
-
-The small, separate metadata store contains only `{ id, hash, createdAt }`:
-
-- `HOI4_SHARED_ANALYSES_FILE`: defaults to `data/shared-analyses.json`; Compose
-  uses `/app/data/shared-analyses.json` in the existing data volume.
-- `HOI4_SHARED_ANALYSES_LIMIT`: positive integer, default **1000**. Existing
-  active links are never displaced merely to admit a new link. When the limit is
-  reached, new creation returns a generic **503**.
-
-`GET /api/share/:id` validates the exact public-ID alphabet and length, resolves
-the ID in memory, and reads the existing gzip result. It does not run the parser,
-start a Worker, access the original save, refresh history, or create private
-metadata. Unknown, malformed, revoked and missing-result links return a generic
-**404**. No share-listing or hash-query endpoint exists. `DELETE
-/api/analyze/recent/:hash/share` is idempotent and returns `{ revoked: boolean }`.
-It removes public reachability without deleting private history. If private
-history was already deleted, normal reconciliation can then remove the orphaned
-result.
-
-An active share protects its result from Recent delete, Clear All and normal
-history-count eviction. The hard result byte ceiling still wins: ordinary and
-pinned private results are considered before shared results, but the oldest
-shared files can be evicted as a last resort. Corresponding share records are
-then removed; a crash between the two atomic store operations is repaired at
-startup or the next public read, and the URL returns a clean 404. A corrupt share
-store warns once and marks share protection unreliable, so unknown result files
-are preserved except where the hard byte ceiling itself requires eviction.
-Malformed individual records and records whose files are missing are ignored or
-removed without preventing valid links from loading.
-
-Share metadata mutations are serialized and use exclusive temporary files,
-fsync and atomic rename. This remains a single-process store without
-cross-process locking. Public pages use a neutral game-derived title and never
-receive the private filename, raw save, internal hash, paths, request metadata or
-server diagnostics. The browser constructs the visible URL from its own origin;
-the nginx configuration already falls back unknown frontend routes such as
-`/share/:id` to `index.html`.
-
-Anyone possessing a link can view all game analytics in that `AnalyzeResult`;
-the link is unlisted, not authenticated. The application still has one global,
-unauthenticated Recent Analyses and management API. Consequently this deployment
-does not provide per-user isolation: anyone who can access that management API
-can see internal recent hashes and request or revoke links. Public multi-tenant
-hosting requires authentication/authorization in a separate security design;
-share IDs alone do not solve ownership.
-
-Reopen always reads/decompresses the durable file; it does **not** populate or
-change the upload result cache, preserving its existing semantics. No Worker or
-original save read occurs. `parse_seconds` is the original parse duration, not
-reopen latency. JSON stringify/parse and HTTP serialization still run on the main
-thread; gzip/gunzip are asynchronous. This remains local single-user storage,
-without authentication, encryption or multi-user access isolation.
-
-### Compare saved analyses (MVP)
-
-`GET /api/analyze/compare?base=<sha256>&target=<sha256>` loads durable results
-through `PersistedAnalysisResultService`, then returns a compact comparison DTO.
-It never reads original saves, invokes the parser/Worker, or depends on the RAM
-analysis cache. Equal hashes are valid and loaded once. Existing hash validation
-is reused: invalid/missing/repeated hash parameters return **400**; a missing or
-corrupt result returns a generic **404**; unexpected failures return a generic
-**503**, without paths. No persistence format or AnalyzeResult changes are made.
-
-The pure comparison model uses:
-
-- `game_date` for each side (preserved as the existing raw display date);
-- `active_countries`, `totals.divisions`, `totals.manpowerInField`,
-  `totals.aircraft`, `totals.ships`, and `navalLosses.length` for global summary;
-- the union of `by_country[].tag`, sorted ascending by exact tag;
-- per-country `effectiveMilitaryFactories`, `effectiveCivilianFactories`,
-  `effectiveDockyards`, `divisions`, `manpowerInField`, `ships`, and
-  `calculatedWarCasualtiesTotal`.
-
-Every numeric difference is **target minus base**, without date reordering.
-Only finite numbers participate in arithmetic; unknown/missing values stay null.
-For **every** compared country metric an absent country means unavailable, not
-zero: absence from this result is not proof that its historical quantities were
-zero. Added/removed countries remain explicit. `unchanged` denotes continued tag
-identity; `hasChanges` tracks metric differences (including availability changes)
-or added/removed status. Names are presentation only, resolved by the existing
-frontend country-name mapping; aliases with different tags are not merged.
-
-Industry uses final effective totals; no industry formulas are repeated.
-Calculated casualties retain bilateral-record semantics. Naval losses compare
-the count of retained events, **not** proven sinkings between saves or lifetime
-losses. No campaign-identity check is inferred. A date-only difference does not
-count as a change in compared numeric metrics. The unused nullable
-`manpowerCasualties` placeholder and a global casualty sum are deliberately not
-compared; no detailed production, stockpile, army, fleet, war, or map diff is added.
-
-Recent Analyses offers two explicit **Base / Target** selectors containing only
-available entries. Each slot can be replaced or cleared; there is no third slot.
-The same analysis can occupy both slots. **Swap** reverses direction; **Compare**
-requires both valid selections and guards duplicate requests. Selection changes
-abort pending reads, and late responses are ignored. History deletion or changed
-availability invalidates affected selections. A failed comparison keeps the last
-successful comparison with its original names/dates, never the new request's
-labels; unavailable results trigger a history refresh.
-
-Results appear in a separate section, with neutral signed deltas, global metrics,
-an exact-country table, **Changed only** (default) / **All countries**, and
-country-name/tag search. Native labelled controls, polite async announcements,
-and a focusable horizontally scrolling table support narrow screens and keyboard
-use. Existing upload/Open results coexist with this separate comparison section:
-opening or uploading another save does not clear the completed comparison or
-overwrite its Base/Target labels. No raw AnalyzeResult payloads or hashes are
-displayed as normal user-facing labels.
-
-## Run tests
+## Test
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm test
+npm run build
 ```
 
-## Deployment
+Additional scripts: `npm run test:watch`, `npm run test:cov`, and `npm run test:e2e`.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+The configured `npm run lint` script applies ESLint fixes. For a read-only check, use:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npx eslint "{src,apps,libs,test}/**/*.ts"
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Important configuration
 
-## Resources
+| Variable | Default | Meaning |
+| --- | ---: | --- |
+| `PORT` | `3001` | Listen port |
+| `HOI4_SAVES_DIR` | `../saves` from backend cwd | Local-save browser root |
+| `HOI4_UPLOAD_DIRECTORY` | OS temp | Managed multipart files |
+| `HOI4_MAX_UPLOAD_BYTES` | 256 MiB | Raw upload limit |
+| `HOI4_MAX_UNCOMPRESSED_BYTES` | 512 MiB | Plain/decompressed limit |
+| `HOI4_UPLOAD_TIMEOUT_MS` | 120,000 | Upload deadline |
+| `HOI4_ANALYSIS_REQUESTS` | `2` | Concurrent admitted requests |
+| `HOI4_ANALYSIS_WORKERS` | `1` | Active Workers; invalid values fail startup |
+| `HOI4_ANALYSIS_TIMEOUT_MS` | 60,000 | Worker deadline |
+| `HOI4_ANALYSIS_HEAP_MB` | 1,024 | Worker old-generation limit |
+| `HOI4_ANALYSIS_CACHE_ENTRIES` | `3` | Completed RAM cache entries |
+| `HOI4_RECENT_ANALYSES_FILE` | `data/recent-analyses.json` | Recent metadata |
+| `HOI4_RECENT_ANALYSES_LIMIT` | `200` | Recent metadata limit |
+| `HOI4_ANALYSIS_RESULTS_DIR` | `data/analysis-results` | Gzip result artifacts |
+| `HOI4_ANALYSIS_RESULTS_MAX_BYTES` | 128 MiB | Compressed artifact budget |
+| `HOI4_SHARED_ANALYSES_FILE` | `data/shared-analyses.json` | Share metadata |
+| `HOI4_SHARED_ANALYSES_LIMIT` | `1,000` | Active shares |
 
-Check out a few resources that may come in handy when working with NestJS:
+## Runtime boundaries
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+- `SaveUploadInterceptor` owns pre-multipart admission, upload limits, managed temporary files, abort handling, and cleanup.
+- `AnalysisResultCacheService` hashes original save bytes, provides completed LRU reuse, and deduplicates in-flight identical saves.
+- `Hoi4AnalysisWorkerService` owns bounded Worker lifecycle, timeout/error/exit races, termination, and slot release.
+- `hoi4-parser.ts` and its domain modules decode once, reuse structural indexes, and build deterministic public results.
+- `PersistedAnalysisResultService` writes versioned gzip envelopes atomically and enforces the compressed byte budget.
+- `RecentAnalysesService` stores compact metadata and reconciles availability, legacy context, pins, shares, and bulk cleanup.
 
-## Support
+The persistence implementation is single-process. Do not run multiple backend instances against the same directory.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## API
 
-## Stay in touch
+The important routes are documented in the [root README](../README.md#important-api-routes). Internal telemetry routes under `/api/records` and `/api/soldiers` support the optional Python tracker and are separate from persisted Campaign Trends.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## Persistence safety
 
-## License
+Original multipart uploads are temporary and are not part of Recent persistence. Result artifacts are named by validated SHA-256, compressed with gzip, and written through an exclusive temporary file plus fsync and atomic rename. Storage inventory accepts only recognized regular files and does not follow symbolic links.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Pins and active shares receive stronger retention protection, but the hard configured byte limit remains authoritative. Storage failures do not corrupt a successful parser result; availability is represented explicitly.
+
+## Public-deployment warning
+
+The backend has resource and input hardening, but no authentication, ownership, per-user isolation, distributed admission, or cross-process locking. Treat it as a local/single-owner service unless a separate security architecture is added.
