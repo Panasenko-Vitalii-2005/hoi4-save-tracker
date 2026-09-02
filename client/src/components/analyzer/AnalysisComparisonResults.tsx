@@ -6,6 +6,13 @@ import type {
 } from "@/types/analysis-comparison";
 import { countryFullName } from "@/lib/utils";
 import { CountryDisplay } from "./CountryDisplay";
+import { ExportControls } from "@/components/ui/ExportControls";
+import {
+  buildComparisonExport,
+  comparisonCsv,
+  comparisonExportFilename,
+  prettyJson,
+} from "@/lib/data-export";
 
 type CountryMetricKey = keyof Omit<
   CountryComparison,
@@ -239,7 +246,30 @@ export function AnalysisComparisonResults({
       aria-label="Comparison results"
     >
       <div className="comparison-results-heading">
-        <span className="eyebrow">Completed comparison</span>
+        <div className="comparison-results-title">
+          <span className="eyebrow">Completed comparison</span>
+          <ExportControls
+            label="Export completed comparison"
+            createCsv={() => ({
+              content: comparisonCsv(data, { baseName, targetName }),
+              filename: comparisonExportFilename(
+                data.baseGameDate,
+                data.targetGameDate,
+                "csv",
+              ),
+            })}
+            createJson={() => ({
+              content: prettyJson(
+                buildComparisonExport(data, { baseName, targetName }),
+              ),
+              filename: comparisonExportFilename(
+                data.baseGameDate,
+                data.targetGameDate,
+                "json",
+              ),
+            })}
+          />
+        </div>
         <div className="comparison-direction" aria-label="Comparison direction">
           <div>
             <span className="comparison-save-role">Base</span>

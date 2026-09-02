@@ -909,6 +909,43 @@ select {
   border-bottom: 1px solid var(--intel-line);
 }
 
+.comparison-results-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.export-controls {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.export-controls > span:first-child {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.export-controls .button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.export-controls [role="alert"] {
+  flex-basis: 100%;
+  color: var(--intel-danger);
+  font-size: 11px;
+}
+
 .comparison-direction {
   display: flex;
   align-items: center;
@@ -4609,10 +4646,39 @@ button {
   text-align: right;
 }
 
+.analyzer-view-side {
+  display: flex;
+  align-items: flex-end;
+  flex: none;
+  gap: 18px;
+}
+
+.analyzer-view-side .export-controls {
+  justify-content: flex-end;
+}
+
 .analyzer-view-date strong {
   font-family: "IBM Plex Mono", monospace;
   font-size: 17px;
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 680px) {
+  .analyzer-view-side {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .analyzer-view-side .export-controls,
+  .campaign-header-context .export-controls {
+    justify-content: flex-start;
+  }
+
+  .comparison-results-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 /* Overview metrics and analytical surfaces */

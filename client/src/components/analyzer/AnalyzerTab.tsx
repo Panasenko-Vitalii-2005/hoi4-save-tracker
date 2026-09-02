@@ -33,6 +33,13 @@ import {
   type AnalysisFailure,
 } from "@/lib/analysis-error";
 import { isAnalyzeResult } from "@/lib/analyze-result";
+import { ExportControls } from "@/components/ui/ExportControls";
+import {
+  buildSingleSaveExport,
+  prettyJson,
+  singleSaveCsv,
+  singleSaveExportFilename,
+} from "@/lib/data-export";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -117,9 +124,11 @@ const ANALYZER_VIEW_COPY: Record<
 function AnalyzerViewContext({
   view,
   gameDate,
+  actions,
 }: {
   view: AnalysisView;
   gameDate: string;
+  actions?: React.ReactNode;
 }) {
   const copy = ANALYZER_VIEW_COPY[view];
   return (
@@ -129,9 +138,12 @@ function AnalyzerViewContext({
         <h2>{copy.title}</h2>
         <p>{copy.description}</p>
       </div>
-      <div className="analyzer-view-date">
-        <span>Save date</span>
-        <strong>{gameDate}</strong>
+      <div className="analyzer-view-side">
+        <div className="analyzer-view-date">
+          <span>Save date</span>
+          <strong>{gameDate}</strong>
+        </div>
+        {actions}
       </div>
     </section>
   );
@@ -398,6 +410,10 @@ export function AnalyzerTab({
   const [result, setResult] = useState<AnalyzeResult | null>(
     readOnlyResult ?? null,
   );
+  const [resultSource, setResultSource] = useState<{
+    fileName: string | null;
+    analysisHash: string | null;
+  }>({ fileName: null, analysisHash: null });
   const [prevResult, setPrevResult] = useState<AnalyzeResult | null>(null);
   const [sortCol, setSortCol] = useState<SortCol>("manpowerInField");
   const [sortAsc, setSortAsc] = useState(false);
@@ -445,13 +461,17 @@ export function AnalyzerTab({
     [],
   );
 
-  const applyResult = (data: AnalyzeResult) => {
+  const applyResult = (
+    data: AnalyzeResult,
+    source: { fileName: string | null; analysisHash: string | null },
+  ) => {
     const initialEqCountry =
       Object.keys(data.equipment_by_country).sort()[0] ??
       data.by_country[0]?.tag ??
       "";
     setPrevResult(result);
     setResult(data);
+    setResultSource(source);
     setAnalysisView("overview");
     setEqCountry(initialEqCountry);
     setShowEq(true);
@@ -492,7 +512,7 @@ export function AnalyzerTab({
         );
         return;
       }
-      applyResult(data);
+      applyResult(data, { fileName: item.fileName, analysisHash: item.hash });
       setStatus({
         type: "ok",
         msg: `✓ Opened analysis: ${item.fileName} — ${data.game_date} · Original parse: ${data.parse_seconds}s`,
@@ -556,7 +576,7 @@ export function AnalyzerTab({
         });
         return;
       }
-      applyResult(data);
+      applyResult(data, { fileName, analysisHash: null });
       lastAnalysis.current = null;
       setHistoryVersion((value) => value + 1);
       setStatus({
@@ -958,6 +978,21 @@ export function AnalyzerTab({
           <AnalyzerViewContext
             view={analysisView}
             gameDate={result.game_date}
+            actions={
+              <ExportControls
+                label="Export current save analysis"
+                createCsv={() => ({
+                  content: singleSaveCsv(result, resultSource),
+                  filename: singleSaveExportFilename(result.game_date, "csv"),
+                })}
+                createJson={() => ({
+                  content: prettyJson(
+                    buildSingleSaveExport(result, resultSource),
+                  ),
+                  filename: singleSaveExportFilename(result.game_date, "json"),
+                })}
+              />
+            }
           />
 
           {analysisView === "war-casualties" ? (

@@ -211,6 +211,11 @@ describe("Campaign Trends", () => {
     expect(
       container.querySelectorAll(".campaign-timeline tbody tr"),
     ).toHaveLength(3);
+    expect(
+      container.querySelectorAll(
+        '[aria-label="Export selected campaign trends"] button',
+      ),
+    ).toHaveLength(2);
   });
 
   test("renders meaningful empty and single-save states without empty Plotly axes", async () => {
@@ -226,6 +231,11 @@ describe("Campaign Trends", () => {
       "Campaign Trends needs multiple analyzed saves from the same campaign",
     );
     expect(container.querySelector('[data-testid="trend-plot"]')).toBeNull();
+    expect(
+      container.querySelector(
+        '[aria-label="Export selected campaign trends"]',
+      ),
+    ).toBeNull();
     const importButton = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Import Campaign",
     )!;

@@ -245,6 +245,11 @@ describe("analysis request lifecycle", () => {
     expect(status().querySelector(".spinner")).toBeNull();
     expect(button("Analyze Save").disabled).toBe(false);
     expect(row().getAttribute("aria-disabled")).toBe("false");
+    expect(
+      container.querySelectorAll(
+        '[aria-label="Export current save analysis"] button',
+      ),
+    ).toHaveLength(2);
   });
 
   test("retains previous results while pending and replaces them only on success", async () => {

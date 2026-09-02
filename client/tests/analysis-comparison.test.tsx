@@ -137,7 +137,9 @@ describe("Save comparison UI", () => {
       ),
     );
     await act(async () =>
-      requests[0].resolve(Response.json({ items: entries })),
+      requests
+        .find(({ url }) => url === "/api/analyze/recent")!
+        .resolve(Response.json({ items: entries })),
     );
   };
 
@@ -296,6 +298,11 @@ describe("Save comparison UI", () => {
     await click("Compare");
     await finish(response());
     expect(results().textContent).not.toContain("Target save is earlier");
+    expect(
+      results().querySelectorAll(
+        '[aria-label="Export completed comparison"] button',
+      ),
+    ).toHaveLength(2);
   });
 
   test("renders reverse, normal, same-date and same-analysis chronology context", async () => {

@@ -15,6 +15,13 @@ import type {
   GlobalTrendMetric,
   TrendMetric,
 } from "@/types/campaign-trends";
+import { ExportControls } from "@/components/ui/ExportControls";
+import {
+  buildCampaignExport,
+  campaignCsv,
+  campaignExportFilename,
+  prettyJson,
+} from "@/lib/data-export";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
 import { countryFullName } from "@/lib/utils";
 import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
@@ -651,6 +658,27 @@ export function CampaignTrends({
                 {campaign.snapshotCount === 1 ? "" : "s"}
               </span>
             </div>
+          )}
+          {campaign && (
+            <ExportControls
+              label="Export selected campaign trends"
+              createCsv={() => ({
+                content: campaignCsv(campaign, {
+                  scope: settings.scope,
+                  countryTag,
+                }),
+                filename: campaignExportFilename(campaign, "csv"),
+              })}
+              createJson={() => ({
+                content: prettyJson(
+                  buildCampaignExport(campaign, {
+                    scope: settings.scope,
+                    countryTag,
+                  }),
+                ),
+                filename: campaignExportFilename(campaign, "json"),
+              })}
+            />
           )}
           <button
             className="button button-secondary campaign-refresh"
