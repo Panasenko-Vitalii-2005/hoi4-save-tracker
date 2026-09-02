@@ -176,11 +176,13 @@ export function AnalysisComparisonResults({
   baseName,
   targetName,
   showContext = true,
+  onViewReport,
 }: {
   data: AnalysisComparisonDto;
   baseName: string;
   targetName: string;
   showContext?: boolean;
+  onViewReport: () => void;
 }) {
   const [scope, setScope] = useState<CountryScope>("changed");
   const [search, setSearch] = useState("");
@@ -248,6 +250,13 @@ export function AnalysisComparisonResults({
       <div className="comparison-results-heading">
         <div className="comparison-results-title">
           <span className="eyebrow">Completed comparison</span>
+          <button
+            type="button"
+            className="button button-primary"
+            onClick={onViewReport}
+          >
+            View Report
+          </button>
           <ExportControls
             label="Export completed comparison"
             createCsv={() => ({

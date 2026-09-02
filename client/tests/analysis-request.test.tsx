@@ -250,6 +250,12 @@ describe("analysis request lifecycle", () => {
         '[aria-label="Export current save analysis"] button',
       ),
     ).toHaveLength(2);
+    const reportButton = [...container.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === "View Report",
+    )!;
+    await act(async () => reportButton.click());
+    expect(container.textContent).toContain("Save Analysis Report");
+    expect(container.querySelector(".analysis-report")).not.toBeNull();
   });
 
   test("retains previous results while pending and replaces them only on success", async () => {

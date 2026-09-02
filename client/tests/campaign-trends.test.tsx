@@ -216,6 +216,12 @@ describe("Campaign Trends", () => {
         '[aria-label="Export selected campaign trends"] button',
       ),
     ).toHaveLength(2);
+    const reportButton = [...container.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === "View Report",
+    )!;
+    await act(async () => reportButton.click());
+    expect(container.textContent).toContain("Germany Campaign");
+    expect(container.textContent).toContain("Campaign Chart");
   });
 
   test("renders meaningful empty and single-save states without empty Plotly axes", async () => {
@@ -236,6 +242,7 @@ describe("Campaign Trends", () => {
         '[aria-label="Export selected campaign trends"]',
       ),
     ).toBeNull();
+    expect(container.textContent).not.toContain("View Report");
     const importButton = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Import Campaign",
     )!;

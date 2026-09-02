@@ -40,6 +40,10 @@ import {
   singleSaveCsv,
   singleSaveExportFilename,
 } from "@/lib/data-export";
+import {
+  SingleSaveReport,
+  type SingleSaveReportContext,
+} from "@/components/reports/SingleSaveReport";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -410,10 +414,12 @@ export function AnalyzerTab({
   const [result, setResult] = useState<AnalyzeResult | null>(
     readOnlyResult ?? null,
   );
-  const [resultSource, setResultSource] = useState<{
-    fileName: string | null;
-    analysisHash: string | null;
-  }>({ fileName: null, analysisHash: null });
+  const [resultSource, setResultSource] = useState<SingleSaveReportContext>({
+    fileName: null,
+    analysisHash: null,
+    playerCountryTag: null,
+  });
+  const [reportOpen, setReportOpen] = useState(false);
   const [prevResult, setPrevResult] = useState<AnalyzeResult | null>(null);
   const [sortCol, setSortCol] = useState<SortCol>("manpowerInField");
   const [sortAsc, setSortAsc] = useState(false);
@@ -463,7 +469,7 @@ export function AnalyzerTab({
 
   const applyResult = (
     data: AnalyzeResult,
-    source: { fileName: string | null; analysisHash: string | null },
+    source: SingleSaveReportContext,
   ) => {
     const initialEqCountry =
       Object.keys(data.equipment_by_country).sort()[0] ??
@@ -472,6 +478,7 @@ export function AnalyzerTab({
     setPrevResult(result);
     setResult(data);
     setResultSource(source);
+    setReportOpen(false);
     setAnalysisView("overview");
     setEqCountry(initialEqCountry);
     setShowEq(true);
@@ -512,7 +519,11 @@ export function AnalyzerTab({
         );
         return;
       }
-      applyResult(data, { fileName: item.fileName, analysisHash: item.hash });
+      applyResult(data, {
+        fileName: item.fileName,
+        analysisHash: item.hash,
+        playerCountryTag: item.playerCountryTag ?? null,
+      });
       setStatus({
         type: "ok",
         msg: `✓ Opened analysis: ${item.fileName} — ${data.game_date} · Original parse: ${data.parse_seconds}s`,
@@ -576,7 +587,11 @@ export function AnalyzerTab({
         });
         return;
       }
-      applyResult(data, { fileName, analysisHash: null });
+      applyResult(data, {
+        fileName,
+        analysisHash: null,
+        playerCountryTag: null,
+      });
       lastAnalysis.current = null;
       setHistoryVersion((value) => value + 1);
       setStatus({
@@ -841,6 +856,17 @@ export function AnalyzerTab({
     return `rgb(${Math.round(11 + 206 * t)},${Math.round(122 - 43 * t)},${Math.round(117 - 74 * t)})`;
   };
 
+  if (result && reportOpen)
+    return (
+      <div className="analyzer-shell">
+        <SingleSaveReport
+          result={result}
+          context={resultSource}
+          onBack={() => setReportOpen(false)}
+        />
+      </div>
+    );
+
   return (
     <div className="analyzer-shell">
       {!readOnly && (
@@ -979,19 +1005,28 @@ export function AnalyzerTab({
             view={analysisView}
             gameDate={result.game_date}
             actions={
-              <ExportControls
-                label="Export current save analysis"
-                createCsv={() => ({
-                  content: singleSaveCsv(result, resultSource),
-                  filename: singleSaveExportFilename(result.game_date, "csv"),
-                })}
-                createJson={() => ({
-                  content: prettyJson(
-                    buildSingleSaveExport(result, resultSource),
-                  ),
-                  filename: singleSaveExportFilename(result.game_date, "json"),
-                })}
-              />
+              <>
+                <button
+                  type="button"
+                  className="button button-primary"
+                  onClick={() => setReportOpen(true)}
+                >
+                  View Report
+                </button>
+                <ExportControls
+                  label="Export current save analysis"
+                  createCsv={() => ({
+                    content: singleSaveCsv(result, resultSource),
+                    filename: singleSaveExportFilename(result.game_date, "csv"),
+                  })}
+                  createJson={() => ({
+                    content: prettyJson(
+                      buildSingleSaveExport(result, resultSource),
+                    ),
+                    filename: singleSaveExportFilename(result.game_date, "json"),
+                  })}
+                />
+              </>
             }
           />
 

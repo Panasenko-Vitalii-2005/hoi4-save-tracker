@@ -3,6 +3,7 @@ import type { RecentAnalysis } from "@/types";
 import type { AnalysisComparisonDto } from "@/types/analysis-comparison";
 import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
 import { AnalysisComparisonResults } from "./AnalysisComparisonResults";
+import { ComparisonReport } from "@/components/reports/ComparisonReport";
 
 function compareGameDates(
   baseDate: string,
@@ -57,6 +58,7 @@ export function AnalysisComparison({
     baseName: string;
     targetName: string;
   } | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const pending = useRef<AbortController | null>(null);
   const available = useMemo(
     () => items.filter((item) => item.hasPersistedResult === true),
@@ -144,6 +146,7 @@ export function AnalysisComparison({
         baseName: base.fileName,
         targetName: target.fileName,
       });
+      setReportOpen(false);
     } catch {
       if (pending.current === controller) {
         setError(
@@ -225,6 +228,26 @@ export function AnalysisComparison({
       </section>
     );
   }
+
+  if (
+    completed &&
+    reportOpen &&
+    available.some(({ hash }) => hash === completed.data.baseHash) &&
+    available.some(({ hash }) => hash === completed.data.targetHash)
+  )
+    return (
+      <ComparisonReport
+        data={completed.data}
+        baseName={completed.baseName}
+        targetName={completed.targetName}
+        selectedCountryTag={
+          completed.data.countries.find(({ hasChanges }) => hasChanges)?.tag ??
+          completed.data.countries[0]?.tag ??
+          null
+        }
+        onBack={() => setReportOpen(false)}
+      />
+    );
 
   return (
     <>
@@ -354,6 +377,7 @@ export function AnalysisComparison({
         <AnalysisComparisonResults
           {...completed}
           showContext={completedMatchesSelection}
+          onViewReport={() => setReportOpen(true)}
         />
       )}
     </>

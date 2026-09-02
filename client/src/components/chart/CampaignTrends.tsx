@@ -22,6 +22,7 @@ import {
   campaignExportFilename,
   prettyJson,
 } from "@/lib/data-export";
+import { CampaignReport } from "@/components/reports/CampaignReport";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
 import { countryFullName } from "@/lib/utils";
 import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
@@ -368,6 +369,7 @@ export function CampaignTrends({
   const [campaignKey, setCampaignKey] = useState("");
   const [countryTag, setCountryTag] = useState("");
   const [selectedHash, setSelectedHash] = useState("");
+  const [reportOpen, setReportOpen] = useState(false);
   const [settings, setSettings] = useState<TrendSettings>(loadSettings);
 
   const updateSettings = useCallback((patch: Partial<TrendSettings>) => {
@@ -638,6 +640,15 @@ export function CampaignTrends({
     reloadTelemetry();
   };
 
+  if (campaign && reportOpen)
+    return (
+      <CampaignReport
+        campaign={campaign}
+        context={{ scope: settings.scope, countryTag }}
+        onBack={() => setReportOpen(false)}
+      />
+    );
+
   return (
     <main className="campaign-trends" aria-busy={loading}>
       <header className="campaign-trends-header">
@@ -658,6 +669,15 @@ export function CampaignTrends({
                 {campaign.snapshotCount === 1 ? "" : "s"}
               </span>
             </div>
+          )}
+          {campaign && (
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => setReportOpen(true)}
+            >
+              View Report
+            </button>
           )}
           {campaign && (
             <ExportControls

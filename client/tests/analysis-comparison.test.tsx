@@ -303,6 +303,9 @@ describe("Save comparison UI", () => {
         '[aria-label="Export completed comparison"] button',
       ),
     ).toHaveLength(2);
+    await click("View Report");
+    expect(container.textContent).toContain("Base and Target Comparison");
+    expect(container.textContent).toContain("Target − Base");
   });
 
   test("renders reverse, normal, same-date and same-analysis chronology context", async () => {
