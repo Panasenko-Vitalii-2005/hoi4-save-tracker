@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import {
   lstat,
   mkdir,
@@ -11,7 +12,7 @@ import {
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { gzip, gunzip } from 'node:zlib';
+import { createGunzip, gzip, gunzip } from 'node:zlib';
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
 import {
   normalizeSaveComparisonContext,
@@ -56,11 +57,21 @@ interface ResultFile {
   modified: number;
 }
 
+export interface PersistedResultStorageStatus {
+  maxBytes: number;
+  totalBytes: number;
+  files: ReadonlyArray<{
+    hash: string;
+    bytes: number;
+  }>;
+}
+
 const compress = promisify(gzip);
 const decompress = promisify(gunzip);
 const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;
 // Bound corrupt gzip expansion too. Oversized successful results still reach POST callers.
 const MAX_JSON_BYTES = 512 * 1024 * 1024;
+const MAX_CONTEXT_PREFIX_BYTES = 64 * 1024;
 
 export function normalizeAnalysisHash(hash: string): string | null {
   return hash.length === 64 && /^[a-fA-F0-9]{64}$/.test(hash)
@@ -181,6 +192,56 @@ export class PersistedAnalysisResultService {
 
   async getWithContext(hash: string): Promise<PersistedAnalysis | null> {
     return this.readPersisted(hash);
+  }
+
+  /** Read V2 comparison context from the small envelope prefix only. */
+  async getComparisonContext(
+    hash: string,
+  ): Promise<SaveComparisonContext | null> {
+    const key = this.key(hash);
+    await this.pending;
+    let source: ReturnType<typeof createReadStream> | null = null;
+    let inflation: ReturnType<typeof createGunzip> | null = null;
+    try {
+      if (!(await this.checkDirectory())) return null;
+      const file = this.path(key);
+      const entry = await lstat(file);
+      if (
+        !entry.isFile() ||
+        entry.isSymbolicLink() ||
+        entry.size > this.maxBytes
+      )
+        return null;
+      source = createReadStream(file, { highWaterMark: 4096 });
+      inflation = createGunzip();
+      source.pipe(inflation);
+      let bytes = Buffer.alloc(0);
+      for await (const chunk of inflation) {
+        bytes = Buffer.concat([bytes, Buffer.from(chunk)]);
+        if (bytes.length > MAX_CONTEXT_PREFIX_BYTES) return null;
+        const prefix = bytes.toString('utf8');
+        const boundary = prefix.indexOf(',"result":');
+        if (boundary < 0) continue;
+        const envelope: unknown = JSON.parse(`${prefix.slice(0, boundary)}}`);
+        if (
+          !isObject(envelope) ||
+          ![1, 2].includes(envelope.formatVersion as number) ||
+          envelope.hash !== key ||
+          typeof envelope.savedAt !== 'string' ||
+          !Number.isFinite(Date.parse(envelope.savedAt))
+        )
+          return null;
+        return envelope.formatVersion === 1
+          ? unknownSaveComparisonContext()
+          : normalizeSaveComparisonContext(envelope.comparisonContext);
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      source?.destroy();
+      inflation?.destroy();
+    }
   }
 
   private async readPersisted(hash: string): Promise<PersistedAnalysis | null> {
@@ -336,6 +397,19 @@ export class PersistedAnalysisResultService {
         });
     }
     return found;
+  }
+
+  /** Lightweight compressed-artifact inventory; never reads or inflates results. */
+  async storageStatus(): Promise<PersistedResultStorageStatus> {
+    await this.pending;
+    const files = (await this.inventory()).sort((left, right) =>
+      left.hash.localeCompare(right.hash),
+    );
+    return {
+      maxBytes: this.maxBytes,
+      totalBytes: files.reduce((total, file) => total + file.bytes, 0),
+      files: files.map(({ hash, bytes }) => ({ hash, bytes })),
+    };
   }
 
   /** Read-only existence reconciliation for share metadata startup. */

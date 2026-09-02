@@ -6,12 +6,14 @@ import { join } from 'node:path';
 import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
 import { RecentAnalysesService } from './recent-analyses.service';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
+import { SharedAnalysesService } from './shared-analyses.service';
 
 describe('RecentAnalysesService', () => {
   const originalFile = process.env.HOI4_RECENT_ANALYSES_FILE;
   const originalLimit = process.env.HOI4_RECENT_ANALYSES_LIMIT;
   const originalResults = process.env.HOI4_ANALYSIS_RESULTS_DIR;
   const originalBytes = process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
+  const originalShares = process.env.HOI4_SHARED_ANALYSES_FILE;
   let directory: string;
   let file: string;
   let result: AnalyzeResult;
@@ -41,6 +43,7 @@ describe('RecentAnalysesService', () => {
     file = join(directory, 'data', 'recent.json');
     process.env.HOI4_RECENT_ANALYSES_FILE = file;
     process.env.HOI4_ANALYSIS_RESULTS_DIR = join(directory, 'results');
+    process.env.HOI4_SHARED_ANALYSES_FILE = join(directory, 'shares.json');
     delete process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
     delete process.env.HOI4_RECENT_ANALYSES_LIMIT;
     const save = join(directory, 'fixture.hoi4');
@@ -67,6 +70,9 @@ describe('RecentAnalysesService', () => {
     if (originalBytes === undefined)
       delete process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
     else process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = originalBytes;
+    if (originalShares === undefined)
+      delete process.env.HOI4_SHARED_ANALYSES_FILE;
+    else process.env.HOI4_SHARED_ANALYSES_FILE = originalShares;
   });
 
   test('starts quietly empty when no persistence file exists', async () => {
@@ -93,6 +99,8 @@ describe('RecentAnalysesService', () => {
         aircraftCount: 0,
         hasPersistedResult: true,
         pinned: false,
+        campaignId: null,
+        playerCountryTag: null,
       },
     ]);
     expect(new Date(items[0].analyzedAt).toISOString()).toBe(
@@ -133,7 +141,7 @@ describe('RecentAnalysesService', () => {
     });
   });
 
-  test('persists comparison context separately from recent metadata', async () => {
+  test('persists lightweight campaign context with recent metadata', async () => {
     const comparisonContext = {
       campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
       gameVersion: '1.19.2',
@@ -149,9 +157,9 @@ describe('RecentAnalysesService', () => {
       result,
       comparisonContext,
     });
-    expect(await files.readFile(file, 'utf8')).not.toMatch(
-      /campaignId|gameVersion|0731c3c7/,
-    );
+    const recent = await files.readFile(file, 'utf8');
+    expect(recent).toContain('0731c3c7-035e-46b1-b07b-6c35b27e8dc2');
+    expect(recent).not.toContain('gameVersion');
   });
 
   test('backfills both missing legacy metrics from the persisted result and persists them', async () => {
@@ -565,6 +573,164 @@ describe('RecentAnalysesService', () => {
         (item) => item.hash,
       ),
     ).toEqual([input('b').hash]);
+  });
+
+  test('reports lightweight storage bytes, configured limit and exact known campaigns', async () => {
+    process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = '1234567';
+    results = new PersistedAnalysisResultService();
+    history = new RecentAnalysesService(results);
+    const campaign = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
+    await history.record(input('a'), result, {
+      campaignId: campaign,
+      gameVersion: '1.19.2',
+      playerCountryTag: 'GER',
+    });
+    await history.record(
+      input('b'),
+      { ...result, game_date: '1945.1.1' },
+      {
+        campaignId: campaign,
+        gameVersion: '1.19.2',
+        playerCountryTag: 'GER',
+      },
+    );
+    await history.record(input('legacy'), result, {
+      campaignId: null,
+      gameVersion: null,
+    });
+    await history.setPinned(input('a').hash, true);
+    const filesInStorage = await files.readdir(join(directory, 'results'));
+    const bytes = (
+      await Promise.all(
+        filesInStorage.map((name) =>
+          files.stat(join(directory, 'results', name)),
+        ),
+      )
+    ).reduce((total, entry) => total + entry.size, 0);
+    const readResult = jest.spyOn(results, 'getWithContext');
+
+    const status = await history.storageStatus();
+
+    expect(status).toMatchObject({
+      recentAnalysisCount: 3,
+      persistedAnalysisCount: 3,
+      persistedResultBytes: bytes,
+      maxPersistedResultBytes: 1234567,
+      knownCampaignCount: 1,
+      unknownCampaignAnalysisCount: 1,
+      pinnedAnalysisCount: 1,
+      unpinnedAnalysisCount: 2,
+      cleanupEligibleCount: 2,
+      sharedAnalysisCount: 0,
+      shareStatusReliable: true,
+    });
+    expect(status.campaigns).toEqual([
+      expect.objectContaining({
+        campaignId: campaign,
+        playerCountryTag: 'GER',
+        analysisCount: 2,
+        persistedAnalysisCount: 2,
+        pinnedAnalysisCount: 1,
+        sharedAnalysisCount: 0,
+        firstGameDate: '1944.5.1',
+        latestGameDate: '1945.1.1',
+      }),
+    ]);
+    expect(status.campaigns[0].resultBytes).toBeGreaterThan(0);
+    expect(readResult).not.toHaveBeenCalled();
+  });
+
+  test('backfills legacy campaign context once from persisted V2 metadata', async () => {
+    const campaign = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
+    await history.record(input('context-backfill'), result, {
+      campaignId: campaign,
+      gameVersion: '1.19.2',
+      playerCountryTag: 'GER',
+    });
+    await rewriteStoredItem(input('context-backfill').hash, (item) => {
+      delete item.campaignId;
+      delete item.playerCountryTag;
+    });
+    const read = jest.spyOn(results, 'getComparisonContext');
+
+    history = new RecentAnalysesService(results);
+    expect((await history.list())[0]).toMatchObject({
+      campaignId: campaign,
+      playerCountryTag: 'GER',
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+
+    history = new RecentAnalysesService(results);
+    await history.storageStatus();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  test('campaign deletion requires explicit pinned acknowledgement and preserves active shares', async () => {
+    const campaign = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
+    const other = '1731c3c7-035e-46b1-b07b-6c35b27e8dc2';
+    const shares = new SharedAnalysesService(results);
+    history = new RecentAnalysesService(results, shares);
+    await history.record(input('a'), result, {
+      campaignId: campaign,
+      gameVersion: null,
+    });
+    await history.record(input('b'), result, {
+      campaignId: campaign,
+      gameVersion: null,
+    });
+    await history.record(input('other'), result, {
+      campaignId: other,
+      gameVersion: null,
+    });
+    await history.setPinned(input('b').hash, true);
+    const link = await shares.create(input('a').hash);
+
+    await expect(history.deleteCampaign(campaign, false)).rejects.toMatchObject(
+      {
+        pinnedCount: 1,
+      },
+    );
+    expect(await history.list()).toHaveLength(3);
+
+    expect((await history.deleteCampaign(campaign, true)).sort()).toEqual(
+      [input('a').hash, input('b').hash].sort(),
+    );
+    expect((await history.list()).map((item) => item.hash)).toEqual([
+      input('other').hash,
+    ]);
+    expect(await results.exists(input('a').hash)).toBe(true);
+    expect(await results.exists(input('b').hash)).toBe(false);
+    expect(await shares.getResult(link!.id)).toEqual(result);
+  });
+
+  test('bulk cleanup removes legacy and known unpinned entries while protecting pins and shares', async () => {
+    const campaign = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
+    const shares = new SharedAnalysesService(results);
+    history = new RecentAnalysesService(results, shares);
+    await history.record(input('shared'), result, {
+      campaignId: campaign,
+      gameVersion: null,
+    });
+    await history.record(input('legacy'), result, {
+      campaignId: null,
+      gameVersion: null,
+    });
+    await history.record(input('pinned'), result, {
+      campaignId: campaign,
+      gameVersion: null,
+    });
+    await history.setPinned(input('pinned').hash, true);
+    await shares.create(input('shared').hash);
+
+    expect((await history.deleteUnpinned()).sort()).toEqual(
+      [input('shared').hash, input('legacy').hash].sort(),
+    );
+    expect((await history.list()).map((item) => item.hash)).toEqual([
+      input('pinned').hash,
+    ]);
+    expect(await results.exists(input('shared').hash)).toBe(true);
+    expect(await results.exists(input('legacy').hash)).toBe(false);
+    expect(await results.exists(input('pinned').hash)).toBe(true);
   });
 
   test('pin and unpin persist without changing analysis time or result', async () => {

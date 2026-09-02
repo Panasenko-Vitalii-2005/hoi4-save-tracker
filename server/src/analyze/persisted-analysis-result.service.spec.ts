@@ -135,6 +135,21 @@ describe('PersistedAnalysisResultService', () => {
     });
   });
 
+  test('reads comparison context from the gzip prefix without loading the full result', async () => {
+    const comparisonContext = {
+      campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+      gameVersion: '1.19.2',
+      playerCountryTag: 'GER',
+    };
+    await service.save(hash('a'), result, [], { comparisonContext });
+    const read = jest.spyOn(files, 'readFile');
+
+    expect(await service.getComparisonContext(hash('a'))).toEqual(
+      comparisonContext,
+    );
+    expect(read).not.toHaveBeenCalled();
+  });
+
   test.each(['gzip', 'json', 'truncated'])(
     'handles corrupt %s safely',
     async (kind) => {
@@ -214,6 +229,29 @@ describe('PersistedAnalysisResultService', () => {
     await service.delete(hash('a'));
     expect(await service.exists(hash('a'))).toBe(false);
     expect(await service.exists(hash('b'))).toBe(true);
+  });
+
+  test('reports compressed artifact bytes and configured budget without reading results', async () => {
+    await service.save(hash('a'), result);
+    await service.save(hash('b'), result);
+    const expected = await Promise.all(
+      [hash('a'), hash('b')].map(
+        async (value) => (await files.stat(path(value))).size,
+      ),
+    );
+    const read = jest.spyOn(files, 'readFile');
+
+    const status = await service.storageStatus();
+
+    expect(status).toEqual({
+      maxBytes: 128 * 1024 * 1024,
+      totalBytes: expected[0] + expected[1],
+      files: [
+        { hash: hash('a'), bytes: expected[0] },
+        { hash: hash('b'), bytes: expected[1] },
+      ].sort((left, right) => left.hash.localeCompare(right.hash)),
+    });
+    expect(read).not.toHaveBeenCalled();
   });
 
   test('byte quota evicts oldest analysis timestamp rather than file creation order', async () => {

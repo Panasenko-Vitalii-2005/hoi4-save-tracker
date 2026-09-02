@@ -35,6 +35,10 @@ import { BatchAnalysisController } from './batch-analysis.controller';
 import { CampaignTrendsController } from './campaign-trends.controller';
 import { CampaignTrendsService } from './campaign-trends.service';
 import type { CampaignTrendsDto } from './campaign-trends.types';
+import type {
+  AnalysisStorageMutationResult,
+  AnalysisStorageStatus,
+} from './analysis-storage.types';
 
 class TrackedWorkerService extends Hoi4AnalysisWorkerService {
   created = 0;
@@ -555,6 +559,106 @@ describe('AnalyzeController uploads', () => {
       .expect(201);
     expect(analysis.created).toBe(workers);
     expect(await history.list()).toHaveLength(1);
+  });
+
+  test('storage endpoint reports compressed results and known campaign without Worker work', async () => {
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from(navalSave('Storage A')), 'a.hoi4')
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from(navalSave('Storage B')), 'b.hoi4')
+      .expect(201);
+    const before = analysis.created;
+
+    const response = await request(app.getHttpServer())
+      .get('/api/analyze/storage')
+      .expect(200);
+    const body = response.body as AnalysisStorageStatus;
+
+    expect(body).toMatchObject({
+      recentAnalysisCount: 2,
+      persistedAnalysisCount: 2,
+      maxPersistedResultBytes: 128 * 1024 * 1024,
+      knownCampaignCount: 1,
+      unknownCampaignAnalysisCount: 0,
+      pinnedAnalysisCount: 0,
+      cleanupEligibleCount: 2,
+    });
+    expect(body.persistedResultBytes).toBeGreaterThan(0);
+    expect(body.campaigns[0]).toMatchObject({
+      campaignId: '0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+      analysisCount: 2,
+    });
+    expect(analysis.created).toBe(before);
+  });
+
+  test('campaign delete requires pinned acknowledgement and then clears matching cache entries', async () => {
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from(navalSave('Campaign A')), 'a.hoi4')
+      .expect(201);
+    const item = (await history.list())[0];
+    await request(app.getHttpServer())
+      .patch(`/api/analyze/recent/${item.hash}`)
+      .send({ pinned: true })
+      .expect(200);
+    const route =
+      '/api/analyze/storage/campaign/0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
+
+    const blocked = await request(app.getHttpServer())
+      .delete(route)
+      .send({ includePinned: false })
+      .expect(409);
+    expect(blocked.body).toMatchObject({
+      code: 'PINNED_ANALYSES_INCLUDED',
+      pinnedCount: 1,
+    });
+    expect(await history.list()).toHaveLength(1);
+
+    const deleted = await request(app.getHttpServer())
+      .delete(route)
+      .send({ includePinned: true })
+      .expect(200);
+    expect(deleted.body).toMatchObject({ deletedCount: 1, items: [] });
+    expect(cache['completed'].has(item.hash)).toBe(false);
+  });
+
+  test('unpinned cleanup protects pins and rejects unsafe campaign requests', async () => {
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from(navalSave('Cleanup pinned')), 'pinned.hoi4')
+      .expect(201);
+    const pinned = (await history.list())[0];
+    await history.setPinned(pinned.hash, true);
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach(
+        'file',
+        Buffer.from(navalSave('Cleanup ordinary')),
+        'ordinary.hoi4',
+      )
+      .expect(201);
+
+    const cleaned = await request(app.getHttpServer())
+      .delete('/api/analyze/storage/unpinned')
+      .expect(200);
+    const body = cleaned.body as AnalysisStorageMutationResult;
+    expect(body.deletedCount).toBe(1);
+    expect(body.items).toEqual([
+      expect.objectContaining({ hash: pinned.hash, pinned: true }),
+    ]);
+    await request(app.getHttpServer())
+      .delete('/api/analyze/storage/campaign/not-a-campaign')
+      .send({ includePinned: true })
+      .expect(400);
+    await request(app.getHttpServer())
+      .delete(
+        '/api/analyze/storage/campaign/0731c3c7-035e-46b1-b07b-6c35b27e8dc2',
+      )
+      .send({ includePinned: 'true' })
+      .expect(400);
   });
 
   test('result persistence failure leaves successful POST and metadata with unavailable result', async () => {

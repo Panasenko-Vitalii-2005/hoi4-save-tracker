@@ -17,7 +17,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.service';
 import { LocalSavePathError, resolveLocalSavePath } from '../saves/local-saves';
-import { RecentAnalysesService } from './recent-analyses.service';
+import {
+  normalizeCampaignId,
+  PinnedCampaignAnalysesError,
+  RecentAnalysesService,
+} from './recent-analyses.service';
 import type { Response } from 'express';
 import { normalizeAnalysisHash } from './persisted-analysis-result.service';
 import { AnalysisComparisonService } from './analysis-comparison.service';
@@ -78,6 +82,84 @@ export class AnalyzeController {
   @Get('recent')
   async recent() {
     return { items: await this.history.list() };
+  }
+
+  @Get('storage')
+  async storage() {
+    try {
+      return await this.history.storageStatus();
+    } catch {
+      throw new HttpException(
+        'Could not read local analysis storage',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  @Delete('storage/unpinned')
+  async deleteUnpinned() {
+    try {
+      const deleted = await this.history.deleteUnpinned();
+      for (const hash of deleted) this.analysis.delete(hash);
+      return {
+        deletedCount: deleted.length,
+        items: await this.history.list(),
+        storage: await this.history.storageStatus(),
+      };
+    } catch {
+      throw new HttpException(
+        'Could not delete unpinned analyses',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+  }
+
+  @Delete('storage/campaign/:campaignId')
+  async deleteCampaign(
+    @Param('campaignId') campaignId: string,
+    @Body() body: unknown,
+  ) {
+    const key = normalizeCampaignId(campaignId);
+    if (!key)
+      throw new HttpException('Invalid campaign id', HttpStatus.BAD_REQUEST);
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      Array.isArray(body) ||
+      Object.keys(body).length !== 1 ||
+      !('includePinned' in body) ||
+      typeof body.includePinned !== 'boolean'
+    )
+      throw new HttpException(
+        'Provide only a boolean includePinned field',
+        HttpStatus.BAD_REQUEST,
+      );
+    try {
+      const deleted = await this.history.deleteCampaign(
+        key,
+        body.includePinned,
+      );
+      for (const hash of deleted) this.analysis.delete(hash);
+      return {
+        deletedCount: deleted.length,
+        items: await this.history.list(),
+        storage: await this.history.storageStatus(),
+      };
+    } catch (error: unknown) {
+      if (error instanceof PinnedCampaignAnalysesError)
+        throw new HttpException(
+          {
+            code: 'PINNED_ANALYSES_INCLUDED',
+            message: 'Campaign includes pinned analyses',
+            pinnedCount: error.pinnedCount,
+          },
+          HttpStatus.CONFLICT,
+        );
+      throw new HttpException(
+        'Could not delete campaign analyses',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
   }
 
   @Delete('recent')

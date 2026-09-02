@@ -6,6 +6,7 @@ import {
   ShareAnalysisDialog,
   type PublicShareLink,
 } from "./ShareAnalysisDialog";
+import { AnalysisStorageManagement } from "./AnalysisStorageManagement";
 
 type SortOrder =
   | "newest"
@@ -202,6 +203,7 @@ export function RecentAnalyses({
     action: "delete" | "pin";
   } | null>(null);
   const [actionMessage, setActionMessage] = useState("");
+  const [storageBusy, setStorageBusy] = useState(false);
   const [shareItem, setShareItem] = useState<RecentAnalysis | null>(null);
   const [knownShares, setKnownShares] = useState<
     ReadonlyMap<string, PublicShareLink>
@@ -219,7 +221,7 @@ export function RecentAnalyses({
   useEffect(() => {
     // Cancel stale lists while a mutation is running; refetch after it settles,
     // including any analysis completion that happened in the meantime.
-    if (mutation) return;
+    if (mutation || storageBusy) return;
     let active = true;
     const controller = new AbortController();
     setLoading(true);
@@ -254,7 +256,7 @@ export function RecentAnalyses({
       active = false;
       controller.abort();
     };
-  }, [refreshVersion, retry, mutation]);
+  }, [refreshVersion, retry, mutation, storageBusy]);
 
   const visibleItems = useMemo(() => {
     const search = query.trim().toLocaleLowerCase();
@@ -293,7 +295,13 @@ export function RecentAnalyses({
   }, [items, query, sortOrder]);
 
   const manage = async (item: RecentAnalysis, action: "delete" | "pin") => {
-    if (mutationInFlight.current || openingHash !== null || shareItem) return;
+    if (
+      mutationInFlight.current ||
+      openingHash !== null ||
+      shareItem ||
+      storageBusy
+    )
+      return;
     if (
       action === "delete" &&
       !window.confirm(
@@ -349,7 +357,7 @@ export function RecentAnalyses({
         id="recent-analyses"
         className="panel analyzer-recent"
         aria-label="Recent Analyses"
-        aria-busy={loading || mutation !== null}
+        aria-busy={loading || mutation !== null || storageBusy}
       >
         <div className="analyzer-recent-header">
           <div className="analyzer-recent-heading">
@@ -366,6 +374,22 @@ export function RecentAnalyses({
             </div>
           </div>
         </div>
+        <AnalysisStorageManagement
+          items={items}
+          refreshVersion={refreshVersion}
+          disabled={
+            loading ||
+            mutation !== null ||
+            openingHash !== null ||
+            analyzing ||
+            shareItem !== null
+          }
+          onBusyChange={setStorageBusy}
+          onChanged={(next, message) => {
+            setItems(next);
+            setActionMessage(message);
+          }}
+        />
         {failed && (
           <div className="recovery-notice" role="alert">
             <div>
@@ -435,10 +459,10 @@ export function RecentAnalyses({
             {loading
               ? "Loading recent analyses…"
               : items.length === 0
-                  ? ""
-                  : visibleItems.length === 0
-                    ? "No analyses found."
-                    : `Showing ${visibleItems.length} of ${items.length} analyses.`}
+                ? ""
+                : visibleItems.length === 0
+                  ? "No analyses found."
+                  : `Showing ${visibleItems.length} of ${items.length} analyses.`}
           </div>
           <div className="micro-copy" role="status" aria-live="polite">
             {openingHash ? "Opening saved analysis…" : ""}
@@ -523,159 +547,166 @@ export function RecentAnalyses({
                   const analyzed = analyzedDate(item.analyzedAt);
                   return (
                     <tr
-                    key={item.hash}
-                    aria-busy={
-                      openingHash === item.hash || mutation?.hash === item.hash
-                    }
-                  >
-                    <td>
-                      <div className="analyzer-recent-name-line">
-                        <span className="analyzer-recent-name">
-                          {item.fileName}
+                      key={item.hash}
+                      aria-busy={
+                        openingHash === item.hash ||
+                        mutation?.hash === item.hash
+                      }
+                    >
+                      <td>
+                        <div className="analyzer-recent-name-line">
+                          <span className="analyzer-recent-name">
+                            {item.fileName}
+                          </span>
+                          {item.pinned && (
+                            <span
+                              className="analyzer-recent-pin-state"
+                              aria-label="Pinned analysis"
+                              title="Pinned analysis"
+                            >
+                              <RecentIcon name="pin" />
+                            </span>
+                          )}
+                        </div>
+                        <div className="micro-copy">
+                          {fileSize(item.fileSizeBytes)}
+                        </div>
+                      </td>
+                      <td>
+                        <span className="analyzer-recent-meta">
+                          <RecentIcon name="calendar" />
+                          <span>{item.gameDate || "—"}</span>
                         </span>
-                        {item.pinned && (
-                          <span
-                            className="analyzer-recent-pin-state"
-                            aria-label="Pinned analysis"
-                            title="Pinned analysis"
+                      </td>
+                      <td>
+                        <time dateTime={item.analyzedAt}>
+                          <span className="analyzer-recent-meta">
+                            <RecentIcon name="clock" />
+                            <span>
+                              <span className="analyzer-recent-date">
+                                {analyzed.date}
+                              </span>
+                              {analyzed.time && (
+                                <span className="micro-copy">
+                                  {analyzed.time}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                        </time>
+                      </td>
+                      <td className="numeric-cell analyzer-recent-manpower">
+                        <span className="analyzer-recent-metric">
+                          <RecentIcon name="manpower" />
+                          <span>{recentCount(item.manpowerInField)}</span>
+                        </span>
+                      </td>
+                      <td className="numeric-cell analyzer-recent-aircraft">
+                        <span className="analyzer-recent-metric">
+                          <RecentIcon name="aircraft" />
+                          <span>{recentCount(item.aircraftCount)}</span>
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`analyzer-recent-result ${item.hasPersistedResult ? "available" : "unavailable"}`}
+                          title={
+                            item.hasPersistedResult
+                              ? "Saved analysis can be opened."
+                              : "Analyze the original save again to make this result available."
+                          }
+                        >
+                          <RecentIcon
+                            name={
+                              item.hasPersistedResult
+                                ? "available"
+                                : "unavailable"
+                            }
+                          />
+                          {item.hasPersistedResult
+                            ? "Available"
+                            : "Unavailable"}
+                        </span>
+                      </td>
+                      <td className="analyzer-recent-action">
+                        <div className="analyzer-recent-actions">
+                          {item.hasPersistedResult === true ? (
+                            <>
+                              <button
+                                className="button analyzer-recent-open"
+                                aria-label={`Open analysis ${item.fileName}`}
+                                disabled={
+                                  openingHash !== null ||
+                                  analyzing ||
+                                  mutation !== null ||
+                                  storageBusy ||
+                                  shareItem !== null
+                                }
+                                onClick={() => {
+                                  if (!mutationInFlight.current) onOpen(item);
+                                }}
+                              >
+                                <RecentIcon name="open" />
+                                {openingHash === item.hash
+                                  ? "Opening…"
+                                  : "Open result"}
+                              </button>
+                              <button
+                                className="button button-secondary"
+                                aria-label={`Share analysis ${item.fileName}`}
+                                disabled={
+                                  openingHash !== null ||
+                                  analyzing ||
+                                  mutation !== null ||
+                                  storageBusy ||
+                                  shareItem !== null
+                                }
+                                onClick={() => setShareItem(item)}
+                              >
+                                <RecentIcon name="share" />
+                                Share
+                              </button>
+                            </>
+                          ) : null}
+                          <button
+                            className="button button-secondary"
+                            aria-label={`${item.pinned ? "Unpin" : "Pin"} analysis ${item.fileName}`}
+                            aria-pressed={item.pinned === true}
+                            disabled={
+                              mutation !== null ||
+                              storageBusy ||
+                              openingHash !== null ||
+                              shareItem !== null
+                            }
+                            onClick={() => void manage(item, "pin")}
                           >
                             <RecentIcon name="pin" />
-                          </span>
-                        )}
-                      </div>
-                      <div className="micro-copy">
-                        {fileSize(item.fileSizeBytes)}
-                      </div>
-                    </td>
-                    <td>
-                      <span className="analyzer-recent-meta">
-                        <RecentIcon name="calendar" />
-                        <span>{item.gameDate || "—"}</span>
-                      </span>
-                    </td>
-                    <td>
-                      <time dateTime={item.analyzedAt}>
-                        <span className="analyzer-recent-meta">
-                          <RecentIcon name="clock" />
-                          <span>
-                            <span className="analyzer-recent-date">
-                              {analyzed.date}
-                            </span>
-                            {analyzed.time && (
-                              <span className="micro-copy">
-                                {analyzed.time}
-                              </span>
-                            )}
-                          </span>
-                        </span>
-                      </time>
-                    </td>
-                    <td className="numeric-cell analyzer-recent-manpower">
-                      <span className="analyzer-recent-metric">
-                        <RecentIcon name="manpower" />
-                        <span>{recentCount(item.manpowerInField)}</span>
-                      </span>
-                    </td>
-                    <td className="numeric-cell analyzer-recent-aircraft">
-                      <span className="analyzer-recent-metric">
-                        <RecentIcon name="aircraft" />
-                        <span>{recentCount(item.aircraftCount)}</span>
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        className={`analyzer-recent-result ${item.hasPersistedResult ? "available" : "unavailable"}`}
-                        title={
-                          item.hasPersistedResult
-                            ? "Saved analysis can be opened."
-                            : "Analyze the original save again to make this result available."
-                        }
-                      >
-                        <RecentIcon
-                          name={
-                            item.hasPersistedResult
-                              ? "available"
-                              : "unavailable"
-                          }
-                        />
-                        {item.hasPersistedResult ? "Available" : "Unavailable"}
-                      </span>
-                    </td>
-                    <td className="analyzer-recent-action">
-                      <div className="analyzer-recent-actions">
-                        {item.hasPersistedResult === true ? (
-                          <>
-                            <button
-                              className="button analyzer-recent-open"
-                              aria-label={`Open analysis ${item.fileName}`}
-                              disabled={
-                                openingHash !== null ||
-                                analyzing ||
-                                mutation !== null ||
-                                shareItem !== null
-                              }
-                              onClick={() => {
-                                if (!mutationInFlight.current) onOpen(item);
-                              }}
-                            >
-                              <RecentIcon name="open" />
-                              {openingHash === item.hash
-                                ? "Opening…"
-                                : "Open result"}
-                            </button>
-                            <button
-                              className="button button-secondary"
-                              aria-label={`Share analysis ${item.fileName}`}
-                              disabled={
-                                openingHash !== null ||
-                                analyzing ||
-                                mutation !== null ||
-                                shareItem !== null
-                              }
-                              onClick={() => setShareItem(item)}
-                            >
-                              <RecentIcon name="share" />
-                              Share
-                            </button>
-                          </>
-                        ) : null}
-                        <button
-                          className="button button-secondary"
-                          aria-label={`${item.pinned ? "Unpin" : "Pin"} analysis ${item.fileName}`}
-                          aria-pressed={item.pinned === true}
-                          disabled={
-                            mutation !== null ||
-                            openingHash !== null ||
-                            shareItem !== null
-                          }
-                          onClick={() => void manage(item, "pin")}
-                        >
-                          <RecentIcon name="pin" />
-                          {mutation?.hash === item.hash &&
-                          mutation.action === "pin"
-                            ? "Updating…"
-                            : item.pinned
-                              ? "Unpin"
-                              : "Pin"}
-                        </button>
-                        <button
-                          className="button button-secondary analyzer-recent-delete"
-                          aria-label={`Delete analysis ${item.fileName}`}
-                          disabled={
-                            mutation !== null ||
-                            openingHash !== null ||
-                            shareItem !== null
-                          }
-                          onClick={() => void manage(item, "delete")}
-                        >
-                          <RecentIcon name="delete" />
-                          {mutation?.hash === item.hash &&
-                          mutation.action === "delete"
-                            ? "Deleting…"
-                            : "Delete"}
-                        </button>
-                      </div>
-                    </td>
+                            {mutation?.hash === item.hash &&
+                            mutation.action === "pin"
+                              ? "Updating…"
+                              : item.pinned
+                                ? "Unpin"
+                                : "Pin"}
+                          </button>
+                          <button
+                            className="button button-secondary analyzer-recent-delete"
+                            aria-label={`Delete analysis ${item.fileName}`}
+                            disabled={
+                              mutation !== null ||
+                              storageBusy ||
+                              openingHash !== null ||
+                              shareItem !== null
+                            }
+                            onClick={() => void manage(item, "delete")}
+                          >
+                            <RecentIcon name="delete" />
+                            {mutation?.hash === item.hash &&
+                            mutation.action === "delete"
+                              ? "Deleting…"
+                              : "Delete"}
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -690,6 +721,7 @@ export function RecentAnalyses({
           loading ||
           failed ||
           mutation !== null ||
+          storageBusy ||
           openingHash !== null ||
           analyzing
         }

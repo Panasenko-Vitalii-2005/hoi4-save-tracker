@@ -21,6 +21,33 @@ const entry = {
   hasPersistedResult: false,
   pinned: false,
 };
+const campaignId = "0731c3c7-035e-46b1-b07b-6c35b27e8dc2";
+const storageStatus = {
+  recentAnalysisCount: 2,
+  persistedAnalysisCount: 2,
+  persistedResultBytes: 86 * 1024 * 1024,
+  maxPersistedResultBytes: 128 * 1024 * 1024,
+  knownCampaignCount: 1,
+  unknownCampaignAnalysisCount: 0,
+  pinnedAnalysisCount: 1,
+  unpinnedAnalysisCount: 1,
+  sharedAnalysisCount: 1,
+  cleanupEligibleCount: 1,
+  shareStatusReliable: true,
+  campaigns: [
+    {
+      campaignId,
+      playerCountryTag: "GER",
+      analysisCount: 2,
+      persistedAnalysisCount: 2,
+      pinnedAnalysisCount: 1,
+      sharedAnalysisCount: 1,
+      resultBytes: 86 * 1024 * 1024,
+      firstGameDate: "1936.2.1",
+      latestGameDate: "1950.11.1",
+    },
+  ],
+};
 const snapshot = {
   game_date: "1944.5.1",
   parse_seconds: 0.1,
@@ -66,6 +93,8 @@ describe("Recent Analyses", () => {
     reject: (error: Error) => void;
   }>;
   let managementRequests: typeof openRequests;
+  let storageRequests: typeof openRequests;
+  let storageStatusHandler: () => Promise<Response>;
 
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -73,6 +102,8 @@ describe("Recent Analyses", () => {
     analyzeRequests = [];
     openRequests = [];
     managementRequests = [];
+    storageRequests = [];
+    storageStatusHandler = () => Promise.resolve(Response.json(storageStatus));
     vi.stubGlobal(
       "confirm",
       vi.fn(() => true),
@@ -80,6 +111,14 @@ describe("Recent Analyses", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/analyze/storage") return storageStatusHandler();
+        if (
+          url.startsWith("/api/analyze/storage/") &&
+          init?.method === "DELETE"
+        )
+          return new Promise<Response>((resolve, reject) =>
+            storageRequests.push({ url, init, resolve, reject }),
+          );
         if (url === "/api/analyze/recent")
           return new Promise<Response>((resolve, reject) =>
             historyRequests.push({ resolve, reject }),
@@ -211,9 +250,9 @@ describe("Recent Analyses", () => {
     expect(
       section().querySelector(".analyzer-recent-aircraft")?.textContent,
     ).toBe("—");
-    expect(section().querySelectorAll('[data-recent-icon="aircraft"]')).toHaveLength(
-      1,
-    );
+    expect(
+      section().querySelectorAll('[data-recent-icon="aircraft"]'),
+    ).toHaveLength(1);
   });
 
   test.each(["network", "http", "malformed"])(
@@ -233,7 +272,9 @@ describe("Recent Analyses", () => {
       expect(section().textContent).toContain("You can still analyze saves.");
       expect(section().textContent).not.toContain("private");
       await act(async () =>
-        section().querySelector<HTMLButtonElement>("button")!.click(),
+        [...section().querySelectorAll<HTMLButtonElement>("button")]
+          .find((button) => button.textContent === "Try again")!
+          .click(),
       );
       expect(historyRequests).toHaveLength(2);
       await respond(1, [entry]);
@@ -484,7 +525,9 @@ describe("Recent Analyses", () => {
   };
   const changeSort = async (value: string) => {
     await act(async () => {
-      const select = section().querySelector("select")!;
+      const select = section().querySelector<HTMLSelectElement>(
+        "#recent-analysis-sort",
+      )!;
       select.value = value;
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
@@ -622,9 +665,15 @@ describe("Recent Analyses", () => {
     expect(section().textContent).toContain(
       entry.manpowerInField.toLocaleString(),
     );
-    expect(section().textContent).toContain(entry.aircraftCount.toLocaleString());
-    expect(section().querySelector('[data-recent-icon="aircraft"]')).not.toBeNull();
-    expect(section().querySelector('[data-recent-icon="history"]')).not.toBeNull();
+    expect(section().textContent).toContain(
+      entry.aircraftCount.toLocaleString(),
+    );
+    expect(
+      section().querySelector('[data-recent-icon="aircraft"]'),
+    ).not.toBeNull();
+    expect(
+      section().querySelector('[data-recent-icon="history"]'),
+    ).not.toBeNull();
     expect(
       section().querySelector('label[for="recent-analysis-search"]')
         ?.textContent,
@@ -640,6 +689,160 @@ describe("Recent Analyses", () => {
     expect(section().innerHTML).not.toContain(entry.hash);
     expect(section().textContent).not.toMatch(/gzip|Worker|SHA-256|cache|disk/);
     expect(managedButton("Open", "alpha.hoi4")).toBeNull();
+  });
+
+  test("shows compact backend-derived storage usage without exposing campaign UUID", async () => {
+    await render();
+    await respond(0, [entry, { ...entry, hash: "b".repeat(64) }]);
+    const storage = section().querySelector(
+      '[aria-label="Local analysis storage"]',
+    )!;
+
+    expect(storage.textContent).toContain("Local analysis storage");
+    expect(storage.textContent).toContain("2 stored results");
+    expect(storage.textContent).toContain("1 known campaign");
+    expect(storage.textContent).toContain("86 MiB of 128 MiB");
+    expect(storage.textContent).toContain(
+      "Uploaded .hoi4 files are processed temporarily",
+    );
+    expect(storage.textContent).not.toContain(campaignId);
+    expect(
+      storage.querySelector(
+        'progress[aria-label="Analysis results storage used"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  test("storage confirmation returns focus to its trigger when cancelled", async () => {
+    await render();
+    await respond(0, [entry]);
+    const trigger = section().querySelector<HTMLButtonElement>(
+      ".analyzer-storage-actions button",
+    )!;
+    trigger.focus();
+    await act(async () => trigger.click());
+    const cancel = document.querySelector<HTMLButtonElement>(
+      ".storage-confirm-actions .button-secondary",
+    )!;
+    expect(document.activeElement).toBe(cancel);
+    await act(async () => cancel.click());
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  test("campaign cleanup shows context, requires pinned acknowledgement and refreshes data", async () => {
+    await render();
+    await respond(0, [
+      { ...entry, pinned: true },
+      { ...entry, hash: "b".repeat(64) },
+    ]);
+    await act(async () =>
+      section()
+        .querySelector<HTMLButtonElement>(".analyzer-storage-actions button")!
+        .click(),
+    );
+    const dialog = document.querySelector<HTMLElement>(
+      '[role="dialog"][aria-labelledby="storage-confirm-title"]',
+    )!;
+    expect(dialog.textContent).toContain("Germany");
+    expect(dialog.textContent).toContain("1936.2.1 → 1950.11.1");
+    expect(dialog.textContent).toContain("2 analyses");
+    expect(dialog.textContent).toContain("original .hoi4 save files");
+    expect(dialog.textContent).toContain("active public link");
+    const confirm = [
+      ...dialog.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((button) => button.textContent === "Delete stored analyses")!;
+    expect(confirm.disabled).toBe(true);
+    const acknowledgement = dialog.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]',
+    )!;
+    await act(async () => acknowledgement.click());
+    expect(confirm.disabled).toBe(false);
+    await act(async () => confirm.click());
+    expect(storageRequests).toHaveLength(1);
+    expect(storageRequests[0].url).toBe(
+      `/api/analyze/storage/campaign/${campaignId}`,
+    );
+    expect(storageRequests[0].init?.body).toBe(
+      JSON.stringify({ includePinned: true }),
+    );
+    const emptyStatus = {
+      ...storageStatus,
+      recentAnalysisCount: 0,
+      persistedAnalysisCount: 0,
+      persistedResultBytes: 0,
+      knownCampaignCount: 0,
+      unknownCampaignAnalysisCount: 0,
+      pinnedAnalysisCount: 0,
+      unpinnedAnalysisCount: 0,
+      sharedAnalysisCount: 0,
+      cleanupEligibleCount: 0,
+      campaigns: [],
+    };
+    storageStatusHandler = () => Promise.resolve(Response.json(emptyStatus));
+    await act(async () =>
+      storageRequests[0].resolve(
+        Response.json({ deletedCount: 2, items: [], storage: emptyStatus }),
+      ),
+    );
+    expect(document.querySelector("#storage-confirm-title")).toBeNull();
+    expect(section().textContent).toContain("2 saved analyses deleted.");
+    expect(section().querySelector("tbody tr")).toBeNull();
+  });
+
+  test("unpinned cleanup protects pins and uses an explicit confirmation", async () => {
+    await render();
+    await respond(0, [
+      { ...entry, pinned: true },
+      { ...entry, hash: "b".repeat(64) },
+    ]);
+    const cleanup = [
+      ...section().querySelectorAll<HTMLButtonElement>(
+        ".analyzer-storage-actions button",
+      ),
+    ].find((button) => button.textContent?.includes("unpinned"))!;
+    await act(async () => cleanup.click());
+    const dialog = document.querySelector<HTMLElement>(
+      "#storage-confirm-title",
+    )!.parentElement!;
+    expect(dialog.textContent).toContain(
+      "1 pinned analysis will remain protected",
+    );
+    expect(dialog.querySelector('input[type="checkbox"]')).toBeNull();
+    await act(async () =>
+      [...dialog.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "Delete stored analyses")!
+        .click(),
+    );
+    expect(storageRequests[0].url).toBe("/api/analyze/storage/unpinned");
+    expect(storageRequests[0].init?.method).toBe("DELETE");
+  });
+
+  test("cleanup failure preserves rows, hides server details and permits retry", async () => {
+    await render();
+    await respond(0, [entry]);
+    const cleanup = [
+      ...section().querySelectorAll<HTMLButtonElement>(
+        ".analyzer-storage-actions button",
+      ),
+    ].find((button) => button.textContent?.includes("unpinned"))!;
+    await act(async () => cleanup.click());
+    const dialog = document.querySelector<HTMLElement>(
+      "#storage-confirm-title",
+    )!.parentElement!;
+    const confirm = [
+      ...dialog.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((button) => button.textContent === "Delete stored analyses")!;
+    await act(async () => confirm.click());
+    await act(async () =>
+      storageRequests[0].resolve(
+        new Response("C:/private/results stack", { status: 503 }),
+      ),
+    );
+    expect(names()).toEqual([entry.fileName]);
+    expect(dialog.textContent).toContain("Cleanup failed");
+    expect(dialog.textContent).toContain("retry when storage is available");
+    expect(dialog.textContent).not.toMatch(/private|stack/);
+    expect(confirm.disabled).toBe(false);
   });
 
   test("cancelled delete confirmation sends no request and leaves the row", async () => {

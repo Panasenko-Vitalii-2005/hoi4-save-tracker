@@ -258,6 +258,31 @@ Delete, pin/unpin, analysis completion and clear share the existing serialized
 history mutation queue. A same-hash re-analysis reads the latest pin state inside
 that queue and preserves it. No database or cross-process synchronization is added.
 
+### Local analysis storage management
+
+`GET /api/analyze/storage` returns a compact filesystem-backed status without
+loading full `AnalyzeResult` values: Recent metadata count, recognized compressed
+result-file count and bytes, configured result byte budget, pin/share counts and
+known campaigns grouped only by exact `game_unique_id`. Legacy entries without a
+known UUID stay ungrouped. New Recent entries retain only lightweight campaign ID
+and player-tag context. Older V2 entries are backfilled once from the small gzip
+envelope prefix and atomically persisted; this does not parse a save or start a
+Worker. Subsequent status reads use only metadata plus file `stat` information.
+
+`DELETE /api/analyze/storage/campaign/:campaignId` accepts exactly
+`{ "includePinned": boolean }` and removes Recent entries for that exact UUID.
+Pinned entries require explicit opt-in. `DELETE /api/analyze/storage/unpinned`
+removes every unpinned Recent entry, including legacy entries, while retaining
+pins. Both operations also evict completed RAM-cache entries. Active public links
+keep their shared result artifact under the existing share-protection rules; the
+link remains available until revoked or hard byte-budget eviction. Original
+`.hoi4` files are never read or removed by these endpoints.
+
+All three operations reuse the existing per-process Recent/result/share mutation
+queues and atomic metadata writes. They return generic storage errors without
+paths. This remains local single-process persistence, not a cross-process
+transaction or database.
+
 Compose stores history in the `analysis-history` named volume at
 `/app/data/recent-analyses.json`, results at `/app/data/analysis-results`, and
 public-share metadata at `/app/data/shared-analyses.json`, surviving container
