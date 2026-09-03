@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.service';
 import { LocalSavePathError, resolveLocalSavePath } from '../saves/local-saves';
+import { requireLocalSavesEnabled } from '../saves/local-saves-access';
 import {
   normalizeCampaignId,
   PinnedCampaignAnalysesError,
@@ -260,6 +261,7 @@ export class AnalyzeController {
 
     let filePath = uploadedSave?.path;
     if (!filePath) {
+      requireLocalSavesEnabled();
       try {
         filePath = resolveLocalSavePath(requestedPath);
       } catch (error: unknown) {

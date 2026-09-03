@@ -1,5 +1,6 @@
 import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
 import { SaveAnalysisService } from './hoi4/save-analysis.service';
+import { requireLocalSavesEnabled } from './saves/local-saves-access';
 
 @Controller('saves')
 export class AppController {
@@ -7,6 +8,7 @@ export class AppController {
 
   @Post('analyze')
   async analyze(@Body('paths') paths: string[]) {
+    requireLocalSavesEnabled();
     if (!Array.isArray(paths) || paths.length === 0) {
       throw new BadRequestException('Paths must be a non-empty array');
     }

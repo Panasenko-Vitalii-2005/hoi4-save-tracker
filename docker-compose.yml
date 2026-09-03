@@ -5,6 +5,7 @@ services:
       dockerfile: server/Dockerfile
     environment:
       PORT: 3001
+      HOI4_LOCAL_SAVES_ENABLED: ${HOI4_LOCAL_SAVES_ENABLED:-false}
       HOI4_SAVES_DIR: /app/saves
       HOI4_RECENT_ANALYSES_FILE: /app/data/recent-analyses.json
       HOI4_ANALYSIS_RESULTS_DIR: /app/data/analysis-results

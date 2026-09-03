@@ -174,12 +174,14 @@ docker compose up --build
 
 Open [http://localhost:8081](http://localhost:8081). Stop with `docker compose down`.
 
-- `./saves` is mounted read-only at `/app/saves` for optional local browsing. Create the directory if it is absent; browser upload works independently.
+- `./saves` is mounted read-only at `/app/saves`, but local browsing and path analysis are disabled by default. Set `HOI4_LOCAL_SAVES_ENABLED=true` explicitly for trusted local use; browser upload works independently.
 - `analysis-history` is a named volume containing Recent metadata, compressed results, and share metadata.
 - Save files are excluded from both Docker images.
 - `docker compose down -v` also deletes the named persistence volume; use it only when that is intended.
 
 Set `FRONTEND_PORT` to change the host port, for example `FRONTEND_PORT=8090 docker compose up --build` in a shell that supports inline environment variables.
+
+For trusted local browsing/path analysis, opt in explicitly with `HOI4_LOCAL_SAVES_ENABLED=true docker compose up --build`. Do not enable this mode on a public deployment.
 
 ### Native development
 
@@ -201,7 +203,7 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` to `http://localhost:3001`.
 
-By default native persistence is relative to `server/` under `server/data/`. `HOI4_SAVES_DIR` controls the directory exposed by the local-save browser.
+By default native persistence is relative to `server/` under `server/data/`. The local-save browser and server-path analysis are unavailable unless `HOI4_LOCAL_SAVES_ENABLED=true`; `HOI4_SAVES_DIR` then controls the exposed directory.
 
 ## Configuration
 
@@ -210,6 +212,8 @@ All values are optional; invalid numeric values fall back to the documented defa
 | Group | Variable | Default | Purpose |
 | --- | --- | ---: | --- |
 | Server | `PORT` | `3001` | NestJS listen port |
+| Server | `HOI4_CORS_ORIGIN` | `http://localhost:5173` | Exact frontend HTTP(S) origin allowed by CORS |
+| Local saves | `HOI4_LOCAL_SAVES_ENABLED` | `false` | Enable trusted server-side save browsing and path analysis only when exactly `true` |
 | Local saves | `HOI4_SAVES_DIR` | `../saves` from backend cwd | Read-only local-save browser root |
 | Upload | `HOI4_UPLOAD_DIRECTORY` | OS temp directory | Managed temporary uploads |
 | Upload | `HOI4_MAX_UPLOAD_BYTES` | 256 MiB | Raw uploaded-file limit |
@@ -237,8 +241,8 @@ Limits are per backend process. The result byte ceiling is authoritative: unpinn
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/health` | Liveness check |
-| `GET` | `/api/saves` | List configured local `.hoi4` files |
-| `POST` | `/api/analyze` | Analyze multipart upload or validated local path |
+| `GET` | `/api/saves` | List configured local `.hoi4` files when local mode is enabled |
+| `POST` | `/api/analyze` | Analyze multipart upload, or a validated local path when local mode is enabled |
 | `POST` | `/api/analyze/batch/preflight` | Return already persisted hashes for a bounded batch |
 | `GET` | `/api/analyze/recent` | List Recent metadata |
 | `GET` | `/api/analyze/recent/:hash/result` | Reopen a persisted result |
@@ -254,6 +258,8 @@ Limits are per backend process. The result byte ceiling is authoritative: unpinn
 | `GET` | `/api/share/:id` | Open a shared read-only analysis |
 
 The API is currently an unauthenticated local application surface, not a multi-tenant public contract. See the security notes below.
+
+Local filesystem APIs are safe-by-default: when `HOI4_LOCAL_SAVES_ENABLED` is unset or anything other than `true`, `/api/saves`, `/api/saves/default-dir`, `/saves/analyze`, and JSON `path` requests to `/api/analyze` return 404. Keep this disabled for public/SaaS deployments. Enabling it deliberately exposes server-side save discovery/path analysis and is intended only for a trusted local environment. Multipart upload analysis is unaffected.
 
 ## Persistence model
 

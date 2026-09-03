@@ -109,12 +109,14 @@ describe('AnalyzeController uploads', () => {
   const originalResultsDir = process.env.HOI4_ANALYSIS_RESULTS_DIR;
   const originalResultsBytes = process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
   const originalRoot = process.env.HOI4_SAVES_DIR;
+  const originalLocalSavesEnabled = process.env.HOI4_LOCAL_SAVES_ENABLED;
   const originalCacheLimit = process.env.HOI4_ANALYSIS_CACHE_ENTRIES;
   const originalWorkerLimit = process.env.HOI4_ANALYSIS_WORKERS;
   const localSaveRoot = mkdtempSync(join(tmpdir(), 'hoi4-local-analyze-'));
 
   beforeAll(async () => {
     process.env.HOI4_SAVES_DIR = localSaveRoot;
+    process.env.HOI4_LOCAL_SAVES_ENABLED = 'true';
     process.env.HOI4_ANALYSIS_CACHE_ENTRIES = '3';
     process.env.HOI4_ANALYSIS_WORKERS = '1';
     process.env.HOI4_RECENT_ANALYSES_FILE = join(localSaveRoot, 'recent.json');
@@ -146,6 +148,7 @@ describe('AnalyzeController uploads', () => {
   });
 
   beforeEach(async () => {
+    process.env.HOI4_LOCAL_SAVES_ENABLED = 'true';
     await history.clear();
   });
 
@@ -154,6 +157,9 @@ describe('AnalyzeController uploads', () => {
     rmSync(localSaveRoot, { recursive: true, force: true });
     if (originalRoot === undefined) delete process.env.HOI4_SAVES_DIR;
     else process.env.HOI4_SAVES_DIR = originalRoot;
+    if (originalLocalSavesEnabled === undefined)
+      delete process.env.HOI4_LOCAL_SAVES_ENABLED;
+    else process.env.HOI4_LOCAL_SAVES_ENABLED = originalLocalSavesEnabled;
     if (originalCacheLimit === undefined)
       delete process.env.HOI4_ANALYSIS_CACHE_ENTRIES;
     else process.env.HOI4_ANALYSIS_CACHE_ENTRIES = originalCacheLimit;
@@ -279,6 +285,30 @@ describe('AnalyzeController uploads', () => {
     expect(Number.isFinite(parse_seconds)).toBe(true);
     expect(Number.isFinite(directSeconds)).toBe(true);
     expect(semantic).toEqual(direct);
+  });
+
+  test('blocks JSON paths but preserves multipart uploads when local saves are disabled', async () => {
+    const savePath = join(localSaveRoot, 'disabled-path.hoi4');
+    writeFileSync(savePath, Buffer.from(navalSave('Disabled path fixture')));
+    process.env.HOI4_LOCAL_SAVES_ENABLED = 'false';
+    const before = analysis.created;
+
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .send({ path: savePath })
+      .expect(404);
+    expect(analysis.created).toBe(before);
+
+    const response = await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach(
+        'file',
+        Buffer.from(navalSave('Disabled mode upload')),
+        'upload.hoi4',
+      )
+      .expect(201);
+    expect((response.body as AnalyzeResponse).game_date).toBe('1944.5.1');
+    expect(analysis.created).toBe(before + 1);
   });
 
   test('preflights persisted hashes without invoking the Worker or parser', async () => {

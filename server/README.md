@@ -42,6 +42,8 @@ npx eslint "{src,apps,libs,test}/**/*.ts"
 | Variable | Default | Meaning |
 | --- | ---: | --- |
 | `PORT` | `3001` | Listen port |
+| `HOI4_CORS_ORIGIN` | `http://localhost:5173` | Exact frontend HTTP(S) origin allowed by CORS |
+| `HOI4_LOCAL_SAVES_ENABLED` | `false` | Enable trusted local-save browsing/path analysis only when exactly `true` |
 | `HOI4_SAVES_DIR` | `../saves` from backend cwd | Local-save browser root |
 | `HOI4_UPLOAD_DIRECTORY` | OS temp | Managed multipart files |
 | `HOI4_MAX_UPLOAD_BYTES` | 256 MiB | Raw upload limit |
@@ -81,5 +83,7 @@ Original multipart uploads are temporary and are not part of Recent persistence.
 Pins and active shares receive stronger retention protection, but the hard configured byte limit remains authoritative. Storage failures do not corrupt a successful parser result; availability is represented explicitly.
 
 ## Public-deployment warning
+
+Local-save filesystem APIs are disabled unless `HOI4_LOCAL_SAVES_ENABLED=true`. When disabled, `/api/saves`, `/api/saves/default-dir`, `/saves/analyze`, and JSON `path` analysis through `/api/analyze` return 404; multipart uploads remain available. Keep local mode disabled for public/SaaS deployments because enabling it exposes server-side save browsing/path analysis.
 
 The backend has resource and input hardening, but no authentication, ownership, per-user isolation, distributed admission, or cross-process locking. Treat it as a local/single-owner service unless a separate security architecture is added.

@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import * as fs from 'fs';
 import { getLocalSavesRoot, resolveLocalSavePath } from './local-saves';
+import { requireLocalSavesEnabled } from './local-saves-access';
 
 export interface SaveFileInfo {
   name: string;
@@ -17,6 +18,7 @@ export class SavesController {
     exists: boolean;
     files: SaveFileInfo[];
   } {
+    requireLocalSavesEnabled();
     const scanDir = getLocalSavesRoot();
 
     if (!fs.existsSync(scanDir) || !fs.statSync(scanDir).isDirectory()) {
@@ -53,6 +55,7 @@ export class SavesController {
 
   @Get('default-dir')
   defaultDir(): { dir: string; exists: boolean } {
+    requireLocalSavesEnabled();
     const dir = getLocalSavesRoot();
     return {
       dir,
