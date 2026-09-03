@@ -4,6 +4,39 @@ export interface NumericDiff {
   delta: number | null;
 }
 
+export type SnapshotPresence = 'both' | 'base_only' | 'target_only';
+
+export interface StockpileDefinitionComparison {
+  presence: SnapshotPresence;
+  balance: NumericDiff;
+}
+
+export interface ProductionRateComparison extends NumericDiff {
+  baseComplete: boolean | null;
+  targetComplete: boolean | null;
+  baseKnown: number | null;
+  targetKnown: number | null;
+}
+
+export interface ProductionDefinitionComparison {
+  presence: SnapshotPresence;
+  activeFactories: NumericDiff;
+  currentItemsPerDay: ProductionRateComparison;
+}
+
+export interface EquipmentDefinitionComparison {
+  equipmentDefinition: string;
+  hasChanges: boolean;
+  stockpile: StockpileDefinitionComparison | null;
+  production: ProductionDefinitionComparison | null;
+}
+
+export interface CountryEquipmentProductionComparison {
+  countryTag: string;
+  hasChanges: boolean;
+  definitions: EquipmentDefinitionComparison[];
+}
+
 export interface CountryComparison {
   tag: string;
   // Identity continuity, not equality of all metrics.
@@ -40,4 +73,5 @@ export interface AnalysisComparisonDto {
     navalLossCount: NumericDiff;
   };
   countries: CountryComparison[];
+  equipmentProduction: CountryEquipmentProductionComparison[];
 }

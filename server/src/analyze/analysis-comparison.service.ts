@@ -7,8 +7,11 @@ import {
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
 import type {
   AnalysisComparisonDto,
+  CountryEquipmentProductionComparison,
   CountryComparison,
+  EquipmentDefinitionComparison,
   NumericDiff,
+  SnapshotPresence,
 } from './analysis-comparison.types';
 
 export function numericDiff(before: unknown, after: unknown): NumericDiff {
@@ -73,6 +76,204 @@ function compatibility(
     : 'unknown';
 }
 
+function finite(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function add(left: number | null, right: unknown): number | null {
+  const value = finite(right);
+  if (left === null || value === null) return null;
+  return finite(left + value);
+}
+
+function presence(before: boolean, after: boolean): SnapshotPresence {
+  return before && after ? 'both' : before ? 'base_only' : 'target_only';
+}
+
+function stockpileByCountry(
+  result: AnalyzeResult,
+): Map<string, Map<string, number | null>> {
+  const countries = new Map<string, Map<string, number | null>>();
+  for (const country of result.stockpileSummaries ?? []) {
+    if (!country || typeof country.countryTag !== 'string') continue;
+    const definitions =
+      countries.get(country.countryTag) ?? new Map<string, number | null>();
+    countries.set(country.countryTag, definitions);
+    for (const item of country.definitions ?? []) {
+      if (!item || typeof item.definition !== 'string') continue;
+      const amount = finite(item.amount);
+      definitions.set(
+        item.definition,
+        definitions.has(item.definition)
+          ? add(definitions.get(item.definition) ?? null, amount)
+          : amount,
+      );
+    }
+  }
+  return countries;
+}
+
+interface ProductionSnapshot {
+  activeFactories: number | null;
+  currentItemsPerDay: number | null;
+  knownCurrentItemsPerDay: number | null;
+  outputComplete: boolean;
+}
+
+function productionByCountry(
+  result: AnalyzeResult,
+): Map<string, Map<string, ProductionSnapshot>> {
+  const countries = new Map<string, Map<string, ProductionSnapshot>>();
+  for (const country of result.militaryProductionSummaries ?? []) {
+    if (!country || typeof country.countryTag !== 'string') continue;
+    const definitions =
+      countries.get(country.countryTag) ??
+      new Map<string, ProductionSnapshot>();
+    countries.set(country.countryTag, definitions);
+    for (const item of country.definitions ?? []) {
+      if (!item || typeof item.equipmentDefinition !== 'string') continue;
+      const nextComplete = item.outputComplete === true;
+      const next: ProductionSnapshot = {
+        activeFactories: finite(item.activeFactories),
+        currentItemsPerDay: nextComplete
+          ? finite(item.currentItemsPerDay)
+          : null,
+        knownCurrentItemsPerDay: finite(item.knownCurrentItemsPerDay),
+        outputComplete: nextComplete,
+      };
+      const current = definitions.get(item.equipmentDefinition);
+      definitions.set(
+        item.equipmentDefinition,
+        current
+          ? {
+              activeFactories: add(
+                current.activeFactories,
+                next.activeFactories,
+              ),
+              currentItemsPerDay:
+                current.outputComplete && next.outputComplete
+                  ? add(current.currentItemsPerDay, next.currentItemsPerDay)
+                  : null,
+              knownCurrentItemsPerDay: add(
+                current.knownCurrentItemsPerDay,
+                next.knownCurrentItemsPerDay,
+              ),
+              outputComplete: current.outputComplete && next.outputComplete,
+            }
+          : next,
+      );
+    }
+  }
+  return countries;
+}
+
+function equipmentDefinitionComparison(
+  equipmentDefinition: string,
+  baseStockpile: Map<string, number | null> | undefined,
+  targetStockpile: Map<string, number | null> | undefined,
+  baseProduction: Map<string, ProductionSnapshot> | undefined,
+  targetProduction: Map<string, ProductionSnapshot> | undefined,
+): EquipmentDefinitionComparison {
+  const hasBaseStockpile = baseStockpile?.has(equipmentDefinition) ?? false;
+  const hasTargetStockpile = targetStockpile?.has(equipmentDefinition) ?? false;
+  const hasBaseProduction = baseProduction?.has(equipmentDefinition) ?? false;
+  const hasTargetProduction =
+    targetProduction?.has(equipmentDefinition) ?? false;
+  const leftProduction = baseProduction?.get(equipmentDefinition);
+  const rightProduction = targetProduction?.get(equipmentDefinition);
+  const stockpile =
+    hasBaseStockpile || hasTargetStockpile
+      ? {
+          presence: presence(hasBaseStockpile, hasTargetStockpile),
+          balance: numericDiff(
+            hasBaseStockpile ? baseStockpile?.get(equipmentDefinition) : null,
+            hasTargetStockpile
+              ? targetStockpile?.get(equipmentDefinition)
+              : null,
+          ),
+        }
+      : null;
+  const activeFactories = numericDiff(
+    leftProduction?.activeFactories,
+    rightProduction?.activeFactories,
+  );
+  const currentItemsPerDay = numericDiff(
+    leftProduction?.outputComplete ? leftProduction.currentItemsPerDay : null,
+    rightProduction?.outputComplete ? rightProduction.currentItemsPerDay : null,
+  );
+  const production =
+    hasBaseProduction || hasTargetProduction
+      ? {
+          presence: presence(hasBaseProduction, hasTargetProduction),
+          activeFactories,
+          currentItemsPerDay: {
+            ...currentItemsPerDay,
+            baseComplete: leftProduction?.outputComplete ?? null,
+            targetComplete: rightProduction?.outputComplete ?? null,
+            baseKnown: leftProduction?.knownCurrentItemsPerDay ?? null,
+            targetKnown: rightProduction?.knownCurrentItemsPerDay ?? null,
+          },
+        }
+      : null;
+  const hasChanges =
+    (stockpile !== null &&
+      (stockpile.presence !== 'both' || changed(stockpile.balance))) ||
+    (production !== null &&
+      (production.presence !== 'both' ||
+        changed(production.activeFactories) ||
+        changed(production.currentItemsPerDay) ||
+        production.currentItemsPerDay.baseComplete !==
+          production.currentItemsPerDay.targetComplete ||
+        production.currentItemsPerDay.baseKnown !==
+          production.currentItemsPerDay.targetKnown));
+  return {
+    equipmentDefinition,
+    hasChanges,
+    stockpile,
+    production,
+  };
+}
+
+function compareEquipmentProduction(
+  base: AnalyzeResult,
+  target: AnalyzeResult,
+): CountryEquipmentProductionComparison[] {
+  const baseStockpile = stockpileByCountry(base);
+  const targetStockpile = stockpileByCountry(target);
+  const baseProduction = productionByCountry(base);
+  const targetProduction = productionByCountry(target);
+  const countryTags = new Set([
+    ...baseStockpile.keys(),
+    ...targetStockpile.keys(),
+    ...baseProduction.keys(),
+    ...targetProduction.keys(),
+  ]);
+  return [...countryTags].sort().map((countryTag) => {
+    const definitionNames = new Set([
+      ...(baseStockpile.get(countryTag)?.keys() ?? []),
+      ...(targetStockpile.get(countryTag)?.keys() ?? []),
+      ...(baseProduction.get(countryTag)?.keys() ?? []),
+      ...(targetProduction.get(countryTag)?.keys() ?? []),
+    ]);
+    const definitions = [...definitionNames]
+      .sort()
+      .map((definition) =>
+        equipmentDefinitionComparison(
+          definition,
+          baseStockpile.get(countryTag),
+          targetStockpile.get(countryTag),
+          baseProduction.get(countryTag),
+          targetProduction.get(countryTag),
+        ),
+      );
+    return {
+      countryTag,
+      hasChanges: definitions.some((definition) => definition.hasChanges),
+      definitions,
+    };
+  });
+}
+
 /** Pure snapshot comparison. Missing countries/fields are unknown, never implicit zero. */
 export function compareAnalysisResults(
   baseHash: string,
@@ -82,6 +283,13 @@ export function compareAnalysisResults(
   baseContext: SaveComparisonContext = unknownSaveComparisonContext(),
   targetContext: SaveComparisonContext = unknownSaveComparisonContext(),
 ): AnalysisComparisonDto {
+  const equipmentProduction = compareEquipmentProduction(base, target);
+  const equipmentChanges = new Map(
+    equipmentProduction.map(({ countryTag, hasChanges }) => [
+      countryTag,
+      hasChanges,
+    ]),
+  );
   const index = (result: AnalyzeResult) =>
     new Map(
       result.by_country
@@ -105,7 +313,11 @@ export function compareAnalysisResults(
       return {
         tag,
         status: !left ? 'added' : !right ? 'removed' : 'unchanged',
-        hasChanges: !left || !right || Object.values(metrics).some(changed),
+        hasChanges:
+          !left ||
+          !right ||
+          Object.values(metrics).some(changed) ||
+          equipmentChanges.get(tag) === true,
         ...metrics,
       };
     });
@@ -146,9 +358,11 @@ export function compareAnalysisResults(
     },
     hasChanges:
       countries.some((country) => country.hasChanges) ||
+      equipmentProduction.some((country) => country.hasChanges) ||
       Object.values(summary).some(changed),
     summary,
     countries,
+    equipmentProduction,
   };
 }
 

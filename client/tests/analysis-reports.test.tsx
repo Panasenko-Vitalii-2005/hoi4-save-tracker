@@ -109,6 +109,7 @@ const comparison: AnalysisComparisonDto = {
       calculatedWarCasualtiesTotal: diff(1000, null),
     },
   ],
+  equipmentProduction: [],
 };
 
 const campaign: CampaignTrend = {

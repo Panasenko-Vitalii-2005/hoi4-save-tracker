@@ -93,6 +93,7 @@ const comparison: AnalysisComparisonDto = {
       calculatedWarCasualtiesTotal: { before: null, after: 0, delta: null },
     },
   ],
+  equipmentProduction: [],
 };
 
 const campaign: CampaignTrend = {

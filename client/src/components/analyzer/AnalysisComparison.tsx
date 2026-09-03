@@ -137,6 +137,7 @@ export function AnalysisComparison({
         data.baseHash !== base.hash ||
         data.targetHash !== target.hash ||
         !Array.isArray(data.countries) ||
+        !Array.isArray(data.equipmentProduction) ||
         !data.summary ||
         !data.context
       )

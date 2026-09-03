@@ -8,6 +8,10 @@ import {
 } from './fixtures/analysis-comparison.fixture';
 import type { NavalLossEvent } from '../hoi4/naval-loss/naval-loss.types';
 import type { SaveComparisonContext } from '../hoi4/save-comparison-context';
+import type {
+  MilitaryProductionDefinitionSummary,
+  MilitaryProductionLineSummary,
+} from '../hoi4/production/production.types';
 
 const compare = (base = result(), target = result()) =>
   compareAnalysisResults('a', 'b', base, target);
@@ -15,6 +19,94 @@ const context = (
   campaignId: string | null,
   gameVersion = '1.19.2',
 ): SaveComparisonContext => ({ campaignId, gameVersion });
+
+const stockpile = (
+  countryTag: string,
+  definitions: Array<[string, number]>,
+) => ({
+  countryTag,
+  definitions: definitions.map(([definition, amount]) => ({
+    definition,
+    amount,
+    variants: [],
+  })),
+  unresolvedVariants: [],
+});
+
+const productionDefinition = (
+  equipmentDefinition: string,
+  activeFactories: number,
+  currentItemsPerDay: number | null,
+  outputComplete = currentItemsPerDay !== null,
+  knownCurrentItemsPerDay = currentItemsPerDay ?? 0,
+  identity?: { lineId: number; equipmentId: number },
+): MilitaryProductionDefinitionSummary => ({
+  equipmentDefinition,
+  lineCount: 1,
+  requestedFactories: activeFactories,
+  activeFactories,
+  queuedFactories: 0,
+  damagedFactories: 0,
+  currentItemsPerDay,
+  knownCurrentItemsPerDay,
+  outputComplete,
+  resourceShortageLineCount: 0,
+  lines: identity
+    ? [
+        {
+          countryTag: 'GER',
+          lineRef: { type: 56, id: identity.lineId },
+          equipmentRef: { type: 70, id: identity.equipmentId },
+          equipmentDefinition,
+          variantName: null,
+          version: null,
+          creatorTag: null,
+          originTag: null,
+          obsolete: null,
+          priority: null,
+          requestedFactories: activeFactories,
+          activeFactories,
+          queuedFactories: 0,
+          damagedFactories: 0,
+          effectiveActiveFactories: activeFactories,
+          effectiveQueuedFactories: 0,
+          effectiveDamagedFactories: 0,
+          currentItemsPerDay,
+          progressFraction: null,
+          activeEfficiencyAverage: null,
+          activeEfficiencyMin: null,
+          activeEfficiencyMax: null,
+          hasResourceShortage: false,
+          resourceShortages: [],
+          industrialManufacturerRef: null,
+          complete: true,
+          warnings: [],
+        } satisfies MilitaryProductionLineSummary,
+      ]
+    : [],
+});
+
+const production = (
+  countryTag: string,
+  definitions: MilitaryProductionDefinitionSummary[],
+) => ({
+  countryTag,
+  lineCount: definitions.length,
+  definitionCount: definitions.length,
+  requestedFactories: definitions.reduce(
+    (total, definition) => total + definition.requestedFactories,
+    0,
+  ),
+  activeFactories: definitions.reduce(
+    (total, definition) => total + definition.activeFactories,
+    0,
+  ),
+  queuedFactories: 0,
+  damagedFactories: 0,
+  resourceShortageLineCount: 0,
+  definitions,
+  unresolvedLines: [],
+});
 
 describe('Analysis comparison', () => {
   test.each([
@@ -100,6 +192,157 @@ describe('Analysis comparison', () => {
       delta: null,
     });
     expect(data.countries[0].hasChanges).toBe(true);
+  });
+
+  test('aggregates signed fractional stockpile balances by exact definition', () => {
+    const data = compare(
+      result({
+        stockpileSummaries: [
+          stockpile('GER', [
+            ['infantry_equipment_2', -2.5],
+            ['infantry_equipment_2', 1.25],
+          ]),
+        ],
+      }),
+      result({
+        stockpileSummaries: [
+          stockpile('GER', [
+            ['infantry_equipment_2', 3.5],
+            ['infantry_equipment_2', 0.25],
+          ]),
+        ],
+      }),
+    );
+    const definition = data.equipmentProduction[0].definitions[0];
+    expect(definition.stockpile).toEqual({
+      presence: 'both',
+      balance: { before: -1.25, after: 3.75, delta: 5 },
+    });
+    expect(definition.hasChanges).toBe(true);
+  });
+
+  test('preserves Base-only and Target-only exact definitions without implicit zero', () => {
+    const data = compare(
+      result({
+        stockpileSummaries: [stockpile('GER', [['modded_alpha', 4]])],
+      }),
+      result({
+        stockpileSummaries: [stockpile('GER', [['modded_beta', -1.5]])],
+      }),
+    );
+    expect(data.equipmentProduction[0].definitions).toEqual([
+      expect.objectContaining({
+        equipmentDefinition: 'modded_alpha',
+        stockpile: {
+          presence: 'base_only',
+          balance: { before: 4, after: null, delta: null },
+        },
+      }),
+      expect.objectContaining({
+        equipmentDefinition: 'modded_beta',
+        stockpile: {
+          presence: 'target_only',
+          balance: { before: null, after: -1.5, delta: null },
+        },
+      }),
+    ]);
+  });
+
+  test('aggregates factories and complete rates by definition rather than line or design identity', () => {
+    const data = compare(
+      result({
+        militaryProductionSummaries: [
+          production('GER', [
+            productionDefinition('medium_tank_chassis_2', 2, 1.25, true, 1.25, {
+              lineId: 1,
+              equipmentId: 10,
+            }),
+            productionDefinition('medium_tank_chassis_2', 3, 2.5, true, 2.5, {
+              lineId: 2,
+              equipmentId: 11,
+            }),
+          ]),
+        ],
+      }),
+      result({
+        militaryProductionSummaries: [
+          production('GER', [
+            productionDefinition('medium_tank_chassis_2', 4, 3, true, 3, {
+              lineId: 101,
+              equipmentId: 110,
+            }),
+            productionDefinition('medium_tank_chassis_2', 5, 4.75, true, 4.75, {
+              lineId: 102,
+              equipmentId: 111,
+            }),
+          ]),
+        ],
+      }),
+    );
+    const productionChange =
+      data.equipmentProduction[0].definitions[0].production;
+    expect(productionChange).toEqual({
+      presence: 'both',
+      activeFactories: { before: 5, after: 9, delta: 4 },
+      currentItemsPerDay: {
+        before: 3.75,
+        after: 7.75,
+        delta: 4,
+        baseComplete: true,
+        targetComplete: true,
+        baseKnown: 3.75,
+        targetKnown: 7.75,
+      },
+    });
+  });
+
+  test('incomplete production output remains known but has no fabricated rate delta', () => {
+    const data = compare(
+      result({
+        militaryProductionSummaries: [
+          production('GER', [
+            productionDefinition('small_plane_airframe_2', 2, null, false, 1.5),
+          ]),
+        ],
+      }),
+      result({
+        militaryProductionSummaries: [
+          production('GER', [
+            productionDefinition('small_plane_airframe_2', 4, 3.25),
+          ]),
+        ],
+      }),
+    );
+    expect(
+      data.equipmentProduction[0].definitions[0].production?.currentItemsPerDay,
+    ).toEqual({
+      before: null,
+      after: 3.25,
+      delta: null,
+      baseComplete: false,
+      targetComplete: true,
+      baseKnown: 1.5,
+      targetKnown: 3.25,
+    });
+  });
+
+  test('equipment changes participate in existing changed-country filtering semantics', () => {
+    const data = compare(
+      result({
+        stockpileSummaries: [stockpile('GER', [['support_equipment_1', 1]])],
+      }),
+      result({
+        stockpileSummaries: [stockpile('GER', [['support_equipment_1', 2]])],
+      }),
+    );
+    expect(data.countries[0].hasChanges).toBe(true);
+    expect(data.hasChanges).toBe(true);
+    expect(data.context).toEqual({
+      chronology: 'same_date',
+      sameAnalysis: false,
+      campaignCompatibility: 'unknown',
+      gameVersionCompatibility: 'unknown',
+    });
   });
 
   test('country union preserves added/removed tags with unknown absent-side values', () => {
@@ -242,6 +485,10 @@ describe('Analysis comparison', () => {
     expect(
       compare(result(), result({ game_date: '1946.1.1' })).hasChanges,
     ).toBe(false);
+  });
+
+  test('empty snapshots expose a non-optional empty equipment projection', () => {
+    expect(compare().equipmentProduction).toEqual([]);
   });
 
   test('tag ordering is deterministic without mutating either input', () => {

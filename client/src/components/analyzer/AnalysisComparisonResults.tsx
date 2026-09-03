@@ -13,6 +13,7 @@ import {
   comparisonExportFilename,
   prettyJson,
 } from "@/lib/data-export";
+import { EquipmentProductionComparisonPanel } from "./EquipmentProductionComparisonPanel";
 
 type CountryMetricKey = keyof Omit<
   CountryComparison,
@@ -217,6 +218,14 @@ export function AnalysisComparisonResults({
   const selected = useMemo(
     () => data.countries.find((country) => country.tag === selectedTag) ?? null,
     [data.countries, selectedTag],
+  );
+
+  const selectedEquipmentProduction = useMemo(
+    () =>
+      data.equipmentProduction.find(
+        (country) => country.countryTag === selectedTag,
+      ) ?? null,
+    [data.equipmentProduction, selectedTag],
   );
 
   useEffect(() => {
@@ -580,6 +589,10 @@ export function AnalysisComparisonResults({
           </section>
         </aside>
       </div>
+      <EquipmentProductionComparisonPanel
+        countryTag={selected?.tag ?? null}
+        comparison={selectedEquipmentProduction}
+      />
     </section>
   );
 }

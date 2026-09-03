@@ -52,8 +52,34 @@ describe('Compare persisted analyses API', () => {
     jest.spyOn(parser, 'analyzeSave');
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     await start();
-    await results.save(base, comparisonResult(), [], { comparisonContext });
-    const next = comparisonResult({ game_date: '1944.6.1' });
+    await results.save(
+      base,
+      comparisonResult({
+        stockpileSummaries: [
+          {
+            countryTag: 'GER',
+            definitions: [
+              { definition: 'infantry_equipment_2', amount: 1.5, variants: [] },
+            ],
+            unresolvedVariants: [],
+          },
+        ],
+      }),
+      [],
+      { comparisonContext },
+    );
+    const next = comparisonResult({
+      game_date: '1944.6.1',
+      stockpileSummaries: [
+        {
+          countryTag: 'GER',
+          definitions: [
+            { definition: 'infantry_equipment_2', amount: 4, variants: [] },
+          ],
+          unresolvedVariants: [],
+        },
+      ],
+    });
     next.totals.divisions = 15;
     await results.save(target, next, [], { comparisonContext });
   });
@@ -81,6 +107,10 @@ describe('Compare persisted analyses API', () => {
     });
     expect(body.baseGameDate).toBe('1944.5.1');
     expect(body.targetGameDate).toBe('1944.6.1');
+    expect(body.equipmentProduction[0].definitions[0].stockpile).toEqual({
+      presence: 'both',
+      balance: { before: 1.5, after: 4, delta: 2.5 },
+    });
     expect(body.context).toEqual({
       chronology: 'target_after_base',
       sameAnalysis: false,
@@ -88,7 +118,7 @@ describe('Compare persisted analyses API', () => {
       gameVersionCompatibility: 'same',
     });
     expect(before.text).not.toMatch(
-      /by_country|equipment_by_country|divisionTemplateCatalog|savedAt|formatVersion|parse_seconds/,
+      /by_country|equipment_by_country|divisionTemplateCatalog|savedAt|formatVersion|parse_seconds|lineRef|equipmentRef|variants|progressFraction|activeEfficiency/,
     );
     expect(before.text).not.toContain(directory);
     await app.close();

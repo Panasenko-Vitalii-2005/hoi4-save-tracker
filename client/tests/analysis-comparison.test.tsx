@@ -88,6 +88,7 @@ const response = (
     row("D04", true, "added"),
     row("ENG", true, "removed"),
   ],
+  equipmentProduction: [],
 });
 
 describe("Save comparison UI", () => {
@@ -865,5 +866,100 @@ describe("Save comparison UI", () => {
         (cell) => cell.textContent,
       ),
     ).toEqual(["Metric", "Base", "Target", "Change"]);
+  });
+
+  test("renders exact equipment and production changes for the selected country", async () => {
+    const data = response();
+    data.equipmentProduction = [
+      {
+        countryTag: "GER",
+        hasChanges: true,
+        definitions: [
+          {
+            equipmentDefinition: "infantry_equipment_2",
+            hasChanges: true,
+            stockpile: {
+              presence: "both",
+              balance: { before: -10.5, after: 2.25, delta: 12.75 },
+            },
+            production: {
+              presence: "both",
+              activeFactories: { before: 4, after: 6, delta: 2 },
+              currentItemsPerDay: {
+                before: 1.5,
+                after: 2.25,
+                delta: 0.75,
+                baseComplete: true,
+                targetComplete: true,
+                baseKnown: 1.5,
+                targetKnown: 2.25,
+              },
+            },
+          },
+          {
+            equipmentDefinition: "base_only_modded_equipment",
+            hasChanges: true,
+            stockpile: {
+              presence: "base_only",
+              balance: { before: 3.5, after: null, delta: null },
+            },
+            production: null,
+          },
+          {
+            equipmentDefinition: "target_only_modded_equipment",
+            hasChanges: true,
+            stockpile: {
+              presence: "target_only",
+              balance: { before: null, after: -1.25, delta: null },
+            },
+            production: null,
+          },
+          {
+            equipmentDefinition: "my_mod_super_weapon",
+            hasChanges: true,
+            stockpile: null,
+            production: {
+              presence: "both",
+              activeFactories: { before: 1, after: 2, delta: 1 },
+              currentItemsPerDay: {
+                before: null,
+                after: 2.5,
+                delta: null,
+                baseComplete: false,
+                targetComplete: true,
+                baseKnown: 1,
+                targetKnown: 2.5,
+              },
+            },
+          },
+        ],
+      },
+    ];
+
+    await render();
+    await choose();
+    await click("Compare");
+    await finish(data);
+    await act(async () => countryRow("GER").dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    const panel = results().querySelector(
+      '[aria-label="Equipment and production comparison"]',
+    )!;
+    expect(panel.textContent).toContain("Infantry equipment 2");
+    expect(panel.textContent).toMatch(/-10[.,]5/);
+    expect(panel.textContent).toMatch(/12[.,]75/);
+    expect(panel.textContent).toContain("Stockpile: Base only");
+    expect(panel.textContent).toContain("Stockpile: Target only");
+    expect(panel.textContent).toContain("My mod super weapon");
+    expect(panel.textContent).toContain("Known 1");
+    expect(panel.textContent).toContain("Incomplete");
+    expect(
+      [...panel.querySelectorAll("tr")]
+        .find((row) => row.textContent?.includes("my_mod_super_weapon"))
+        ?.textContent,
+    ).toContain("N/A");
+    expect(
+      results().querySelector(".comparison-detail h3")?.textContent,
+    ).toContain("Germany");
   });
 });
