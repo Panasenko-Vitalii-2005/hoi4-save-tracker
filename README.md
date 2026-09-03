@@ -220,6 +220,8 @@ All values are optional; invalid numeric values fall back to the documented defa
 | Worker | `HOI4_ANALYSIS_TIMEOUT_MS` | 60,000 | Hard analysis deadline |
 | Worker | `HOI4_ANALYSIS_HEAP_MB` | 1,024 | V8 old-generation limit per Worker |
 | Cache | `HOI4_ANALYSIS_CACHE_ENTRIES` | `3` | Completed in-memory results |
+| Cache | `HOI4_TRENDS_CACHE_SNAPSHOTS` | `2048` | Cached campaign-trend snapshot projections |
+| Cache | `HOI4_TRENDS_CACHE_BYTES` | 64 MiB | Cached snapshot-projection byte budget |
 | Recent | `HOI4_RECENT_ANALYSES_FILE` | `data/recent-analyses.json` | Recent metadata file |
 | Recent | `HOI4_RECENT_ANALYSES_LIMIT` | `200` | Metadata retention count |
 | Results | `HOI4_ANALYSIS_RESULTS_DIR` | `data/analysis-results` | Gzip result directory |

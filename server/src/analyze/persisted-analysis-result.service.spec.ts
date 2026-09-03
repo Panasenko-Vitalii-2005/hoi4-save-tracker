@@ -254,6 +254,39 @@ describe('PersistedAnalysisResultService', () => {
     expect(read).not.toHaveBeenCalled();
   });
 
+  test('reports artifact fingerprints without reading or inflating results', async () => {
+    await service.save(hash('a'), result);
+    await service.save(hash('b'), result);
+    const existing = await Promise.all(
+      [hash('a'), hash('b')].map(async (value) => ({
+        hash: value,
+        ...(await files.stat(path(value))),
+      })),
+    );
+    const read = jest.spyOn(files, 'readFile');
+
+    const inventory = await service.fingerprintInventory();
+
+    expect(inventory.size).toBe(2);
+    for (const [key, fingerprint] of inventory) {
+      const file = existing.find((entry) => entry.hash === key)!;
+      expect(fingerprint.bytes).toBe(file.size);
+      expect(fingerprint.mtimeMs).toBe(file.mtimeMs);
+      expect(fingerprint.ctimeMs).toBe(file.ctimeMs);
+    }
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test('fingerprint inventory reflects same-hash replacement and deletion', async () => {
+    await service.save(hash('a'), result);
+    const first = (await service.fingerprintInventory()).get(hash('a'))!;
+    await service.save(hash('a'), { ...result, parse_seconds: 42 });
+    const second = (await service.fingerprintInventory()).get(hash('a'))!;
+    expect(second).not.toEqual(first);
+    await service.delete(hash('a'));
+    expect((await service.fingerprintInventory()).size).toBe(0);
+  });
+
   test('byte quota evicts oldest analysis timestamp rather than file creation order', async () => {
     await service.save(hash('a'), result);
     await service.save(hash('b'), result);

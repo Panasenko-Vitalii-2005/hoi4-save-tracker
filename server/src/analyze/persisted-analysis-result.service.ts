@@ -55,6 +55,14 @@ interface ResultFile {
   hash: string;
   bytes: number;
   modified: number;
+  changed: number;
+}
+
+/** Filesystem identity of one persisted artifact; never inflated by itself. */
+export interface PersistedResultFingerprint {
+  bytes: number;
+  mtimeMs: number;
+  ctimeMs: number;
 }
 
 export interface PersistedResultStorageStatus {
@@ -394,6 +402,7 @@ export class PersistedAnalysisResultService {
           hash: entry.name.slice(0, 64),
           bytes: stats.size,
           modified: stats.mtimeMs,
+          changed: stats.ctimeMs,
         });
     }
     return found;
@@ -410,6 +419,26 @@ export class PersistedAnalysisResultService {
       totalBytes: files.reduce((total, file) => total + file.bytes, 0),
       files: files.map(({ hash, bytes }) => ({ hash, bytes })),
     };
+  }
+
+  /**
+   * Read-only artifact fingerprints for cache revalidation. Never inflates or
+   * mutates results; only filesystem metadata is observed.
+   */
+  async fingerprintInventory(): Promise<
+    Map<string, PersistedResultFingerprint>
+  > {
+    await this.pending;
+    return new Map(
+      (await this.inventory()).map((file) => [
+        file.hash,
+        {
+          bytes: file.bytes,
+          mtimeMs: file.modified,
+          ctimeMs: file.changed,
+        },
+      ]),
+    );
   }
 
   /** Read-only existence reconciliation for share metadata startup. */
@@ -431,7 +460,12 @@ export class PersistedAnalysisResultService {
   ): Promise<boolean> {
     const metadata = new Map(recent.map((entry) => [entry.hash, entry]));
     const candidates = files.filter((file) => file.hash !== incoming?.hash);
-    if (incoming) candidates.push({ ...incoming, modified: Date.now() });
+    if (incoming)
+      candidates.push({
+        ...incoming,
+        modified: Date.now(),
+        changed: Date.now(),
+      });
     let total = candidates.reduce((sum, file) => sum + file.bytes, 0);
     const timestamp = (file: ResultFile) => {
       const entry = metadata.get(file.hash);

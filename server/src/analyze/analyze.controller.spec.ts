@@ -34,6 +34,7 @@ import { SaveUploadInterceptor } from './save-upload.interceptor';
 import { BatchAnalysisController } from './batch-analysis.controller';
 import { CampaignTrendsController } from './campaign-trends.controller';
 import { CampaignTrendsService } from './campaign-trends.service';
+import { CampaignSnapshotProjectionCacheService } from './campaign-snapshot-projection-cache.service';
 import type { CampaignTrendsDto } from './campaign-trends.types';
 import type {
   AnalysisStorageMutationResult,
@@ -131,6 +132,7 @@ describe('AnalyzeController uploads', () => {
         RecentAnalysesService,
         PersistedAnalysisResultService,
         AnalysisComparisonService,
+        CampaignSnapshotProjectionCacheService,
         CampaignTrendsService,
         SaveUploadInterceptor,
       ],

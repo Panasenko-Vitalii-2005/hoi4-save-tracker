@@ -3,7 +3,9 @@ import type { SaveComparisonContext } from '../hoi4/save-comparison-context';
 import type { MilitaryProductionDefinitionSummary } from '../hoi4/production/production.types';
 import { comparisonResult } from './fixtures/analysis-comparison.fixture';
 import { CampaignTrendsService } from './campaign-trends.service';
+import { CampaignSnapshotProjectionCacheService } from './campaign-snapshot-projection-cache.service';
 import type { PersistedAnalysisResultService } from './persisted-analysis-result.service';
+import type { PersistedResultFingerprint } from './persisted-analysis-result.service';
 import type {
   RecentAnalysesService,
   RecentAnalysis,
@@ -34,6 +36,30 @@ const context = (
   gameVersion = '1.19.2',
   playerCountryTag?: string | null,
 ): SaveComparisonContext => ({ campaignId, gameVersion, playerCountryTag });
+const fingerprint = (
+  bytes = 1000,
+  mtimeMs = 1,
+  ctimeMs = 1,
+): PersistedResultFingerprint => ({ bytes, mtimeMs, ctimeMs });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
+async function waitFor(predicate: () => boolean) {
+  const deadline = Date.now() + 2000;
+  while (!predicate()) {
+    if (Date.now() > deadline)
+      throw new Error('Timed out waiting for condition');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+}
 
 describe('CampaignTrendsService', () => {
   const campaignA = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
@@ -43,22 +69,33 @@ describe('CampaignTrendsService', () => {
     string,
     { result: AnalyzeResult; comparisonContext: SaveComparisonContext }
   >;
+  let inventory: Map<string, PersistedResultFingerprint>;
   let recent: Pick<RecentAnalysesService, 'list'>;
-  let results: Pick<PersistedAnalysisResultService, 'getWithContext'>;
+  let results: Pick<
+    PersistedAnalysisResultService,
+    'getWithContext' | 'fingerprintInventory'
+  >;
+  let projections: CampaignSnapshotProjectionCacheService;
   let service: CampaignTrendsService;
 
   beforeEach(() => {
     entries = [];
     artifacts = new Map();
+    inventory = new Map();
     recent = { list: jest.fn(() => Promise.resolve(entries)) };
     results = {
       getWithContext: jest.fn((key: string) =>
         Promise.resolve(artifacts.get(key) ?? null),
       ),
+      fingerprintInventory: jest.fn(() => Promise.resolve(new Map(inventory))),
     };
+    projections = new CampaignSnapshotProjectionCacheService(
+      results as unknown as PersistedAnalysisResultService,
+    );
     service = new CampaignTrendsService(
       recent as RecentAnalysesService,
       results as PersistedAnalysisResultService,
+      projections,
     );
   });
 
@@ -73,7 +110,10 @@ describe('CampaignTrendsService', () => {
       result,
       comparisonContext: context(campaignId, '1.19.2', playerCountryTag),
     });
+    inventory.set(entry.hash, fingerprint(1000 + entry.hash.length));
   };
+
+  const reads = () => (results.getWithContext as jest.Mock).mock.calls.length;
 
   test('groups matching UUIDs, separates known campaigns and sorts dates numerically', async () => {
     add(item('a', '1936.11.1', '2026-01-03T00:00:00Z'), campaignA);
@@ -209,10 +249,10 @@ describe('CampaignTrendsService', () => {
     expect(serialized).not.toMatch(
       /equipment_by_country|world_equipment|divisionSummaries|navalLosses|sourceOffset|warnings/,
     );
-    expect(results.getWithContext).toHaveBeenCalledTimes(1);
+    expect(reads()).toBe(1);
   });
 
-  test('skips unavailable results and ignores metadata-only entries', async () => {
+  test('skips unavailable results and metadata-only entries without persisted reads', async () => {
     const missing = item('a', '1944.5.1', '2026-01-01T00:00:00Z');
     const unavailable = {
       ...item('b', '1944.6.1', '2026-01-02T00:00:00Z'),
@@ -220,7 +260,7 @@ describe('CampaignTrendsService', () => {
     };
     entries.push(missing, unavailable);
     expect(await service.build()).toEqual({ snapshotCount: 0, campaigns: [] });
-    expect(results.getWithContext).toHaveBeenCalledTimes(1);
+    expect(reads()).toBe(0);
   });
 
   const equipmentResult = (
@@ -398,7 +438,7 @@ describe('CampaignTrendsService', () => {
       legacy.definitions.map(({ equipmentDefinition }) => equipmentDefinition),
     ).toEqual(['legacy']);
     expect(recent.list).toHaveBeenCalledTimes(2);
-    expect(results.getWithContext).toHaveBeenCalled();
+    expect(reads()).toBe(3);
   });
 
   test('returns a compact projection without full stockpile variants or production lines', async () => {
@@ -420,5 +460,287 @@ describe('CampaignTrendsService', () => {
     expect(JSON.stringify(dto)).not.toMatch(
       /variants|lines|equipmentRef|warnings/,
     );
+  });
+
+  test('warm same campaign and different countries reuse projections without full-result reads', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['ger_def', 1]], [], 'GER'),
+    );
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.2.1', [['usa_def', 2]], [], 'USA'),
+    );
+
+    const cold = await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(reads()).toBe(2);
+    const warmSame = await service.buildEquipment(
+      `campaign:${campaignA}`,
+      'GER',
+    );
+    expect(reads()).toBe(2);
+    expect(warmSame).toEqual(cold);
+    const warmOther = await service.buildEquipment(
+      `campaign:${campaignA}`,
+      'USA',
+    );
+    expect(reads()).toBe(2);
+    expect(
+      warmOther.definitions.map(
+        ({ equipmentDefinition }) => equipmentDefinition,
+      ),
+    ).toEqual(['usa_def']);
+  });
+
+  test('main trends warms the shared cache and equipment reuses it without rereads', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['ger_def', 1]]),
+    );
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.2.1', [['other_def', 2]]),
+    );
+
+    const mainCold = await service.build();
+    expect(reads()).toBe(2);
+    const mainWarm = await service.build();
+    expect(reads()).toBe(2);
+    expect(mainWarm).toEqual(mainCold);
+
+    const equipment = await service.buildEquipment(
+      `campaign:${campaignA}`,
+      'GER',
+    );
+    expect(reads()).toBe(2);
+    expect(
+      equipment.definitions.map(
+        ({ equipmentDefinition }) => equipmentDefinition,
+      ),
+    ).toEqual(['ger_def', 'other_def']);
+  });
+
+  test('adding one snapshot loads only the new artifact', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['one', 1]]),
+    );
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.2.1', [['two', 2]]),
+    );
+    await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(reads()).toBe(2);
+
+    add(
+      item('c', '1936.3.1', '2026-01-03T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.3.1', [['three', 3]]),
+    );
+    const dto = await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(reads()).toBe(3);
+    expect(dto.snapshotHashes.map((value) => value[0])).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
+    expect(
+      dto.definitions.map(({ equipmentDefinition }) => equipmentDefinition),
+    ).toEqual(['one', 'three', 'two']);
+  });
+
+  test('same-hash fingerprint change causes a reload instead of stale reuse', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['one', 1]]),
+    );
+    await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(reads()).toBe(1);
+
+    const replacement = equipmentResult('1936.1.1', [['one', 5]]);
+    artifacts.set(hash('a'), {
+      result: replacement,
+      comparisonContext: context(campaignA, '1.19.2'),
+    });
+    inventory.set(hash('a'), fingerprint(2000, 2, 2));
+
+    const dto = await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(reads()).toBe(2);
+    expect(dto.definitions[0].stockpileBalance).toEqual([5]);
+  });
+
+  test('deleted snapshot is never served from stale cache and remaining snapshots stay warm', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['one', 1]]),
+    );
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.2.1', [['two', 2]]),
+    );
+    await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(reads()).toBe(2);
+
+    entries = entries.filter((entry) => entry.hash !== hash('a'));
+    artifacts.delete(hash('a'));
+    inventory.delete(hash('a'));
+
+    const dto = await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(reads()).toBe(2);
+    expect(dto.snapshotHashes.map((value) => value[0])).toEqual(['b']);
+    expect(
+      dto.definitions.map(({ equipmentDefinition }) => equipmentDefinition),
+    ).toEqual(['two']);
+  });
+
+  test('campaign deletion shrinks membership without rereading warm snapshots', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      comparisonResult({ game_date: '1936.1.1' }),
+    );
+    await service.build();
+    expect(reads()).toBe(1);
+
+    entries = [];
+    artifacts.clear();
+    inventory.clear();
+    const dto = await service.build();
+    expect(reads()).toBe(1);
+    expect(dto).toEqual({ snapshotCount: 0, campaigns: [] });
+  });
+
+  test('concurrent requests deduplicate persisted reads per hash', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['one', 1]]),
+    );
+    const getWithContext = results.getWithContext as jest.Mock;
+    const initial = getWithContext.getMockImplementation()!;
+    const pending = deferred<{
+      result: AnalyzeResult;
+      comparisonContext: SaveComparisonContext;
+    }>();
+    getWithContext.mockReturnValueOnce(pending.promise);
+
+    const first = service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    const second = service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    await waitFor(() => getWithContext.mock.calls.length === 1);
+    pending.resolve(artifacts.get(hash('a'))!);
+
+    const [a, b] = await Promise.all([first, second]);
+    expect(getWithContext).toHaveBeenCalledTimes(1);
+    expect(a).toEqual(b);
+    expect(a.definitions).toHaveLength(1);
+    // Restore the default mock for the remaining lifecycle.
+    getWithContext.mockImplementation(initial);
+  });
+
+  test('mutation during a build retries once against the new state without mixed generations', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['one', 1]]),
+    );
+    const first = fingerprint(1000, 1, 1);
+    const second = fingerprint(2000, 2, 2);
+    const versions = [first, second, second, second];
+    let call = 0;
+    (results.fingerprintInventory as jest.Mock).mockImplementation(() => {
+      const version = versions[call++ % versions.length];
+      // The artifact is replaced at the same time its fingerprint changes.
+      if (version !== first) {
+        artifacts.set(hash('a'), {
+          result: equipmentResult('1936.1.1', [['one', 5]]),
+          comparisonContext: context(campaignA, '1.19.2'),
+        });
+      }
+      return Promise.resolve(new Map([[hash('a'), version]]));
+    });
+
+    const dto = await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(reads()).toBe(2);
+    expect(dto.definitions[0].stockpileBalance).toEqual([5]);
+    expect((results.fingerprintInventory as jest.Mock).mock.calls.length).toBe(
+      4,
+    );
+  });
+
+  test('a snapshot added mid-build appears in the retried response', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      comparisonResult({ game_date: '1936.1.1' }),
+    );
+    const getWithContext = results.getWithContext as jest.Mock;
+    const initial = getWithContext.getMockImplementation()!;
+    const pending = deferred<{
+      result: AnalyzeResult;
+      comparisonContext: SaveComparisonContext;
+    }>();
+    getWithContext.mockReturnValueOnce(pending.promise);
+
+    const build = service.build();
+    await waitFor(() => getWithContext.mock.calls.length === 1);
+    // The new snapshot lands while the first attempt is still loading.
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignA,
+      comparisonResult({ game_date: '1936.2.1' }),
+    );
+    pending.resolve(artifacts.get(hash('a'))!);
+    getWithContext.mockImplementation(initial);
+
+    const dto = await build;
+    expect(dto.snapshotCount).toBe(2);
+    expect(dto.campaigns[0].snapshots.map(({ hash: key }) => key[0])).toEqual([
+      'a',
+      'b',
+    ]);
+  });
+
+  test('continuous mutation fails through the typed data-changed error instead of looping', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['one', 1]]),
+    );
+    const states = [
+      fingerprint(1, 1, 1),
+      fingerprint(2, 2, 2),
+      fingerprint(3, 3, 3),
+      fingerprint(4, 4, 4),
+    ];
+    let call = 0;
+    (results.fingerprintInventory as jest.Mock).mockImplementation(() =>
+      Promise.resolve(new Map([[hash('a'), states[call++ % states.length]]])),
+    );
+
+    await expect(
+      service.buildEquipment(`campaign:${campaignA}`, 'GER'),
+    ).rejects.toThrow('Campaign data changed while trends were being built');
+  });
+
+  test('clearing the cache (process restart equivalent) rebuilds from persisted artifacts', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['one', 1]]),
+    );
+    await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(reads()).toBe(1);
+    projections.clear();
+    await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(reads()).toBe(2);
   });
 });

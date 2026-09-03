@@ -20,6 +20,7 @@ import { SharedAnalysesController } from './analyze/shared-analyses.controller';
 import { SharedAnalysesService } from './analyze/shared-analyses.service';
 import { CampaignTrendsController } from './analyze/campaign-trends.controller';
 import { CampaignTrendsService } from './analyze/campaign-trends.service';
+import { CampaignSnapshotProjectionCacheService } from './analyze/campaign-snapshot-projection-cache.service';
 import { BatchAnalysisController } from './analyze/batch-analysis.controller';
 
 @Module({
@@ -48,6 +49,7 @@ import { BatchAnalysisController } from './analyze/batch-analysis.controller';
     PersistedAnalysisResultService,
     SharedAnalysesService,
     AnalysisComparisonService,
+    CampaignSnapshotProjectionCacheService,
     CampaignTrendsService,
     SaveUploadInterceptor,
   ],
