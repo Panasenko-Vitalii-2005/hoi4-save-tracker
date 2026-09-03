@@ -2663,6 +2663,14 @@ select {
   width: 210px;
 }
 
+.campaign-equipment-field {
+  width: min(330px, 100%);
+}
+
+.campaign-equipment-metric-field {
+  width: 220px;
+}
+
 .campaign-control-menu {
   position: relative;
 }

@@ -12,6 +12,7 @@ import type {
   CampaignTrendMetrics,
   CampaignTrendSnapshot,
   CampaignTrendsDto,
+  CampaignEquipmentTrendsDto,
   CountryTrendMetrics,
 } from './campaign-trends.types';
 
@@ -40,6 +41,97 @@ function compareDates(left: GameDate, right: GameDate): number {
 
 function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function add(left: number | null, right: number | null): number | null {
+  return left === null || right === null ? null : finite(left + right);
+}
+
+interface EquipmentSnapshot {
+  item: RecentAnalysis;
+  result: AnalyzeResult;
+}
+
+interface EquipmentValues {
+  stockpileBalance: number | null;
+  activeFactories: number | null;
+  currentItemsPerDay: number | null;
+  productionRateComplete: boolean | null;
+}
+
+function equipmentValuesByDefinition(
+  result: AnalyzeResult,
+  countryTag: string,
+): Map<string, EquipmentValues> {
+  const values = new Map<string, EquipmentValues>();
+  const ensure = (definition: string): EquipmentValues => {
+    const current = values.get(definition) ?? {
+      stockpileBalance: null,
+      activeFactories: null,
+      currentItemsPerDay: null,
+      productionRateComplete: null,
+    };
+    values.set(definition, current);
+    return current;
+  };
+
+  for (const country of result.stockpileSummaries ?? []) {
+    if (country?.countryTag !== countryTag) continue;
+    for (const summary of country.definitions ?? []) {
+      if (!summary || typeof summary.definition !== 'string') continue;
+      const current = ensure(summary.definition);
+      const amount = finite(summary.amount);
+      current.stockpileBalance =
+        current.stockpileBalance === null
+          ? amount
+          : add(current.stockpileBalance, amount);
+    }
+  }
+
+  for (const country of result.militaryProductionSummaries ?? []) {
+    if (country?.countryTag !== countryTag) continue;
+    for (const summary of country.definitions ?? []) {
+      if (!summary || typeof summary.equipmentDefinition !== 'string') continue;
+      const current = ensure(summary.equipmentDefinition);
+      const activeFactories = finite(summary.activeFactories);
+      current.activeFactories =
+        current.activeFactories === null
+          ? activeFactories
+          : add(current.activeFactories, activeFactories);
+
+      const rate = finite(summary.currentItemsPerDay);
+      const complete = summary.outputComplete === true && rate !== null;
+      if (current.productionRateComplete === null) {
+        current.productionRateComplete = complete;
+        current.currentItemsPerDay = complete ? rate : null;
+      } else {
+        current.productionRateComplete =
+          current.productionRateComplete && complete;
+        current.currentItemsPerDay = current.productionRateComplete
+          ? add(current.currentItemsPerDay, rate)
+          : null;
+      }
+    }
+  }
+  return values;
+}
+
+function compareEquipmentSnapshots(
+  left: EquipmentSnapshot,
+  right: EquipmentSnapshot,
+): number {
+  return compareSnapshots(
+    {
+      hash: left.item.hash,
+      gameDate: left.result.game_date,
+      analyzedAt: left.item.analyzedAt,
+    },
+    {
+      hash: right.item.hash,
+      gameDate: right.result.game_date,
+      analyzedAt: right.item.analyzedAt,
+    },
+  );
 }
 
 function globalMetrics(result: AnalyzeResult): CampaignTrendMetrics {
@@ -100,8 +192,8 @@ function snapshot(
 }
 
 function compareSnapshots(
-  left: CampaignTrendSnapshot,
-  right: CampaignTrendSnapshot,
+  left: Pick<CampaignTrendSnapshot, 'gameDate' | 'analyzedAt' | 'hash'>,
+  right: Pick<CampaignTrendSnapshot, 'gameDate' | 'analyzedAt' | 'hash'>,
 ): number {
   const leftDate = gameDate(left.gameDate);
   const rightDate = gameDate(right.gameDate);
@@ -213,6 +305,71 @@ export class CampaignTrendsService {
         0,
       ),
       campaigns,
+    };
+  }
+
+  async buildEquipment(
+    campaignKey: string,
+    countryTag: string,
+  ): Promise<CampaignEquipmentTrendsDto> {
+    const items = (await this.recent.list()).filter(
+      (item) => item.hasPersistedResult,
+    );
+    const targetCampaignId = campaignKey.startsWith('campaign:')
+      ? campaignKey.slice('campaign:'.length)
+      : null;
+    const targetUnknownHash = campaignKey.startsWith('unknown:')
+      ? campaignKey.slice('unknown:'.length)
+      : null;
+    const snapshots: EquipmentSnapshot[] = [];
+
+    // Read each candidate artifact once and project all three equipment metrics
+    // in the same pass. Metadata lets known campaigns skip unrelated artifacts.
+    for (const item of items) {
+      if (targetUnknownHash && item.hash !== targetUnknownHash) continue;
+      if (
+        targetCampaignId &&
+        item.campaignId &&
+        item.campaignId !== targetCampaignId
+      )
+        continue;
+      const persisted = await this.results.getWithContext(item.hash);
+      if (!persisted) continue;
+      const key = persisted.comparisonContext.campaignId
+        ? `campaign:${persisted.comparisonContext.campaignId}`
+        : `unknown:${item.hash}`;
+      if (key !== campaignKey) continue;
+      snapshots.push({ item, result: persisted.result });
+    }
+    snapshots.sort(compareEquipmentSnapshots);
+
+    const projected = snapshots.map(({ result }) =>
+      equipmentValuesByDefinition(result, countryTag),
+    );
+    const definitions = [
+      ...new Set(projected.flatMap((entry) => [...entry.keys()])),
+    ].sort((left, right) => left.localeCompare(right));
+
+    return {
+      campaignKey,
+      countryTag,
+      snapshotHashes: snapshots.map(({ item }) => item.hash),
+      definitions: definitions.map((equipmentDefinition) => ({
+        equipmentDefinition,
+        stockpileBalance: projected.map(
+          (entry) => entry.get(equipmentDefinition)?.stockpileBalance ?? null,
+        ),
+        activeFactories: projected.map(
+          (entry) => entry.get(equipmentDefinition)?.activeFactories ?? null,
+        ),
+        currentItemsPerDay: projected.map(
+          (entry) => entry.get(equipmentDefinition)?.currentItemsPerDay ?? null,
+        ),
+        productionRateComplete: projected.map(
+          (entry) =>
+            entry.get(equipmentDefinition)?.productionRateComplete ?? null,
+        ),
+      })),
     };
   }
 }

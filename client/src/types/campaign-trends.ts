@@ -47,6 +47,24 @@ export interface CampaignTrendsDto {
   campaigns: CampaignTrend[];
 }
 
+export interface CampaignEquipmentTrendDefinition {
+  equipmentDefinition: string;
+  stockpileBalance: (number | null)[];
+  activeFactories: (number | null)[];
+  currentItemsPerDay: (number | null)[];
+  productionRateComplete: (boolean | null)[];
+}
+
+export interface CampaignEquipmentTrendsDto {
+  campaignKey: string;
+  countryTag: string;
+  snapshotHashes: string[];
+  definitions: CampaignEquipmentTrendDefinition[];
+}
+
+export type EquipmentTrendMetric =
+  "stockpileBalance" | "activeFactories" | "currentItemsPerDay";
+
 export type GlobalTrendMetric = keyof CampaignTrendMetrics;
 export type CountryTrendMetric = keyof CountryTrendMetrics;
 export type TrendMetric = GlobalTrendMetric | CountryTrendMetric;

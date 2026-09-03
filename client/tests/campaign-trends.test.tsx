@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { CampaignTrends } from "@/components/chart/CampaignTrends";
 import type {
+  CampaignEquipmentTrendsDto,
   CampaignTrendSnapshot,
   CampaignTrendsDto,
 } from "@/types/campaign-trends";
@@ -86,6 +87,37 @@ const dto = (
   ],
 });
 
+const equipmentDto = (
+  campaign = dto().campaigns[0],
+): CampaignEquipmentTrendsDto => ({
+  campaignKey: campaign.key,
+  countryTag: "GER",
+  snapshotHashes: campaign.snapshots.map(({ hash }) => hash),
+  definitions: [
+    {
+      equipmentDefinition: "infantry_equipment_1",
+      stockpileBalance: [-1.25, null, 0],
+      activeFactories: [0, 4, null],
+      currentItemsPerDay: [1.5, null, null],
+      productionRateComplete: [true, false, null],
+    },
+    {
+      equipmentDefinition: "modded__tank",
+      stockpileBalance: [null, 2.5, 3],
+      activeFactories: [null, null, null],
+      currentItemsPerDay: [null, null, null],
+      productionRateComplete: [null, null, null],
+    },
+    {
+      equipmentDefinition: "modded_tank",
+      stockpileBalance: [1, 2, 3],
+      activeFactories: [null, null, null],
+      currentItemsPerDay: [null, null, null],
+      productionRateComplete: [null, null, null],
+    },
+  ],
+});
+
 const telemetry: SaveRecord = {
   real_time: "2026-01-01T00:00:00Z",
   game_date: "1936.6.1",
@@ -114,19 +146,27 @@ describe("Campaign Trends", () => {
   let container: HTMLDivElement;
   let root: Root;
   let response: CampaignTrendsDto;
+  let equipmentResponse: CampaignEquipmentTrendsDto;
   let fail = false;
 
   beforeEach(() => {
     localStorage.clear();
     response = dto();
+    equipmentResponse = equipmentDto(response.campaigns[0]);
     fail = false;
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal(
       "fetch",
-      vi.fn(() =>
+      vi.fn((input: RequestInfo | URL) =>
         fail
           ? Promise.reject(new Error("private path"))
-          : Promise.resolve(Response.json(response)),
+          : Promise.resolve(
+              Response.json(
+                String(input).includes("/trends/equipment")
+                  ? equipmentResponse
+                  : response,
+              ),
+            ),
       ),
     );
     container = document.createElement("div");
@@ -238,9 +278,7 @@ describe("Campaign Trends", () => {
     );
     expect(container.querySelector('[data-testid="trend-plot"]')).toBeNull();
     expect(
-      container.querySelector(
-        '[aria-label="Export selected campaign trends"]',
-      ),
+      container.querySelector('[aria-label="Export selected campaign trends"]'),
     ).toBeNull();
     expect(container.textContent).not.toContain("View Report");
     const importButton = [...container.querySelectorAll("button")].find(
@@ -330,6 +368,92 @@ describe("Campaign Trends", () => {
     ]);
   });
 
+  test("renders equipment controls and preserves signed, fractional, zero, and sparse stockpile values", async () => {
+    await render();
+    const equipmentButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Equipment",
+    )!;
+    await act(async () => equipmentButton.click());
+
+    expect(equipmentButton.getAttribute("aria-pressed")).toBe("true");
+    expect(select("Country").value).toBe("GER");
+    expect(select("Exact equipment definition").value).toBe(
+      "infantry_equipment_1",
+    );
+    expect(select("Equipment metric").value).toBe("stockpileBalance");
+    expect(traces()).toHaveLength(1);
+    expect(traces()[0].y).toEqual([-1.25, null, 0]);
+    expect(text()).toContain("Missing definitions");
+    expect(text()).toContain("normalization is unavailable");
+    expect(checkbox("Normalize")).toBeUndefined();
+    await choose(select("Moving average"), "3");
+    expect(traces()[0].y).toEqual([-1.25, null, 0]);
+  });
+
+  test("keeps incomplete production rate as a labelled gap and supports active zero", async () => {
+    await render();
+    const equipmentButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Equipment",
+    )!;
+    await act(async () => equipmentButton.click());
+    await choose(select("Equipment metric"), "currentItemsPerDay");
+    expect(traces()[0].y).toEqual([1.5, null, null]);
+    expect(traces()[0].customdata[1]).toContain("Incomplete rate");
+    expect(text()).toContain("1 production-rate snapshot is incomplete");
+
+    await choose(select("Equipment metric"), "activeFactories");
+    expect(traces()[0].y).toEqual([0, 4, null]);
+  });
+
+  test("keeps unknown definitions selectable and same readable labels distinct by exact identity", async () => {
+    await render();
+    const equipmentButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Equipment",
+    )!;
+    await act(async () => equipmentButton.click());
+    const definitions = select("Exact equipment definition");
+    expect([...definitions.options].map(({ value }) => value)).toEqual([
+      "infantry_equipment_1",
+      "modded__tank",
+      "modded_tank",
+    ]);
+    expect(definitions.options[1].text).toContain("modded__tank");
+    expect(definitions.options[2].text).toContain("modded_tank");
+    await choose(definitions, "modded__tank");
+    expect(traces()[0].y).toEqual([null, 2.5, 3]);
+  });
+
+  test("shows a safe equipment state when no campaign country is available", async () => {
+    response = dto([
+      snapshot("a", "1936.6.1", 1, []),
+      snapshot("b", "1936.8.1", 2, []),
+    ]);
+    await render();
+    const equipmentButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Equipment",
+    )!;
+    await act(async () => equipmentButton.click());
+    expect(text()).toContain("No country available");
+    expect(text()).toContain("No country snapshot data is available");
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+
+  test("switching back from equipment restores unchanged global presets", async () => {
+    await render();
+    const equipmentButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Equipment",
+    )!;
+    await act(async () => equipmentButton.click());
+    const globalButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Global",
+    )!;
+    await act(async () => globalButton.click());
+    expect(globalButton.getAttribute("aria-pressed")).toBe("true");
+    expect(select("Preset").value).toBe("Military Growth");
+    expect(traces()).toHaveLength(4);
+    expect(traces()[0].name).toBe("Divisions");
+  });
+
   test("normalizes displayed values while retaining original snapshot values", async () => {
     await render();
     expect(checkbox("Normalize").checked).toBe(true);
@@ -364,11 +488,7 @@ describe("Campaign Trends", () => {
       snapshot("c", "1936.11.1", 3),
     ]);
     await render();
-    expect(traces()[0].x).toEqual([
-      "1936-06-01",
-      "1936-06-01",
-      "1936-11-01",
-    ]);
+    expect(traces()[0].x).toEqual(["1936-06-01", "1936-06-01", "1936-11-01"]);
     expect(layout().xaxis?.type).toBe("date");
     await choose(select("X-axis"), "sequence");
     expect(traces()[0].x).toEqual([1, 2, 3]);
@@ -417,11 +537,7 @@ describe("Campaign Trends", () => {
 
   test("keeps small campaigns on the same readable date axis", async () => {
     await render();
-    expect(traces()[0].x).toEqual([
-      "1936-06-01",
-      "1936-08-01",
-      "1936-11-01",
-    ]);
+    expect(traces()[0].x).toEqual(["1936-06-01", "1936-08-01", "1936-11-01"]);
     expect(layout().xaxis).toMatchObject({ type: "date", tickmode: "auto" });
     expect(traces()[0].customdata.map((data) => data[2])).toEqual([
       "1936.6.1",
@@ -510,6 +626,8 @@ describe("Campaign Trends", () => {
       (button) => button.textContent === "Try again",
     )!;
     await act(async () => retry.click());
-    expect(container.querySelector('[data-testid="trend-plot"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="trend-plot"]'),
+    ).not.toBeNull();
   });
 });

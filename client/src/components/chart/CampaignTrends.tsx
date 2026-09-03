@@ -9,11 +9,13 @@ import React, {
 import type { SaveRecord } from "@/types";
 import type {
   CampaignTrend,
+  CampaignEquipmentTrendsDto,
   CampaignTrendSnapshot,
   CampaignTrendsDto,
   CountryTrendMetric,
   GlobalTrendMetric,
   TrendMetric,
+  EquipmentTrendMetric,
 } from "@/types/campaign-trends";
 import { ExportControls } from "@/components/ui/ExportControls";
 import {
@@ -24,12 +26,13 @@ import {
 } from "@/lib/data-export";
 import { CampaignReport } from "@/components/reports/CampaignReport";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
-import { countryFullName } from "@/lib/utils";
+import { countryFullName, formatEquipmentDefinition } from "@/lib/utils";
 import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
 type TrendScope = "global" | "country";
+type TrendMode = "overview" | "equipment";
 type XMode = "game_date" | "sequence";
 type PresetName = "Military Growth" | "Industry Growth" | "World Overview";
 
@@ -166,6 +169,27 @@ const DATE_TIME = new Intl.DateTimeFormat(undefined, {
   timeStyle: "short",
 });
 
+const EQUIPMENT_METRICS: Record<
+  EquipmentTrendMetric,
+  { label: string; shortLabel: string; color: string }
+> = {
+  stockpileBalance: {
+    label: "Stockpile balance",
+    shortLabel: "Stockpile",
+    color: "#2aa198",
+  },
+  activeFactories: {
+    label: "Active factory slots",
+    shortLabel: "Factories",
+    color: "#c96767",
+  },
+  currentItemsPerDay: {
+    label: "Current production rate/day",
+    shortLabel: "Rate/day",
+    color: "#4d8fd6",
+  },
+};
+
 function loadSettings(): TrendSettings {
   try {
     const parsed = JSON.parse(
@@ -202,6 +226,20 @@ function isTrendsDto(value: unknown): value is CampaignTrendsDto {
     !Array.isArray(value) &&
     Array.isArray((value as CampaignTrendsDto).campaigns) &&
     typeof (value as CampaignTrendsDto).snapshotCount === "number"
+  );
+}
+
+function isEquipmentTrendsDto(
+  value: unknown,
+): value is CampaignEquipmentTrendsDto {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as CampaignEquipmentTrendsDto).campaignKey === "string" &&
+    typeof (value as CampaignEquipmentTrendsDto).countryTag === "string" &&
+    Array.isArray((value as CampaignEquipmentTrendsDto).snapshotHashes) &&
+    Array.isArray((value as CampaignEquipmentTrendsDto).definitions)
   );
 }
 
@@ -363,6 +401,8 @@ export function CampaignTrends({
 }) {
   const plotTheme = usePlotTheme();
   const request = useRef<AbortController | null>(null);
+  const equipmentRequest = useRef<AbortController | null>(null);
+  const equipmentCache = useRef(new Map<string, CampaignEquipmentTrendsDto>());
   const [data, setData] = useState<CampaignTrendsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -370,6 +410,15 @@ export function CampaignTrends({
   const [countryTag, setCountryTag] = useState("");
   const [selectedHash, setSelectedHash] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
+  const [trendMode, setTrendMode] = useState<TrendMode>("overview");
+  const [equipmentData, setEquipmentData] =
+    useState<CampaignEquipmentTrendsDto | null>(null);
+  const [equipmentLoading, setEquipmentLoading] = useState(false);
+  const [equipmentError, setEquipmentError] = useState("");
+  const [equipmentDefinitionKey, setEquipmentDefinitionKey] = useState("");
+  const [equipmentMetric, setEquipmentMetric] =
+    useState<EquipmentTrendMetric>("stockpileBalance");
+  const [equipmentRevision, setEquipmentRevision] = useState(0);
   const [settings, setSettings] = useState<TrendSettings>(loadSettings);
 
   const updateSettings = useCallback((patch: Partial<TrendSettings>) => {
@@ -419,7 +468,10 @@ export function CampaignTrends({
 
   useEffect(() => {
     void load();
-    return () => request.current?.abort();
+    return () => {
+      request.current?.abort();
+      equipmentRequest.current?.abort();
+    };
   }, [load]);
 
   const campaign = useMemo(
@@ -444,6 +496,69 @@ export function CampaignTrends({
     if (!countries.includes(countryTag)) setCountryTag(countries[0] ?? "");
   }, [countries, countryTag]);
 
+  useEffect(() => {
+    if (trendMode !== "equipment" || !campaign || !countryTag) return;
+    const cacheKey = `${campaign.key}\u0000${countryTag}`;
+    const cached = equipmentCache.current.get(cacheKey);
+    if (cached) {
+      setEquipmentData(cached);
+      setEquipmentError("");
+      setEquipmentLoading(false);
+      return;
+    }
+
+    equipmentRequest.current?.abort();
+    const controller = new AbortController();
+    equipmentRequest.current = controller;
+    setEquipmentData(null);
+    setEquipmentError("");
+    setEquipmentLoading(true);
+    void (async () => {
+      try {
+        const query = new URLSearchParams({
+          campaignKey: campaign.key,
+          countryTag,
+        });
+        const response = await fetch(
+          `/api/analyze/trends/equipment?${query.toString()}`,
+          { signal: controller.signal },
+        );
+        const body: unknown = await response.json().catch(() => null);
+        if (
+          !response.ok ||
+          !isEquipmentTrendsDto(body) ||
+          body.campaignKey !== campaign.key ||
+          body.countryTag !== countryTag
+        )
+          throw new Error("Invalid equipment trend response");
+        equipmentCache.current.set(cacheKey, body);
+        setEquipmentData(body);
+      } catch (failure: unknown) {
+        if ((failure as DOMException).name !== "AbortError")
+          setEquipmentError(
+            "Equipment trend data could not be loaded. Try again.",
+          );
+      } finally {
+        if (equipmentRequest.current === controller) {
+          equipmentRequest.current = null;
+          setEquipmentLoading(false);
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [campaign, countryTag, equipmentRevision, trendMode]);
+
+  useEffect(() => {
+    const definitions = equipmentData?.definitions ?? [];
+    if (
+      !definitions.some(
+        ({ equipmentDefinition }) =>
+          equipmentDefinition === equipmentDefinitionKey,
+      )
+    )
+      setEquipmentDefinitionKey(definitions[0]?.equipmentDefinition ?? "");
+  }, [equipmentData, equipmentDefinitionKey]);
+
   const snapshots = useMemo(
     () =>
       settings.onePerGameDate
@@ -465,12 +580,11 @@ export function CampaignTrends({
     ? selectedMetrics
     : [supported[0]?.key].filter((value): value is TrendMetric => !!value);
   const separateScale =
+    trendMode === "overview" &&
     settings.separateScale &&
     !settings.normalize &&
     effectiveMetrics.length <= 3;
-  const plottedDates = snapshots.map((snapshot) =>
-    plotDate(snapshot.gameDate),
-  );
+  const plottedDates = snapshots.map((snapshot) => plotDate(snapshot.gameDate));
   const useDateAxis =
     settings.xMode === "game_date" &&
     plottedDates.every((value): value is string => value !== null);
@@ -480,16 +594,48 @@ export function CampaignTrends({
       : index + 1,
   );
 
-  const traces = useMemo(
+  const selectedEquipmentDefinition = useMemo(
     () =>
-      effectiveMetrics.map((metric, metricIndex) => {
-        const definition = metricDefinition(metric);
-        const raw = snapshots.map((snapshot) =>
-          metricValue(snapshot, settings.scope, countryTag, metric),
-        );
-        const averaged = movingAverage(raw, settings.movingAverage);
-        const displayed = settings.normalize ? normalize(averaged) : averaged;
-        return {
+      equipmentData?.definitions.find(
+        ({ equipmentDefinition }) =>
+          equipmentDefinition === equipmentDefinitionKey,
+      ) ?? null,
+    [equipmentData, equipmentDefinitionKey],
+  );
+  const equipmentValues = useMemo(() => {
+    if (!equipmentData || !selectedEquipmentDefinition)
+      return snapshots.map(() => null);
+    const indexByHash = new Map(
+      equipmentData.snapshotHashes.map((hash, index) => [hash, index]),
+    );
+    const values = selectedEquipmentDefinition[equipmentMetric];
+    return snapshots.map(({ hash }) => {
+      const index = indexByHash.get(hash);
+      return index === undefined ? null : (values[index] ?? null);
+    });
+  }, [equipmentData, equipmentMetric, selectedEquipmentDefinition, snapshots]);
+  const equipmentRateState = useMemo(() => {
+    if (!equipmentData || !selectedEquipmentDefinition)
+      return snapshots.map(() => null);
+    const indexByHash = new Map(
+      equipmentData.snapshotHashes.map((hash, index) => [hash, index]),
+    );
+    return snapshots.map(({ hash }) => {
+      const index = indexByHash.get(hash);
+      return index === undefined
+        ? null
+        : (selectedEquipmentDefinition.productionRateComplete[index] ?? null);
+    });
+  }, [equipmentData, selectedEquipmentDefinition, snapshots]);
+
+  const traces = useMemo(() => {
+    if (trendMode === "equipment") {
+      if (!selectedEquipmentDefinition) return [];
+      const definition = EQUIPMENT_METRICS[equipmentMetric];
+      const raw = equipmentValues;
+      const displayed = movingAverage(raw, settings.movingAverage);
+      return [
+        {
           type: "scatter" as const,
           mode: "lines+markers" as const,
           name: definition.label,
@@ -497,15 +643,16 @@ export function CampaignTrends({
           y: displayed,
           customdata: snapshots.map((snapshot, index) => [
             snapshot.fileName,
-            raw[index] === null ? "Unavailable" : formatValue(raw[index]),
+            raw[index] === null
+              ? equipmentMetric === "currentItemsPerDay" &&
+                equipmentRateState[index] === false
+                ? "Incomplete rate"
+                : "Unavailable"
+              : formatValue(raw[index]),
             snapshot.gameDate,
+            selectedEquipmentDefinition.equipmentDefinition,
           ]),
           connectgaps: false,
-          yaxis: separateScale
-            ? metricIndex === 0
-              ? "y"
-              : `y${metricIndex + 1}`
-            : "y",
           line: { width: 2.4, color: definition.color },
           marker: {
             size: snapshots.map(({ hash }) => (hash === selectedHash ? 11 : 6)),
@@ -519,23 +666,67 @@ export function CampaignTrends({
           },
           hovertemplate:
             `<b>${definition.label}</b><br>` +
-            `Date: %{customdata[2]}<br>Displayed: %{y:,.3f}<br>` +
+            `Equipment: %{customdata[3]}<br>Date: %{customdata[2]}<br>` +
             `Snapshot: %{customdata[1]}<br>%{customdata[0]}<extra></extra>`,
-        };
-      }),
-    [
-      countryTag,
-      effectiveMetrics,
-      plotTheme.isDark,
-      selectedHash,
-      separateScale,
-      settings.movingAverage,
-      settings.normalize,
-      settings.scope,
-      snapshots,
-      xValues,
-    ],
-  );
+        },
+      ];
+    }
+    return effectiveMetrics.map((metric, metricIndex) => {
+      const definition = metricDefinition(metric);
+      const raw = snapshots.map((snapshot) =>
+        metricValue(snapshot, settings.scope, countryTag, metric),
+      );
+      const averaged = movingAverage(raw, settings.movingAverage);
+      const displayed = settings.normalize ? normalize(averaged) : averaged;
+      return {
+        type: "scatter" as const,
+        mode: "lines+markers" as const,
+        name: definition.label,
+        x: xValues,
+        y: displayed,
+        customdata: snapshots.map((snapshot, index) => [
+          snapshot.fileName,
+          raw[index] === null ? "Unavailable" : formatValue(raw[index]),
+          snapshot.gameDate,
+        ]),
+        connectgaps: false,
+        yaxis: separateScale
+          ? metricIndex === 0
+            ? "y"
+            : `y${metricIndex + 1}`
+          : "y",
+        line: { width: 2.4, color: definition.color },
+        marker: {
+          size: snapshots.map(({ hash }) => (hash === selectedHash ? 11 : 6)),
+          color: definition.color,
+          line: {
+            width: snapshots.map(({ hash }) => (hash === selectedHash ? 2 : 0)),
+            color: plotTheme.isDark ? "#f1f5f4" : "#172226",
+          },
+        },
+        hovertemplate:
+          `<b>${definition.label}</b><br>` +
+          `Date: %{customdata[2]}<br>Displayed: %{y:,.3f}<br>` +
+          `Snapshot: %{customdata[1]}<br>%{customdata[0]}<extra></extra>`,
+      };
+    });
+  }, [
+    countryTag,
+    equipmentMetric,
+    equipmentRateState,
+    equipmentValues,
+    effectiveMetrics,
+    plotTheme.isDark,
+    selectedHash,
+    separateScale,
+    settings.movingAverage,
+    settings.normalize,
+    settings.scope,
+    selectedEquipmentDefinition,
+    snapshots,
+    trendMode,
+    xValues,
+  ]);
 
   const layout = useMemo(() => {
     const layout: Record<string, unknown> = {
@@ -561,7 +752,12 @@ export function CampaignTrends({
         automargin: true,
       },
       yaxis: {
-        title: settings.normalize ? "Relative change (0–1)" : "Snapshot value",
+        title:
+          trendMode === "equipment"
+            ? EQUIPMENT_METRICS[equipmentMetric].label
+            : settings.normalize
+              ? "Relative change (0–1)"
+              : "Snapshot value",
         gridcolor: plotTheme.isDark
           ? "rgba(230,238,236,0.08)"
           : "rgba(23,34,38,0.08)",
@@ -583,10 +779,12 @@ export function CampaignTrends({
     return layout;
   }, [
     effectiveMetrics,
+    equipmentMetric,
     plotTheme,
     separateScale,
     settings.normalize,
     settings.xMode,
+    trendMode,
     useDateAxis,
   ]);
 
@@ -596,17 +794,29 @@ export function CampaignTrends({
       counts.set(snapshot.gameDate, (counts.get(snapshot.gameDate) ?? 0) + 1);
     return counts;
   }, [campaign]);
-  const missingValues = effectiveMetrics.some((metric) =>
-    snapshots.some(
-      (snapshot) =>
-        metricValue(snapshot, settings.scope, countryTag, metric) === null,
-    ),
-  );
+  const missingValues =
+    trendMode === "equipment"
+      ? equipmentValues.some((value) => value === null)
+      : effectiveMetrics.some((metric) =>
+          snapshots.some(
+            (snapshot) =>
+              metricValue(snapshot, settings.scope, countryTag, metric) ===
+              null,
+          ),
+        );
+  const incompleteRateCount =
+    trendMode === "equipment" && equipmentMetric === "currentItemsPerDay"
+      ? equipmentRateState.filter((value) => value === false).length
+      : 0;
   const latest = snapshots.at(-1) ?? null;
   const timelineMetrics = effectiveMetrics.slice(0, 3);
-  const chartSummary = `${snapshots.length} campaign snapshots. ${effectiveMetrics
-    .map((metric) => metricDefinition(metric).label)
-    .join(", ")} plotted by ${
+  const chartSummary = `${snapshots.length} campaign snapshots. ${
+    trendMode === "equipment"
+      ? `${EQUIPMENT_METRICS[equipmentMetric].label} for ${equipmentDefinitionKey}`
+      : effectiveMetrics
+          .map((metric) => metricDefinition(metric).label)
+          .join(", ")
+  } plotted by ${
     settings.xMode === "game_date" ? "game date" : "save sequence"
   }.`;
 
@@ -636,6 +846,7 @@ export function CampaignTrends({
     });
   };
   const refresh = () => {
+    equipmentCache.current.clear();
     void load();
     reloadTelemetry();
   };
@@ -788,7 +999,11 @@ export function CampaignTrends({
                 <span>Campaign</span>
                 <select
                   value={campaign.key}
-                  onChange={(event) => setCampaignKey(event.target.value)}
+                  onChange={(event) => {
+                    setEquipmentData(null);
+                    setEquipmentError("");
+                    setCampaignKey(event.target.value);
+                  }}
                 >
                   {data.campaigns.map((entry) => (
                     <option key={entry.key} value={entry.key}>
@@ -842,44 +1057,81 @@ export function CampaignTrends({
 
           <section className="panel campaign-chart-panel">
             <div className="campaign-toolbar" aria-label="Trend chart controls">
-              <label className="field compact-field">
-                <span>Preset</span>
-                <select
-                  value={settings.preset}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (value !== "Custom") applyPreset(value as PresetName);
-                  }}
-                >
-                  {Object.keys(PRESETS).map((preset) => (
-                    <option key={preset}>{preset}</option>
-                  ))}
-                  <option>Custom</option>
-                </select>
-              </label>
+              {trendMode === "overview" && (
+                <label className="field compact-field">
+                  <span>Preset</span>
+                  <select
+                    value={settings.preset}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value !== "Custom") applyPreset(value as PresetName);
+                    }}
+                  >
+                    {Object.keys(PRESETS).map((preset) => (
+                      <option key={preset}>{preset}</option>
+                    ))}
+                    <option>Custom</option>
+                  </select>
+                </label>
+              )}
               <div
                 className="campaign-scope"
                 role="group"
-                aria-label="Trend scope"
+                aria-label="Trend mode"
               >
-                {(["global", "country"] as const).map((scope) => (
-                  <button
-                    key={scope}
-                    type="button"
-                    aria-pressed={settings.scope === scope}
-                    className={settings.scope === scope ? "active" : ""}
-                    onClick={() => changeScope(scope)}
-                  >
-                    {scope === "global" ? "Global" : "Country"}
-                  </button>
-                ))}
+                <button
+                  type="button"
+                  aria-pressed={
+                    trendMode === "overview" && settings.scope === "global"
+                  }
+                  className={
+                    trendMode === "overview" && settings.scope === "global"
+                      ? "active"
+                      : ""
+                  }
+                  onClick={() => {
+                    setTrendMode("overview");
+                    if (settings.scope !== "global") changeScope("global");
+                  }}
+                >
+                  Global
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={
+                    trendMode === "overview" && settings.scope === "country"
+                  }
+                  className={
+                    trendMode === "overview" && settings.scope === "country"
+                      ? "active"
+                      : ""
+                  }
+                  onClick={() => {
+                    setTrendMode("overview");
+                    if (settings.scope !== "country") changeScope("country");
+                  }}
+                >
+                  Country
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={trendMode === "equipment"}
+                  className={trendMode === "equipment" ? "active" : ""}
+                  onClick={() => setTrendMode("equipment")}
+                >
+                  Equipment
+                </button>
               </div>
-              {settings.scope === "country" && (
+              {(settings.scope === "country" || trendMode === "equipment") && (
                 <label className="field compact-field campaign-country-field">
                   <span>Country</span>
                   <select
                     value={countryTag}
-                    onChange={(event) => setCountryTag(event.target.value)}
+                    onChange={(event) => {
+                      setEquipmentData(null);
+                      setEquipmentError("");
+                      setCountryTag(event.target.value);
+                    }}
                   >
                     {countries.map((tag) => (
                       <option key={tag} value={tag}>
@@ -889,29 +1141,77 @@ export function CampaignTrends({
                   </select>
                 </label>
               )}
-              <details className="campaign-control-menu">
-                <summary>Metrics · {effectiveMetrics.length}</summary>
-                <div className="campaign-metric-menu">
-                  {supported.map((metric) => (
-                    <label key={metric.key}>
-                      <input
-                        type="checkbox"
-                        checked={effectiveMetrics.includes(metric.key)}
-                        onChange={(event) => {
-                          const metrics = event.target.checked
-                            ? [...effectiveMetrics, metric.key]
-                            : effectiveMetrics.filter(
-                                (key) => key !== metric.key,
-                              );
-                          if (!metrics.length) return;
-                          updateSettings({ metrics, preset: "Custom" });
-                        }}
-                      />
-                      <span>{metric.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </details>
+              {trendMode === "equipment" ? (
+                <>
+                  <label className="field compact-field campaign-equipment-field">
+                    <span>Exact equipment definition</span>
+                    <select
+                      value={equipmentDefinitionKey}
+                      onChange={(event) =>
+                        setEquipmentDefinitionKey(event.target.value)
+                      }
+                      disabled={
+                        equipmentLoading || !equipmentData?.definitions.length
+                      }
+                    >
+                      {(equipmentData?.definitions ?? []).map(
+                        ({ equipmentDefinition }) => (
+                          <option
+                            key={equipmentDefinition}
+                            value={equipmentDefinition}
+                          >
+                            {formatEquipmentDefinition(equipmentDefinition)} ·{" "}
+                            {equipmentDefinition}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+                  <label className="field compact-field campaign-equipment-metric-field">
+                    <span>Equipment metric</span>
+                    <select
+                      value={equipmentMetric}
+                      onChange={(event) =>
+                        setEquipmentMetric(
+                          event.target.value as EquipmentTrendMetric,
+                        )
+                      }
+                    >
+                      {Object.entries(EQUIPMENT_METRICS).map(
+                        ([key, definition]) => (
+                          <option key={key} value={key}>
+                            {definition.label}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+                </>
+              ) : (
+                <details className="campaign-control-menu">
+                  <summary>Metrics · {effectiveMetrics.length}</summary>
+                  <div className="campaign-metric-menu">
+                    {supported.map((metric) => (
+                      <label key={metric.key}>
+                        <input
+                          type="checkbox"
+                          checked={effectiveMetrics.includes(metric.key)}
+                          onChange={(event) => {
+                            const metrics = event.target.checked
+                              ? [...effectiveMetrics, metric.key]
+                              : effectiveMetrics.filter(
+                                  (key) => key !== metric.key,
+                                );
+                            if (!metrics.length) return;
+                            updateSettings({ metrics, preset: "Custom" });
+                          }}
+                        />
+                        <span>{metric.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </details>
+              )}
               <label className="field compact-field">
                 <span>X-axis</span>
                 <select
@@ -924,19 +1224,21 @@ export function CampaignTrends({
                   <option value="sequence">Save sequence</option>
                 </select>
               </label>
-              <label
-                className="campaign-toggle"
-                title="Compare relative change on a 0–1 scale; tooltips retain original snapshot values."
-              >
-                <input
-                  type="checkbox"
-                  checked={settings.normalize}
-                  onChange={(event) =>
-                    updateSettings({ normalize: event.target.checked })
-                  }
-                />
-                <span>Normalize</span>
-              </label>
+              {trendMode === "overview" && (
+                <label
+                  className="campaign-toggle"
+                  title="Compare relative change on a 0–1 scale; tooltips retain original snapshot values."
+                >
+                  <input
+                    type="checkbox"
+                    checked={settings.normalize}
+                    onChange={(event) =>
+                      updateSettings({ normalize: event.target.checked })
+                    }
+                  />
+                  <span>Normalize</span>
+                </label>
+              )}
               <label className="field compact-field">
                 <span>Moving average</span>
                 <select
@@ -971,25 +1273,29 @@ export function CampaignTrends({
                     When enabled, the latest analyzed snapshot for each game
                     date wins.
                   </p>
-                  <label
-                    title={
-                      effectiveMetrics.length > 3
-                        ? "Select at most three metrics for separate scales."
-                        : undefined
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      checked={settings.separateScale}
-                      disabled={
-                        settings.normalize || effectiveMetrics.length > 3
+                  {trendMode === "overview" && (
+                    <label
+                      title={
+                        effectiveMetrics.length > 3
+                          ? "Select at most three metrics for separate scales."
+                          : undefined
                       }
-                      onChange={(event) =>
-                        updateSettings({ separateScale: event.target.checked })
-                      }
-                    />
-                    <span>Separate Y scales</span>
-                  </label>
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.separateScale}
+                        disabled={
+                          settings.normalize || effectiveMetrics.length > 3
+                        }
+                        onChange={(event) =>
+                          updateSettings({
+                            separateScale: event.target.checked,
+                          })
+                        }
+                      />
+                      <span>Separate Y scales</span>
+                    </label>
+                  )}
                 </div>
               </details>
             </div>
@@ -998,16 +1304,25 @@ export function CampaignTrends({
               <div>
                 <span className="eyebrow">Historical snapshots</span>
                 <h2>
-                  {settings.scope === "country"
-                    ? `${countryFullName(countryTag)} trends`
-                    : "Campaign development"}
+                  {trendMode === "equipment"
+                    ? selectedEquipmentDefinition
+                      ? `${formatEquipmentDefinition(selectedEquipmentDefinition.equipmentDefinition)} · ${countryFullName(countryTag)}`
+                      : countryTag
+                        ? `Equipment · ${countryFullName(countryTag)}`
+                        : "Equipment trends"
+                    : settings.scope === "country"
+                      ? `${countryFullName(countryTag)} trends`
+                      : "Campaign development"}
                 </h2>
               </div>
               <p>
-                {snapshots.length} snapshots · {effectiveMetrics.length} metrics
+                {snapshots.length} snapshots ·{" "}
+                {trendMode === "equipment"
+                  ? "1 metric"
+                  : `${effectiveMetrics.length} metrics`}
               </p>
             </div>
-            {settings.normalize && (
+            {trendMode === "overview" && settings.normalize && (
               <p className="campaign-context-note">
                 Normalized values compare relative change from each metric’s
                 observed minimum to maximum. Tooltips retain original values.
@@ -1019,14 +1334,65 @@ export function CampaignTrends({
                 not bridge unavailable values.
               </p>
             )}
+            {trendMode === "equipment" && (
+              <p className="campaign-context-note">
+                Exact equipment definitions are matched across saves by country
+                tag and definition. Stockpile values are signed balances;
+                normalization is unavailable in this mode.
+              </p>
+            )}
+            {incompleteRateCount > 0 && (
+              <p className="campaign-context-note">
+                {incompleteRateCount} production-rate snapshot
+                {incompleteRateCount === 1 ? " is" : "s are"} incomplete and
+                remains a gap rather than a partial total.
+              </p>
+            )}
             {missingValues && (
               <p className="campaign-context-note">
-                Some selected values are unavailable. Missing country snapshots
-                remain gaps, not zeroes.
+                {trendMode === "equipment"
+                  ? "Some selected values are unavailable. Missing definitions, countries, or incomplete values remain gaps, not zeroes."
+                  : "Some selected values are unavailable. Missing country snapshots remain gaps, not zeroes."}
               </p>
             )}
 
-            {campaign.snapshotCount === 1 ? (
+            {trendMode === "equipment" && !countryTag ? (
+              <div className="campaign-state single-save" role="status">
+                <h3>No country available</h3>
+                <p>No country snapshot data is available for this campaign.</p>
+              </div>
+            ) : trendMode === "equipment" && equipmentLoading ? (
+              <div className="campaign-state single-save" role="status">
+                <h3>Loading equipment trends…</h3>
+                <p>Reading compact equipment snapshots for this country.</p>
+              </div>
+            ) : trendMode === "equipment" && equipmentError ? (
+              <div className="campaign-state single-save" role="alert">
+                <h3>Equipment trends unavailable</h3>
+                <p>{equipmentError}</p>
+                <button
+                  className="button button-secondary"
+                  onClick={() => {
+                    equipmentCache.current.delete(
+                      `${campaign.key}\u0000${countryTag}`,
+                    );
+                    setEquipmentRevision((current) => current + 1);
+                  }}
+                >
+                  Try again
+                </button>
+              </div>
+            ) : trendMode === "equipment" &&
+              equipmentData &&
+              equipmentData.definitions.length === 0 ? (
+              <div className="campaign-state single-save" role="status">
+                <h3>No equipment definitions found</h3>
+                <p>
+                  This country has no stockpile or current land/air production
+                  definitions in the available campaign snapshots.
+                </p>
+              </div>
+            ) : campaign.snapshotCount === 1 ? (
               <div className="campaign-state single-save" role="status">
                 <h3>One campaign snapshot available</h3>
                 <p>
@@ -1035,21 +1401,28 @@ export function CampaignTrends({
                 </p>
                 {latest && (
                   <dl>
-                    {effectiveMetrics.slice(0, 4).map((metric) => (
-                      <div key={metric}>
-                        <dt>{metricDefinition(metric).label}</dt>
-                        <dd>
-                          {formatValue(
-                            metricValue(
-                              latest,
-                              settings.scope,
-                              countryTag,
-                              metric,
-                            ),
-                          )}
-                        </dd>
+                    {trendMode === "equipment" ? (
+                      <div>
+                        <dt>{EQUIPMENT_METRICS[equipmentMetric].label}</dt>
+                        <dd>{formatValue(equipmentValues.at(-1))}</dd>
                       </div>
-                    ))}
+                    ) : (
+                      effectiveMetrics.slice(0, 4).map((metric) => (
+                        <div key={metric}>
+                          <dt>{metricDefinition(metric).label}</dt>
+                          <dd>
+                            {formatValue(
+                              metricValue(
+                                latest,
+                                settings.scope,
+                                countryTag,
+                                metric,
+                              ),
+                            )}
+                          </dd>
+                        </div>
+                      ))
+                    )}
                   </dl>
                 )}
               </div>
@@ -1098,16 +1471,22 @@ export function CampaignTrends({
                     <th>Game date</th>
                     <th>Save</th>
                     <th>Analyzed</th>
-                    {timelineMetrics.map((metric) => (
-                      <th className="num" key={metric}>
-                        {metricDefinition(metric).shortLabel}
+                    {trendMode === "equipment" ? (
+                      <th className="num">
+                        {EQUIPMENT_METRICS[equipmentMetric].shortLabel}
                       </th>
-                    ))}
+                    ) : (
+                      timelineMetrics.map((metric) => (
+                        <th className="num" key={metric}>
+                          {metricDefinition(metric).shortLabel}
+                        </th>
+                      ))
+                    )}
                     <th>Context</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {snapshots.map((snapshot) => {
+                  {snapshots.map((snapshot, snapshotIndex) => {
                     const selected = snapshot.hash === selectedHash;
                     const sameDateCount =
                       duplicateDates.get(snapshot.gameDate) ?? 1;
@@ -1133,18 +1512,24 @@ export function CampaignTrends({
                             {DATE_TIME.format(new Date(snapshot.analyzedAt))}
                           </time>
                         </td>
-                        {timelineMetrics.map((metric) => (
-                          <td className="num" key={metric}>
-                            {formatValue(
-                              metricValue(
-                                snapshot,
-                                settings.scope,
-                                countryTag,
-                                metric,
-                              ),
-                            )}
+                        {trendMode === "equipment" ? (
+                          <td className="num">
+                            {formatValue(equipmentValues[snapshotIndex])}
                           </td>
-                        ))}
+                        ) : (
+                          timelineMetrics.map((metric) => (
+                            <td className="num" key={metric}>
+                              {formatValue(
+                                metricValue(
+                                  snapshot,
+                                  settings.scope,
+                                  countryTag,
+                                  metric,
+                                ),
+                              )}
+                            </td>
+                          ))
+                        )}
                         <td>
                           {selected ? (
                             <span className="timeline-status selected">

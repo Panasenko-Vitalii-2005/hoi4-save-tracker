@@ -1,5 +1,6 @@
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
 import type { SaveComparisonContext } from '../hoi4/save-comparison-context';
+import type { MilitaryProductionDefinitionSummary } from '../hoi4/production/production.types';
 import { comparisonResult } from './fixtures/analysis-comparison.fixture';
 import { CampaignTrendsService } from './campaign-trends.service';
 import type { PersistedAnalysisResultService } from './persisted-analysis-result.service';
@@ -220,5 +221,204 @@ describe('CampaignTrendsService', () => {
     entries.push(missing, unavailable);
     expect(await service.build()).toEqual({ snapshotCount: 0, campaigns: [] });
     expect(results.getWithContext).toHaveBeenCalledTimes(1);
+  });
+
+  const equipmentResult = (
+    gameDate: string,
+    stockpile: [string, number][],
+    production: Array<[string, number, number | null, boolean]> = [],
+    countryTag = 'GER',
+  ): AnalyzeResult => {
+    const result = comparisonResult({ game_date: gameDate });
+    result.stockpileSummaries = [
+      {
+        countryTag,
+        definitions: stockpile.map(([definition, amount]) => ({
+          definition,
+          amount,
+          variants: [],
+        })),
+        unresolvedVariants: [],
+      },
+    ];
+    const definition = (
+      equipmentDefinition: string,
+      activeFactories: number,
+      currentItemsPerDay: number | null,
+      outputComplete: boolean,
+    ): MilitaryProductionDefinitionSummary => ({
+      equipmentDefinition,
+      lineCount: 1,
+      requestedFactories: activeFactories,
+      activeFactories,
+      queuedFactories: 0,
+      damagedFactories: 0,
+      currentItemsPerDay,
+      knownCurrentItemsPerDay: currentItemsPerDay ?? 0,
+      outputComplete,
+      resourceShortageLineCount: 0,
+      lines: [],
+    });
+    result.militaryProductionSummaries = [
+      {
+        countryTag,
+        lineCount: production.length,
+        definitionCount: production.length,
+        requestedFactories: 0,
+        activeFactories: 0,
+        queuedFactories: 0,
+        damagedFactories: 0,
+        resourceShortageLineCount: 0,
+        definitions: production.map((entry) => definition(...entry)),
+        unresolvedLines: [],
+      },
+    ];
+    return result;
+  };
+
+  test('discovers an exact deterministic definition union and keeps similarly named definitions distinct', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['modded_tank', 1]]),
+    );
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.2.1', [
+        ['modded__tank', 2],
+        ['infantry_equipment_1', 3],
+      ]),
+    );
+
+    const dto = await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    expect(dto.snapshotHashes.map((value) => value[0])).toEqual(['a', 'b']);
+    expect(
+      dto.definitions.map(({ equipmentDefinition }) => equipmentDefinition),
+    ).toEqual(['infantry_equipment_1', 'modded__tank', 'modded_tank']);
+  });
+
+  test('preserves signed, fractional and measured-zero stockpile values while absence stays null', async () => {
+    const first = equipmentResult('1936.1.1', [
+      ['infantry_equipment_1', -1.25],
+      ['support_equipment_1', 0],
+    ]);
+    first.stockpileSummaries[0].definitions.push({
+      definition: 'infantry_equipment_1',
+      amount: 0.5,
+      variants: [],
+    });
+    add(item('a', '1936.1.1', '2026-01-01T00:00:00Z'), campaignA, first);
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.2.1', [['support_equipment_1', 2]]),
+    );
+
+    const definitions = (
+      await service.buildEquipment(`campaign:${campaignA}`, 'GER')
+    ).definitions;
+    expect(
+      definitions.find(
+        ({ equipmentDefinition }) =>
+          equipmentDefinition === 'infantry_equipment_1',
+      )?.stockpileBalance,
+    ).toEqual([-0.75, null]);
+    expect(
+      definitions.find(
+        ({ equipmentDefinition }) =>
+          equipmentDefinition === 'support_equipment_1',
+      )?.stockpileBalance,
+    ).toEqual([0, 2]);
+  });
+
+  test('projects active factories and only complete finite production rates without matching transient refs', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult(
+        '1936.1.1',
+        [],
+        [['small_plane_airframe_2', 0, 1.25, true]],
+      ),
+    );
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignA,
+      equipmentResult(
+        '1936.2.1',
+        [],
+        [
+          ['small_plane_airframe_2', 4, 9, false],
+          ['modded_new_design', 2, 0.5, true],
+        ],
+      ),
+    );
+
+    const definitions = (
+      await service.buildEquipment(`campaign:${campaignA}`, 'GER')
+    ).definitions;
+    expect(definitions[1]).toMatchObject({
+      equipmentDefinition: 'small_plane_airframe_2',
+      activeFactories: [0, 4],
+      currentItemsPerDay: [1.25, null],
+      productionRateComplete: [true, false],
+    });
+    expect(definitions[0]).toMatchObject({
+      equipmentDefinition: 'modded_new_design',
+      activeFactories: [null, 2],
+      currentItemsPerDay: [null, 0.5],
+      productionRateComplete: [null, true],
+    });
+  });
+
+  test('uses exact campaign identity, keeps unknown histories isolated, and reads persisted results only', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult('1936.1.1', [['one', 1]]),
+    );
+    add(
+      item('b', '1936.2.1', '2026-01-02T00:00:00Z'),
+      campaignB,
+      equipmentResult('1936.2.1', [['two', 2]]),
+    );
+    add(
+      item('c', '1936.3.1', '2026-01-03T00:00:00Z'),
+      null,
+      equipmentResult('1936.3.1', [['legacy', 3]]),
+    );
+
+    const known = await service.buildEquipment(`campaign:${campaignA}`, 'GER');
+    const legacy = await service.buildEquipment(`unknown:${hash('c')}`, 'GER');
+    expect(
+      known.definitions.map(({ equipmentDefinition }) => equipmentDefinition),
+    ).toEqual(['one']);
+    expect(
+      legacy.definitions.map(({ equipmentDefinition }) => equipmentDefinition),
+    ).toEqual(['legacy']);
+    expect(recent.list).toHaveBeenCalledTimes(2);
+    expect(results.getWithContext).toHaveBeenCalled();
+  });
+
+  test('returns a compact projection without full stockpile variants or production lines', async () => {
+    add(
+      item('a', '1936.1.1', '2026-01-01T00:00:00Z'),
+      campaignA,
+      equipmentResult(
+        '1936.1.1',
+        [['unknown_mod_equipment', 4.5]],
+        [['unknown_mod_equipment', 3, 2.5, true]],
+      ),
+    );
+    const dto = await service.buildEquipment(`campaign:${campaignA}`, 'D01');
+    expect(dto).toMatchObject({
+      campaignKey: `campaign:${campaignA}`,
+      countryTag: 'D01',
+      definitions: [],
+    });
+    expect(JSON.stringify(dto)).not.toMatch(
+      /variants|lines|equipmentRef|warnings/,
+    );
   });
 });
