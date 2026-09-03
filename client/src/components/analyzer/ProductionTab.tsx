@@ -7,12 +7,14 @@ export function ProductionTab({
   summaries,
   selectedTag,
   selectedDefinitionName,
+  effectiveMilitaryFactories,
   onSelectedTagChange,
   onSelectedDefinitionChange,
 }: {
   summaries: CountryMilitaryProductionSummary[];
   selectedTag: string | null;
   selectedDefinitionName: string | null;
+  effectiveMilitaryFactories: number | null;
   onSelectedTagChange: (tag: string | null) => void;
   onSelectedDefinitionChange: (definition: string | null) => void;
 }) {
@@ -93,6 +95,7 @@ export function ProductionTab({
         <CountryProductionDetails
           country={selectedCountry}
           selectedDefinition={selectedDefinition}
+          effectiveMilitaryFactories={effectiveMilitaryFactories}
           onSelectDefinition={handleDefinitionSelect}
         />
       </div>

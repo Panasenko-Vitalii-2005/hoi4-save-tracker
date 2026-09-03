@@ -819,6 +819,14 @@ export function AnalyzerTab({
     [eqCountry, eqCountries],
   );
 
+  const selectedProductionEffectiveMilitaryFactories = useMemo(
+    () =>
+      result?.by_country.find(
+        ({ tag }) => tag === productionCountryTag,
+      )?.effectiveMilitaryFactories ?? null,
+    [productionCountryTag, result],
+  );
+
   useEffect(() => {
     if (result && eqCountries.length > 0 && !eqCountry) {
       setEqCountry(eqCountries[0]);
@@ -1050,6 +1058,9 @@ export function AnalyzerTab({
               summaries={result.militaryProductionSummaries ?? []}
               selectedTag={productionCountryTag}
               selectedDefinitionName={productionDefinitionName}
+              effectiveMilitaryFactories={
+                selectedProductionEffectiveMilitaryFactories
+              }
               onSelectedTagChange={setProductionCountryTag}
               onSelectedDefinitionChange={setProductionDefinitionName}
             />

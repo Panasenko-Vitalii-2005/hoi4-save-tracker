@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import type {
   CountryMilitaryProductionSummary,
   MilitaryProductionDefinitionSummary,
@@ -6,6 +6,7 @@ import type {
 import {
   formatEquipmentDefinition,
   formatProductionRate,
+  formatProductionValue,
 } from "@/lib/utils";
 import { CountryDisplay } from "./CountryDisplay";
 import { ProductionLineTable } from "./ProductionLineTable";
@@ -13,6 +14,7 @@ import { ProductionLineTable } from "./ProductionLineTable";
 interface Props {
   country: CountryMilitaryProductionSummary | null;
   selectedDefinition: MilitaryProductionDefinitionSummary | null;
+  effectiveMilitaryFactories: number | null;
   onSelectDefinition: (definition: string) => void;
 }
 
@@ -41,8 +43,19 @@ function DefinitionRate({
 export const CountryProductionDetails = memo(function CountryProductionDetails({
   country,
   selectedDefinition,
+  effectiveMilitaryFactories,
   onSelectDefinition,
 }: Props) {
+  const sortedDefinitions = useMemo(
+    () =>
+      [...(country?.definitions ?? [])].sort(
+        (left, right) =>
+          right.activeFactories - left.activeFactories ||
+          left.equipmentDefinition.localeCompare(right.equipmentDefinition),
+      ),
+    [country],
+  );
+
   if (!country) {
     return (
       <section className="panel production-details-panel production-empty">
@@ -54,6 +67,7 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
   const summaryFields = [
     ["Production lines", country.lineCount],
     ["Definitions", country.definitionCount],
+    ["Effective MIL factories", effectiveMilitaryFactories],
     ["Active factories", country.activeFactories],
     ["Requested", country.requestedFactories],
     ["Queued", country.queuedFactories],
@@ -79,10 +93,15 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
           {summaryFields.map(([label, value]) => (
             <div key={label}>
               <dt>{label}</dt>
-              <dd>{value.toLocaleString()}</dd>
+              <dd>{formatProductionValue(value)}</dd>
             </div>
           ))}
         </dl>
+
+        <p className="micro-copy">
+          Effective military factories and production-line factory slots are
+          separate save concepts and do not necessarily reconcile.
+        </p>
 
         {country.definitions.length === 0 ? (
           <div className="production-inner-empty">
@@ -101,7 +120,7 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
                 </tr>
               </thead>
               <tbody>
-                {country.definitions.map((definition) => {
+                {sortedDefinitions.map((definition) => {
                   const selected =
                     selectedDefinition?.equipmentDefinition ===
                     definition.equipmentDefinition;
