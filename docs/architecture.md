@@ -17,6 +17,7 @@ flowchart TD
   Results[(gzip AnalyzeResult files)]
   Recent[(Recent metadata)]
   Shares[(Share metadata)]
+  Postgres[(PostgreSQL metadata)]
 
   Browser -->|/api| Nginx
   Nginx --> API
@@ -26,6 +27,7 @@ flowchart TD
   API --> Results
   API --> Recent
   API --> Shares
+  API -.->|optional connectivity| Postgres
   Results -->|reopen, Compare, Trends, Share| API
 ```
 
@@ -94,6 +96,8 @@ Storage status lists recognized gzip files and sums filesystem sizes. It does no
 
 Original uploaded `.hoi4` files are managed temporary inputs and are not retained in these stores. The Compose `/app/saves` read-only mount is a separate source directory.
 
+PostgreSQL is an additional, optional metadata foundation. In Phase 1 it contains only versioned `users` and `sessions` schema for future authentication work. It does not contain AnalyzeResult data, artifact blobs, Recent metadata, Shares, projections, or parser caches. Database mode is disabled by default outside Compose; enabled startup validates connectivity but ordinary application startup never applies migrations.
+
 ## Campaign identity and downstream views
 
 `game_unique_id` from persisted comparison context is the authoritative campaign key.
@@ -138,14 +142,14 @@ Share links are unlisted but unauthenticated. Anyone with the URL can read the c
 
 ## Deployment model and limits
 
-Compose runs one backend and one nginx frontend. The backend data directory is a named volume and the optional saves directory is a read-only bind mount.
+Compose runs PostgreSQL, a one-shot migration service, one backend, and one nginx frontend. PostgreSQL and the existing backend data directory use separate named volumes; the optional saves directory remains a read-only bind mount.
 
 The current model assumes one trusted owner/process:
 
 - no accounts, authentication, authorization, or per-user quotas;
 - no cross-process locks, distributed queue, or shared cache;
 - no application TLS or edge rate limiter;
-- no database migrations, replication, or automatic backup;
+- no replication or automatic backup; PostgreSQL migrations are explicit and versioned;
 - process-local admission and Worker limits.
 
 A public multi-user deployment needs identity/ownership, CSRF and authorization review, per-user persistence, external rate/connection controls, TLS, backup, and multi-instance coordination. Those concerns are deliberately outside the current local architecture.

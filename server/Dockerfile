@@ -15,6 +15,7 @@ WORKDIR /app/server
 COPY server/package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/server/dist ./dist
+COPY --from=build /app/server/migrations ./migrations
 COPY --from=build /app/server/src/hoi4/countries.json ./dist/src/hoi4/countries.json
 
 EXPOSE 3001

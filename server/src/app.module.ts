@@ -22,9 +22,11 @@ import { CampaignTrendsController } from './analyze/campaign-trends.controller';
 import { CampaignTrendsService } from './analyze/campaign-trends.service';
 import { CampaignSnapshotProjectionCacheService } from './analyze/campaign-snapshot-projection-cache.service';
 import { BatchAnalysisController } from './analyze/batch-analysis.controller';
+import { DatabaseModule } from './database/database.module';
 
 @Module({
   imports: [
+    DatabaseModule,
     ServeStaticModule.forRoot({
       rootPath: path.join(__dirname, '..', '..', '..', 'client', 'dist'),
       exclude: ['/api/(.*)'],

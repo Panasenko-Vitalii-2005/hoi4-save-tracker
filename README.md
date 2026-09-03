@@ -176,8 +176,9 @@ Open [http://localhost:8081](http://localhost:8081). Stop with `docker compose d
 
 - `./saves` is mounted read-only at `/app/saves`, but local browsing and path analysis are disabled by default. Set `HOI4_LOCAL_SAVES_ENABLED=true` explicitly for trusted local use; browser upload works independently.
 - `analysis-history` is a named volume containing Recent metadata, compressed results, and share metadata.
+- `postgres-data` stores future SaaS metadata. Compose runs the versioned migrations before starting the backend; PostgreSQL is not published to the host network.
 - Save files are excluded from both Docker images.
-- `docker compose down -v` also deletes the named persistence volume; use it only when that is intended.
+- `docker compose down -v` also deletes both named persistence volumes; use it only when that is intended.
 
 Set `FRONTEND_PORT` to change the host port, for example `FRONTEND_PORT=8090 docker compose up --build` in a shell that supports inline environment variables.
 
@@ -213,6 +214,11 @@ All values are optional; invalid numeric values fall back to the documented defa
 | --- | --- | ---: | --- |
 | Server | `PORT` | `3001` | NestJS listen port |
 | Server | `HOI4_CORS_ORIGIN` | `http://localhost:5173` | Exact frontend HTTP(S) origin allowed by CORS |
+| Database | `HOI4_DATABASE_ENABLED` | `false` native; `true` in Compose | Enable PostgreSQL connectivity validation; only exact `true` enables it |
+| Database | `DATABASE_URL` | none native; development-only Compose URL | PostgreSQL connection string; required when database mode is enabled |
+| Database | `POSTGRES_DB` | `hoi4_tracker` in Compose | Compose development database name |
+| Database | `POSTGRES_USER` | `hoi4_tracker` in Compose | Compose development database user |
+| Database | `POSTGRES_PASSWORD` | development-only value in Compose | Compose development password; override outside local development |
 | Local saves | `HOI4_LOCAL_SAVES_ENABLED` | `false` | Enable trusted server-side save browsing and path analysis only when exactly `true` |
 | Local saves | `HOI4_SAVES_DIR` | `../saves` from backend cwd | Read-only local-save browser root |
 | Upload | `HOI4_UPLOAD_DIRECTORY` | OS temp directory | Managed temporary uploads |
@@ -261,6 +267,27 @@ The API is currently an unauthenticated local application surface, not a multi-t
 
 Local filesystem APIs are safe-by-default: when `HOI4_LOCAL_SAVES_ENABLED` is unset or anything other than `true`, `/api/saves`, `/api/saves/default-dir`, `/saves/analyze`, and JSON `path` requests to `/api/analyze` return 404. Keep this disabled for public/SaaS deployments. Enabling it deliberately exposes server-side save discovery/path analysis and is intended only for a trusted local environment. Multipart upload analysis is unaffected.
 
+### PostgreSQL metadata foundation
+
+PostgreSQL is an optional metadata foundation for later authentication and ownership phases. Phase 1 stores only future account/session schema there. AnalyzeResult payloads remain compressed files under `data/analysis-results`; Recent Analyses and Shares remain the existing JSON stores and are still authoritative. Phase 1 does not make the application multi-user and does not change any API authorization behavior.
+
+Native startup leaves database mode disabled unless `HOI4_DATABASE_ENABLED=true`. Disabled mode creates no connection. Enabled mode requires a valid `DATABASE_URL` and fails startup if connectivity validation fails; credentials and connection URLs are never returned by health diagnostics. `/api/health` reports `database: disabled`, `ok`, or `unavailable`.
+
+Migrations are explicit and are not run by ordinary backend startup. From `server/`:
+
+```bash
+npm run db:migrate:dev
+npm run db:migrate:status
+```
+
+`db:migrate:dev` builds the migration runner and applies checked-in SQL migrations. Compose uses a separate one-shot `migrate` service before backend startup. Run isolated integration tests against a database whose name ends in `_test`:
+
+```bash
+HOI4_TEST_DATABASE_URL=postgresql://user:password@localhost:5432/hoi4_tracker_test npm run test:db
+```
+
+A future SaaS backup must include both PostgreSQL metadata and the separate analysis artifact/JSON storage; neither is a replacement for the other.
+
 ## Persistence model
 
 The analysis store persists:
@@ -273,7 +300,7 @@ Writes use managed temporary files, fsync, and atomic rename. Mutations are seri
 
 The analysis-result store does **not** retain uploaded original `.hoi4` files. The optional `./saves:/app/saves:ro` Compose mount is a separate user-provided source directory.
 
-There is no database and no cross-process storage lock. One backend should own a persistence directory.
+PostgreSQL currently provides only the future user/session metadata foundation. Analysis artifacts, Recent Analyses, and Shares remain file-based, and there is still no cross-process storage lock. One backend should own a persistence directory.
 
 ## Testing
 

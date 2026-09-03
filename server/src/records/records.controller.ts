@@ -1,9 +1,17 @@
 import { Controller, Get } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import { DatabaseService } from '../database/database.service';
 
 // __dirname in ts-node dev = server/src/records/  →  3 levels up to project root
-const DATA_FILE = path.join(__dirname, '..', '..', '..', 'data', 'autosave_intervals.json');
+const DATA_FILE = path.join(
+  __dirname,
+  '..',
+  '..',
+  '..',
+  'data',
+  'autosave_intervals.json',
+);
 
 interface SaveRecord {
   real_time: string;
@@ -62,7 +70,10 @@ export class SoldiersController {
         game_date: rec.game_date,
         real_time: rec.real_time,
       };
-      const sbc = (rec.soldiers_by_country ?? {}) as Record<string, SoldiersEntry>;
+      const sbc = (rec.soldiers_by_country ?? {}) as Record<
+        string,
+        SoldiersEntry
+      >;
       for (const tag of allTags) {
         entry[tag] = sbc[tag] ?? { divisions: 0, manpower: 0, avg_manpower: 0 };
       }
@@ -71,8 +82,14 @@ export class SoldiersController {
 
     let latestSbc: Record<string, SoldiersEntry> = {};
     for (let i = records.length - 1; i >= 0; i--) {
-      const sbc = records[i].soldiers_by_country as Record<string, SoldiersEntry>;
-      if (sbc && Object.keys(sbc).length > 0) { latestSbc = sbc; break; }
+      const sbc = records[i].soldiers_by_country as Record<
+        string,
+        SoldiersEntry
+      >;
+      if (sbc && Object.keys(sbc).length > 0) {
+        latestSbc = sbc;
+        break;
+      }
     }
 
     const latestRanked = Object.entries(latestSbc)
@@ -91,8 +108,10 @@ export class SoldiersController {
 
 @Controller('api/health')
 export class HealthController {
+  constructor(private readonly database: DatabaseService) {}
+
   @Get()
-  health() {
-    return { status: 'ok' };
+  async health() {
+    return { status: 'ok', database: await this.database.health() };
   }
 }

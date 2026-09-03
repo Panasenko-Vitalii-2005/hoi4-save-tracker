@@ -43,6 +43,8 @@ npx eslint "{src,apps,libs,test}/**/*.ts"
 | --- | ---: | --- |
 | `PORT` | `3001` | Listen port |
 | `HOI4_CORS_ORIGIN` | `http://localhost:5173` | Exact frontend HTTP(S) origin allowed by CORS |
+| `HOI4_DATABASE_ENABLED` | `false` | Enable PostgreSQL validation only when exactly `true` |
+| `DATABASE_URL` | none | PostgreSQL URL required when database mode is enabled |
 | `HOI4_LOCAL_SAVES_ENABLED` | `false` | Enable trusted local-save browsing/path analysis only when exactly `true` |
 | `HOI4_SAVES_DIR` | `../saves` from backend cwd | Local-save browser root |
 | `HOI4_UPLOAD_DIRECTORY` | OS temp | Managed multipart files |
@@ -69,6 +71,7 @@ npx eslint "{src,apps,libs,test}/**/*.ts"
 - `hoi4-parser.ts` and its domain modules decode once, reuse structural indexes, and build deterministic public results.
 - `PersistedAnalysisResultService` writes versioned gzip envelopes atomically and enforces the compressed byte budget.
 - `RecentAnalysesService` stores compact metadata and reconciles availability, legacy context, pins, shares, and bulk cleanup.
+- `DatabaseService` owns the optional PostgreSQL pool lifecycle and startup/health validation. It does not run migrations or store analysis artifacts.
 
 The persistence implementation is single-process. Do not run multiple backend instances against the same directory.
 
@@ -81,6 +84,14 @@ The important routes are documented in the [root README](../README.md#important-
 Original multipart uploads are temporary and are not part of Recent persistence. Result artifacts are named by validated SHA-256, compressed with gzip, and written through an exclusive temporary file plus fsync and atomic rename. Storage inventory accepts only recognized regular files and does not follow symbolic links.
 
 Pins and active shares receive stronger retention protection, but the hard configured byte limit remains authoritative. Storage failures do not corrupt a successful parser result; availability is represented explicitly.
+
+## PostgreSQL metadata
+
+PostgreSQL is disabled by default for native/local compatibility. Set `HOI4_DATABASE_ENABLED=true` with a valid `DATABASE_URL` to require connectivity; invalid configuration or connection failure stops startup without exposing the URL. Compose enables it with clearly development-only defaults and runs a separate migration container first.
+
+Versioned SQL migrations live in `migrations/`. Build and apply them with `npm run db:migrate:dev`; after a build, inspect with `npm run db:migrate:status`. Database integration tests require an isolated `HOI4_TEST_DATABASE_URL` whose database name ends in `_test`, then run with `npm run test:db`.
+
+Only the initial `users` and `sessions` metadata schema exists in Phase 1. AnalyzeResult gzip artifacts, Recent metadata, and Share metadata remain filesystem-based and behaviorally unchanged. Backups for a future SaaS deployment will need both PostgreSQL and artifact storage.
 
 ## Public-deployment warning
 
