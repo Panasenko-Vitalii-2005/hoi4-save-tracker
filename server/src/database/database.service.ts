@@ -10,16 +10,30 @@ import type { DatabaseConfig } from './database.config';
 export const DATABASE_CONFIG = Symbol('DATABASE_CONFIG');
 export const DATABASE_POOL_FACTORY = Symbol('DATABASE_POOL_FACTORY');
 
-export interface DatabasePool {
+export interface DatabaseExecutor {
   query<Row extends QueryResultRow = QueryResultRow>(
     text: string,
     values?: unknown[],
   ): Promise<QueryResult<Row>>;
+}
+
+export interface DatabaseClient extends DatabaseExecutor {
+  release(): void;
+}
+
+export interface DatabasePool extends DatabaseExecutor {
+  connect(): Promise<DatabaseClient>;
   end(): Promise<void>;
 }
 
 export type DatabasePoolFactory = (connectionString: string) => DatabasePool;
 export type DatabaseHealth = 'disabled' | 'ok' | 'unavailable';
+
+export class DatabaseUnavailableError extends Error {
+  constructor() {
+    super('PostgreSQL is not available');
+  }
+}
 
 export function createDatabasePool(connectionString: string): DatabasePool {
   return new Pool({ connectionString });
@@ -65,11 +79,33 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  available(): boolean {
+    return this.pool !== null;
+  }
+
   async query<Row extends QueryResultRow = QueryResultRow>(
     text: string,
     values?: unknown[],
   ): Promise<QueryResult<Row>> {
-    if (!this.pool) throw new Error('PostgreSQL is not available');
+    if (!this.pool) throw new DatabaseUnavailableError();
     return this.pool.query<Row>(text, values);
+  }
+
+  async transaction<T>(
+    operation: (client: DatabaseExecutor) => Promise<T>,
+  ): Promise<T> {
+    if (!this.pool) throw new DatabaseUnavailableError();
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await operation(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }

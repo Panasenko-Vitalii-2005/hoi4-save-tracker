@@ -18,9 +18,15 @@ function queryResult(): QueryResult<QueryResultRow> {
 }
 
 function poolDouble() {
+  const client = {
+    query: jest.fn().mockResolvedValue(queryResult()),
+    release: jest.fn(),
+  };
   return {
     query: jest.fn().mockResolvedValue(queryResult()),
+    connect: jest.fn().mockResolvedValue(client),
     end: jest.fn().mockResolvedValue(undefined),
+    client,
   };
 }
 
@@ -74,6 +80,66 @@ describe('DatabaseService', () => {
     );
     expect(pool.end).toHaveBeenCalledTimes(1);
     await expect(service.health()).resolves.toBe('unavailable');
+  });
+
+  test('commits successful transactions and releases the client', async () => {
+    const pool = poolDouble();
+    const service = new DatabaseService(
+      {
+        enabled: true,
+        connectionString: 'postgresql://app:secret@db/hoi4',
+      },
+      () => pool as DatabasePool,
+    );
+    await service.onModuleInit();
+
+    await expect(
+      service.transaction(async (executor) => {
+        await executor.query('INSERT INTO users DEFAULT VALUES');
+        return 'created';
+      }),
+    ).resolves.toBe('created');
+
+    expect(pool.client.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+    expect(pool.client.query).toHaveBeenNthCalledWith(
+      2,
+      'INSERT INTO users DEFAULT VALUES',
+    );
+    expect(pool.client.query).toHaveBeenNthCalledWith(3, 'COMMIT');
+    expect(pool.client.release).toHaveBeenCalledTimes(1);
+    await service.onModuleDestroy();
+  });
+
+  test('rolls back failed transactions and releases the client', async () => {
+    const pool = poolDouble();
+    const service = new DatabaseService(
+      {
+        enabled: true,
+        connectionString: 'postgresql://app:secret@db/hoi4',
+      },
+      () => pool as DatabasePool,
+    );
+    await service.onModuleInit();
+    pool.client.query.mockImplementation((query: string) =>
+      query.startsWith('INSERT')
+        ? Promise.reject(new Error('insert failed'))
+        : Promise.resolve(queryResult()),
+    );
+
+    await expect(
+      service.transaction(async (executor) => {
+        await executor.query('INSERT INTO users DEFAULT VALUES');
+      }),
+    ).rejects.toThrow('insert failed');
+
+    expect(pool.client.query).toHaveBeenNthCalledWith(1, 'BEGIN');
+    expect(pool.client.query).toHaveBeenNthCalledWith(
+      2,
+      'INSERT INTO users DEFAULT VALUES',
+    );
+    expect(pool.client.query).toHaveBeenNthCalledWith(3, 'ROLLBACK');
+    expect(pool.client.release).toHaveBeenCalledTimes(1);
+    await service.onModuleDestroy();
   });
 
   test('the Nest provider initializes without a database in disabled mode', async () => {

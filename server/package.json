@@ -18,7 +18,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "test:db": "jest src/database/database.integration.spec.ts --runInBand",
+    "test:db": "jest src/database/database.integration.spec.ts src/auth/auth.integration.spec.ts --runInBand",
     "db:migrate": "node dist/src/database/migrate.js up",
     "db:migrate:status": "node dist/src/database/migrate.js status",
     "db:migrate:dev": "npm run build && npm run db:migrate"

@@ -18,6 +18,7 @@ flowchart TD
   Recent[(Recent metadata)]
   Shares[(Share metadata)]
   Postgres[(PostgreSQL metadata)]
+  Auth[Registration, login and opaque sessions]
 
   Browser -->|/api| Nginx
   Nginx --> API
@@ -27,7 +28,7 @@ flowchart TD
   API --> Results
   API --> Recent
   API --> Shares
-  API -.->|optional connectivity| Postgres
+  API --> Auth --> Postgres
   Results -->|reopen, Compare, Trends, Share| API
 ```
 
@@ -96,7 +97,9 @@ Storage status lists recognized gzip files and sums filesystem sizes. It does no
 
 Original uploaded `.hoi4` files are managed temporary inputs and are not retained in these stores. The Compose `/app/saves` read-only mount is a separate source directory.
 
-PostgreSQL is an additional, optional metadata foundation. In Phase 1 it contains only versioned `users` and `sessions` schema for future authentication work. It does not contain AnalyzeResult data, artifact blobs, Recent metadata, Shares, projections, or parser caches. Database mode is disabled by default outside Compose; enabled startup validates connectivity but ordinary application startup never applies migrations.
+PostgreSQL is an additional, optional metadata store. The Phase 2A auth core uses its versioned `users` and `sessions` schema for registration, salted scrypt password hashes, opaque-session token hashes, and fixed expiry. It does not contain AnalyzeResult data, artifact blobs, Recent metadata, Shares, projections, or parser caches. Database mode is disabled by default outside Compose; enabled startup validates connectivity but ordinary application startup never applies migrations.
+
+Only `/api/auth/register`, `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout` consume the `hoi4_session` cookie. There is intentionally no global auth guard, ownership join, or product-route authorization in Phase 2A. When PostgreSQL is disabled, auth operations fail with a generic 503 while existing APIs keep their prior behavior.
 
 ## Campaign identity and downstream views
 
@@ -129,6 +132,10 @@ Share links are unlisted but unauthenticated. Anyone with the URL can read the c
 | Method | Route | Reads parser/Worker? |
 | --- | --- | --- |
 | `POST` | `/api/analyze` | Worker only on cache miss |
+| `POST` | `/api/auth/register` | No; PostgreSQL only |
+| `POST` | `/api/auth/login` | No; PostgreSQL only |
+| `GET` | `/api/auth/me` | No; PostgreSQL only |
+| `POST` | `/api/auth/logout` | No; PostgreSQL only |
 | `POST` | `/api/analyze/batch/preflight` | No |
 | `GET` | `/api/analyze/recent` | No |
 | `GET` | `/api/analyze/recent/:hash/result` | No |
@@ -146,10 +153,10 @@ Compose runs PostgreSQL, a one-shot migration service, one backend, and one ngin
 
 The current model assumes one trusted owner/process:
 
-- no accounts, authentication, authorization, or per-user quotas;
+- accounts/auth sessions exist, but product APIs have no authorization, ownership, or per-user quotas;
 - no cross-process locks, distributed queue, or shared cache;
 - no application TLS or edge rate limiter;
 - no replication or automatic backup; PostgreSQL migrations are explicit and versioned;
 - process-local admission and Worker limits.
 
-A public multi-user deployment needs identity/ownership, CSRF and authorization review, per-user persistence, external rate/connection controls, TLS, backup, and multi-instance coordination. Those concerns are deliberately outside the current local architecture.
+A public multi-user deployment still needs Phase 2B/3 ownership, CSRF and authorization enforcement, per-user persistence, external rate/connection controls, TLS, backup, and multi-instance coordination. Those concerns are deliberately outside the Phase 2A auth core.

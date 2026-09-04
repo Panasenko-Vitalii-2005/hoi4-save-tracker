@@ -45,6 +45,8 @@ npx eslint "{src,apps,libs,test}/**/*.ts"
 | `HOI4_CORS_ORIGIN` | `http://localhost:5173` | Exact frontend HTTP(S) origin allowed by CORS |
 | `HOI4_DATABASE_ENABLED` | `false` | Enable PostgreSQL validation only when exactly `true` |
 | `DATABASE_URL` | none | PostgreSQL URL required when database mode is enabled |
+| `HOI4_SESSION_TTL_SECONDS` | `604800` | Fixed auth-session lifetime; 300 seconds to 365 days |
+| `HOI4_SESSION_COOKIE_SECURE` | production mode; `false` in local HTTP Compose | Exact boolean controlling HTTPS-only auth cookies |
 | `HOI4_LOCAL_SAVES_ENABLED` | `false` | Enable trusted local-save browsing/path analysis only when exactly `true` |
 | `HOI4_SAVES_DIR` | `../saves` from backend cwd | Local-save browser root |
 | `HOI4_UPLOAD_DIRECTORY` | OS temp | Managed multipart files |
@@ -72,6 +74,7 @@ npx eslint "{src,apps,libs,test}/**/*.ts"
 - `PersistedAnalysisResultService` writes versioned gzip envelopes atomically and enforces the compressed byte budget.
 - `RecentAnalysesService` stores compact metadata and reconciles availability, legacy context, pins, shares, and bulk cleanup.
 - `DatabaseService` owns the optional PostgreSQL pool lifecycle and startup/health validation. It does not run migrations or store analysis artifacts.
+- `AuthService` owns registration, credential verification, opaque-token issuance, expiry enforcement, and current-session revocation. Controllers never execute SQL or hash tokens.
 
 The persistence implementation is single-process. Do not run multiple backend instances against the same directory.
 
@@ -91,10 +94,14 @@ PostgreSQL is disabled by default for native/local compatibility. Set `HOI4_DATA
 
 Versioned SQL migrations live in `migrations/`. Build and apply them with `npm run db:migrate:dev`; after a build, inspect with `npm run db:migrate:status`. Database integration tests require an isolated `HOI4_TEST_DATABASE_URL` whose database name ends in `_test`, then run with `npm run test:db`.
 
-Only the initial `users` and `sessions` metadata schema exists in Phase 1. AnalyzeResult gzip artifacts, Recent metadata, and Share metadata remain filesystem-based and behaviorally unchanged. Backups for a future SaaS deployment will need both PostgreSQL and artifact storage.
+The existing `users` and `sessions` schema backs the Phase 2A auth endpoints. Passwords are versioned salted scrypt hashes. Raw 256-bit session tokens are sent only in the `hoi4_session` HttpOnly cookie; PostgreSQL stores their SHA-256 hashes and fixed expiry timestamps. Emails are trimmed/lowercased and remain protected by the database `CITEXT` unique constraint.
+
+Auth routes are `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout`. With database mode disabled, only these auth operations return a generic 503; the existing local application remains usable. The cookie is `SameSite=Lax`, `Path=/`, has matching expiry attributes, and becomes `Secure` by default in production. Local HTTP Compose explicitly sets `HOI4_SESSION_COOKIE_SECURE=false`; an HTTPS deployment must set it to `true`.
+
+Phase 2A does **not** apply authentication globally. Analyzer, Recent, Compare, Trends, storage, and share-management APIs remain unauthenticated and global. Ownership, CSRF enforcement, authorization guards, quotas, and frontend auth UX are deliberately deferred to Phase 2B/3. AnalyzeResult gzip artifacts, Recent metadata, and Share metadata remain filesystem-based and behaviorally unchanged. Backups for a future SaaS deployment need both PostgreSQL and artifact storage.
 
 ## Public-deployment warning
 
 Local-save filesystem APIs are disabled unless `HOI4_LOCAL_SAVES_ENABLED=true`. When disabled, `/api/saves`, `/api/saves/default-dir`, `/saves/analyze`, and JSON `path` analysis through `/api/analyze` return 404; multipart uploads remain available. Keep local mode disabled for public/SaaS deployments because enabling it exposes server-side save browsing/path analysis.
 
-The backend has resource and input hardening, but no authentication, ownership, per-user isolation, distributed admission, or cross-process locking. Treat it as a local/single-owner service unless a separate security architecture is added.
+The backend has resource/input hardening plus an authentication core, but no product-route authorization, ownership, per-user isolation, CSRF enforcement, distributed admission, or cross-process locking. Treat it as a local/single-owner service until those later security phases are implemented.

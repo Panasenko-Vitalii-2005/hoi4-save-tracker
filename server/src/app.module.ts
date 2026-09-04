@@ -23,10 +23,12 @@ import { CampaignTrendsService } from './analyze/campaign-trends.service';
 import { CampaignSnapshotProjectionCacheService } from './analyze/campaign-snapshot-projection-cache.service';
 import { BatchAnalysisController } from './analyze/batch-analysis.controller';
 import { DatabaseModule } from './database/database.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
     DatabaseModule,
+    AuthModule,
     ServeStaticModule.forRoot({
       rootPath: path.join(__dirname, '..', '..', '..', 'client', 'dist'),
       exclude: ['/api/(.*)'],

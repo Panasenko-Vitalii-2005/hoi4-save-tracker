@@ -34,6 +34,8 @@ services:
       PORT: 3001
       HOI4_DATABASE_ENABLED: ${HOI4_DATABASE_ENABLED:-true}
       DATABASE_URL: ${DATABASE_URL:-postgresql://hoi4_tracker:hoi4_tracker_dev_only@postgres:5432/hoi4_tracker}
+      HOI4_SESSION_TTL_SECONDS: ${HOI4_SESSION_TTL_SECONDS:-604800}
+      HOI4_SESSION_COOKIE_SECURE: ${HOI4_SESSION_COOKIE_SECURE:-false}
       HOI4_LOCAL_SAVES_ENABLED: ${HOI4_LOCAL_SAVES_ENABLED:-false}
       HOI4_SAVES_DIR: /app/saves
       HOI4_RECENT_ANALYSES_FILE: /app/data/recent-analyses.json

@@ -79,6 +79,8 @@ flowchart LR
   Store --> Recent[Recent metadata]
   Store --> Views[Compare / Trends / Reports / Export]
   Store --> Share[Opt-in public share link]
+  API --> Auth[Auth endpoints and opaque sessions]
+  Auth --> Postgres[(PostgreSQL users and sessions)]
 ```
 
 The browser owns presentation and batch orchestration. NestJS owns admission, validation, caching, persistence, and compact downstream DTOs. CPU-heavy decoding/parsing runs in a Worker Thread so the HTTP event loop stays responsive. The parser remains a deterministic backend boundary; the frontend never parses save text.
@@ -219,6 +221,8 @@ All values are optional; invalid numeric values fall back to the documented defa
 | Database | `POSTGRES_DB` | `hoi4_tracker` in Compose | Compose development database name |
 | Database | `POSTGRES_USER` | `hoi4_tracker` in Compose | Compose development database user |
 | Database | `POSTGRES_PASSWORD` | development-only value in Compose | Compose development password; override outside local development |
+| Auth | `HOI4_SESSION_TTL_SECONDS` | `604800` (7 days) | Fixed session lifetime; accepted range is 300 seconds through 365 days, otherwise startup fails |
+| Auth | `HOI4_SESSION_COOKIE_SECURE` | production mode; `false` in local HTTP Compose | Require HTTPS transport for the auth cookie; only exact `true`/`false` is accepted |
 | Local saves | `HOI4_LOCAL_SAVES_ENABLED` | `false` | Enable trusted server-side save browsing and path analysis only when exactly `true` |
 | Local saves | `HOI4_SAVES_DIR` | `../saves` from backend cwd | Read-only local-save browser root |
 | Upload | `HOI4_UPLOAD_DIRECTORY` | OS temp directory | Managed temporary uploads |
@@ -247,6 +251,10 @@ Limits are per backend process. The result byte ceiling is authoritative: unpinn
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/health` | Liveness check |
+| `POST` | `/api/auth/register` | Create an account and opaque server session; requires PostgreSQL |
+| `POST` | `/api/auth/login` | Authenticate credentials and create a session; requires PostgreSQL |
+| `GET` | `/api/auth/me` | Resolve the current auth session cookie |
+| `POST` | `/api/auth/logout` | Revoke the current session and clear its cookie |
 | `GET` | `/api/saves` | List configured local `.hoi4` files when local mode is enabled |
 | `POST` | `/api/analyze` | Analyze multipart upload, or a validated local path when local mode is enabled |
 | `POST` | `/api/analyze/batch/preflight` | Return already persisted hashes for a bounded batch |
@@ -263,13 +271,19 @@ Limits are per backend process. The result byte ceiling is authoritative: unpinn
 | `DELETE` | `/api/analyze/recent/:hash/share` | Revoke a public link |
 | `GET` | `/api/share/:id` | Open a shared read-only analysis |
 
-The API is currently an unauthenticated local application surface, not a multi-tenant public contract. See the security notes below.
+The auth endpoints establish identity, but the existing application APIs remain unauthenticated and global in Phase 2A. This is not yet a multi-tenant public contract. See the security notes below.
 
 Local filesystem APIs are safe-by-default: when `HOI4_LOCAL_SAVES_ENABLED` is unset or anything other than `true`, `/api/saves`, `/api/saves/default-dir`, `/saves/analyze`, and JSON `path` requests to `/api/analyze` return 404. Keep this disabled for public/SaaS deployments. Enabling it deliberately exposes server-side save discovery/path analysis and is intended only for a trusted local environment. Multipart upload analysis is unaffected.
 
-### PostgreSQL metadata foundation
+### PostgreSQL authentication foundation
 
-PostgreSQL is an optional metadata foundation for later authentication and ownership phases. Phase 1 stores only future account/session schema there. AnalyzeResult payloads remain compressed files under `data/analysis-results`; Recent Analyses and Shares remain the existing JSON stores and are still authoritative. Phase 1 does not make the application multi-user and does not change any API authorization behavior.
+PostgreSQL stores account identities and server-side sessions. Passwords use Node's asynchronous `scrypt` with a unique 16-byte salt, a versioned parameter-bearing encoding (`N=32768`, `r=8`, `p=1`), and a 64-byte derived key. Session tokens contain 256 random bits; only their SHA-256 hashes are stored. Login verifies a fixed dummy scrypt hash when an email is absent to reduce the simplest account-enumeration timing difference.
+
+Successful registration/login sets `hoi4_session` as `HttpOnly`, `SameSite=Lax`, `Path=/`, with matching `Max-Age`/`Expires`; it is `Secure` by default when `NODE_ENV=production`. `HOI4_SESSION_COOKIE_SECURE` is an explicit exact-boolean override: local HTTP Compose sets it to `false`, while an HTTPS deployment must use `true`. Sessions have fixed expiry controlled by `HOI4_SESSION_TTL_SECONDS`; there are no refresh tokens or sliding expiry. Passwords must be 12–128 characters, with no composition rule. Emails are trimmed and lowercased while PostgreSQL `CITEXT` remains the final case-insensitive uniqueness authority.
+
+Auth endpoints return a generic `503` when database mode is disabled. The rest of the local application remains available. AnalyzeResult payloads remain compressed files under `data/analysis-results`; Recent Analyses and Shares remain the existing JSON stores and are still authoritative.
+
+**Phase 2A provides authentication primitives and auth endpoints only.** Existing analysis, Recent, Compare, Trends, storage-management, and share-management APIs are not protected or user-isolated. No ownership, global session guard, CSRF system, quota, or authorization policy is implemented yet; those remain Phase 2B/Phase 3 work.
 
 Native startup leaves database mode disabled unless `HOI4_DATABASE_ENABLED=true`. Disabled mode creates no connection. Enabled mode requires a valid `DATABASE_URL` and fails startup if connectivity validation fails; credentials and connection URLs are never returned by health diagnostics. `/api/health` reports `database: disabled`, `ok`, or `unavailable`.
 
@@ -286,7 +300,7 @@ npm run db:migrate:status
 HOI4_TEST_DATABASE_URL=postgresql://user:password@localhost:5432/hoi4_tracker_test npm run test:db
 ```
 
-A future SaaS backup must include both PostgreSQL metadata and the separate analysis artifact/JSON storage; neither is a replacement for the other.
+A future SaaS backup must include both PostgreSQL account/session metadata and the separate analysis artifact/JSON storage; neither is a replacement for the other.
 
 ## Persistence model
 
@@ -300,7 +314,7 @@ Writes use managed temporary files, fsync, and atomic rename. Mutations are seri
 
 The analysis-result store does **not** retain uploaded original `.hoi4` files. The optional `./saves:/app/saves:ro` Compose mount is a separate user-provided source directory.
 
-PostgreSQL currently provides only the future user/session metadata foundation. Analysis artifacts, Recent Analyses, and Shares remain file-based, and there is still no cross-process storage lock. One backend should own a persistence directory.
+PostgreSQL provides account and opaque-session persistence for auth endpoints. Analysis artifacts, Recent Analyses, and Shares remain file-based, globally accessible through their existing APIs, and there is still no cross-process storage lock. One backend should own a persistence directory.
 
 ## Testing
 
@@ -354,15 +368,15 @@ Implemented safeguards include strict upload/container validation, byte and entr
 
 Important remaining limitations:
 
-- no authentication, authorization, accounts, or per-user data ownership;
+- authentication endpoints exist, but product APIs have no authorization or per-user data ownership;
 - Recent, storage-management, Compare, and share-management APIs are global to the process;
 - possession of a share link grants access to the complete derived analysis;
 - admission, caches, rate semantics, and mutation queues are process-local;
 - filesystem persistence has no multi-process locking or distributed coordination;
-- no application-level TLS, CSRF design for public hosting, or durable audit log;
+- no application-level TLS, CSRF enforcement for cookie-authenticated product routes, or durable audit log;
 - nginx/reverse-proxy TLS, external connection/rate limits, container memory, and volume backup are deployment responsibilities.
 
-The current hardening is appropriate for a controlled local deployment. Public multi-user hosting requires a separate identity, ownership, isolation, and edge-security design.
+The current hardening and auth core are a controlled development checkpoint. Public multi-user hosting still requires Phase 2B/3 authorization, ownership, isolation, CSRF decisions, and edge-security design.
 
 ## Known limitations
 
