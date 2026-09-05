@@ -5,6 +5,7 @@ import type {
   SoldiersTimelineEntry,
 } from "@/types";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
+import { apiFetch } from "@/lib/api-client";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -32,7 +33,7 @@ export function SoldiersTab() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/soldiers?ts=${Date.now()}`)
+    apiFetch(`/api/soldiers?ts=${Date.now()}`)
       .then((r) => r.json())
       .then(setData)
       .catch(console.error)

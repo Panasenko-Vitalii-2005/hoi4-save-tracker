@@ -4,6 +4,7 @@ import type { AnalysisComparisonDto } from "@/types/analysis-comparison";
 import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
 import { AnalysisComparisonResults } from "./AnalysisComparisonResults";
 import { ComparisonReport } from "@/components/reports/ComparisonReport";
+import { apiFetch } from "@/lib/api-client";
 
 function compareGameDates(
   baseDate: string,
@@ -117,7 +118,7 @@ export function AnalysisComparison({
         base: base.hash,
         target: target.hash,
       });
-      const response = await fetch(`/api/analyze/compare?${query}`, {
+      const response = await apiFetch(`/api/analyze/compare?${query}`, {
         signal: controller.signal,
       });
       reachedService = true;

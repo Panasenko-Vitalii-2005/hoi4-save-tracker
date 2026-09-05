@@ -32,6 +32,7 @@ services:
       dockerfile: server/Dockerfile
     environment:
       PORT: 3001
+      HOI4_CORS_ORIGIN: ${HOI4_CORS_ORIGIN:-http://localhost:8081}
       HOI4_DATABASE_ENABLED: ${HOI4_DATABASE_ENABLED:-true}
       DATABASE_URL: ${DATABASE_URL:-postgresql://hoi4_tracker:hoi4_tracker_dev_only@postgres:5432/hoi4_tracker}
       HOI4_SESSION_TTL_SECONDS: ${HOI4_SESSION_TTL_SECONDS:-604800}

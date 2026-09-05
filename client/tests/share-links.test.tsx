@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "../src/App";
 import { RecentAnalyses } from "../src/components/analyzer/RecentAnalyses";
+import { seedCsrfCookie } from "./auth-fixture";
 
 vi.mock("react-plotly.js", () => ({ default: () => null }));
 
@@ -80,6 +81,7 @@ describe("Recent Analyses Share action", () => {
   let clipboardDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
+    seedCsrfCookie();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal(
       "confirm",

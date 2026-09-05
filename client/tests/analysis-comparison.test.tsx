@@ -10,6 +10,7 @@ import type {
   NumericDiff,
 } from "../src/types/analysis-comparison";
 import type { RecentAnalysis } from "../src/types";
+import { seedCsrfCookie } from "./auth-fixture";
 
 vi.mock("react-plotly.js", () => ({ default: () => null }));
 
@@ -100,6 +101,7 @@ describe("Save comparison UI", () => {
     resolve: (response: Response) => void;
   }[];
   beforeEach(() => {
+    seedCsrfCookie();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal(
       "confirm",

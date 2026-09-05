@@ -120,8 +120,8 @@ export class AuthService {
   }
 
   async authenticateSession(rawToken: unknown): Promise<SafeUserDto> {
-    this.requireDatabase();
     if (!this.tokens.valid(rawToken)) throw new InvalidSessionError();
+    this.requireDatabase();
     const tokenHash = this.tokens.hash(rawToken);
     const session = await this.databaseOperation(() =>
       this.sessions.findByTokenHash(tokenHash),
@@ -139,8 +139,8 @@ export class AuthService {
   }
 
   async logout(rawToken: unknown): Promise<void> {
-    this.requireDatabase();
     if (!this.tokens.valid(rawToken)) return;
+    this.requireDatabase();
     await this.databaseOperation(() =>
       this.sessions.revoke(this.tokens.hash(rawToken)),
     );

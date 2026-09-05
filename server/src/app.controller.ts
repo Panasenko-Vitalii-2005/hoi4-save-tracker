@@ -1,7 +1,9 @@
 import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
 import { SaveAnalysisService } from './hoi4/save-analysis.service';
 import { requireLocalSavesEnabled } from './saves/local-saves-access';
+import { LocalSaveRoute } from './auth/route-access.decorator';
 
+@LocalSaveRoute()
 @Controller('saves')
 export class AppController {
   constructor(private readonly saveAnalysisService: SaveAnalysisService) {}

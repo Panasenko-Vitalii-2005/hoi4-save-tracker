@@ -29,7 +29,11 @@ export function allowedFrontendOrigin(
 }
 
 export function configureHttpSecurity(app: INestApplication): void {
-  app.enableCors({ origin: allowedFrontendOrigin() });
+  app.enableCors({
+    origin: allowedFrontendOrigin(),
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'X-CSRF-Token'],
+  });
   app.use((_request: Request, response: Response, next: NextFunction) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('X-Frame-Options', 'DENY');

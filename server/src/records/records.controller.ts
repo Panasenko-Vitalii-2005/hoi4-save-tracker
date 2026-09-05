@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DatabaseService } from '../database/database.service';
+import { Public } from '../auth/route-access.decorator';
 
 // __dirname in ts-node dev = server/src/records/  →  3 levels up to project root
 const DATA_FILE = path.join(
@@ -110,6 +111,7 @@ export class SoldiersController {
 export class HealthController {
   constructor(private readonly database: DatabaseService) {}
 
+  @Public()
   @Get()
   async health() {
     return { status: 'ok', database: await this.database.health() };

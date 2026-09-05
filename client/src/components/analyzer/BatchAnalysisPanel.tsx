@@ -9,6 +9,7 @@ import {
   ANALYZER_UNAVAILABLE_MESSAGE,
   analysisError,
 } from "@/lib/analysis-error";
+import { apiFetch } from "@/lib/api-client";
 
 type BatchStatus =
   | "identifying"
@@ -202,7 +203,7 @@ export const BatchAnalysisPanel = forwardRef<
       const chunk = hashes.slice(index, index + PREFLIGHT_CHUNK_SIZE);
       let response: Response;
       try {
-        response = await fetch("/api/analyze/batch/preflight", {
+        response = await apiFetch("/api/analyze/batch/preflight", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ hashes: chunk }),
@@ -332,7 +333,7 @@ export const BatchAnalysisPanel = forwardRef<
         try {
           const formData = new FormData();
           formData.append("file", item.file);
-          const response = await fetch("/api/analyze?response=batch", {
+          const response = await apiFetch("/api/analyze?response=batch", {
             method: "POST",
             body: formData,
           });

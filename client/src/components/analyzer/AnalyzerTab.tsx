@@ -7,6 +7,7 @@ import React, {
   useRef,
 } from "react";
 import type { AnalyzeResult, CountryStats, RecentAnalysis } from "@/types";
+import { apiFetch } from "@/lib/api-client";
 import { SummaryGrid } from "@/components/ui/SummaryGrid";
 import {
   countryFullName,
@@ -179,7 +180,7 @@ function SaveBrowser({
     setLoadError("");
     let reachedService = false;
     try {
-      const response = await fetch("/api/saves");
+      const response = await apiFetch("/api/saves");
       reachedService = true;
       const data: unknown = await response.json().catch(() => null);
       if (!response.ok || !isSaveBrowserData(data))
@@ -493,7 +494,7 @@ export function AnalyzerTab({
     setOpeningHash(item.hash);
     setOpenError("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/analyze/recent/${encodeURIComponent(item.hash)}/result`,
         { signal: controller.signal },
       );
@@ -562,7 +563,7 @@ export function AnalyzerTab({
     try {
       const formData = new FormData();
       if (uploadedFile) formData.append("file", uploadedFile);
-      const resp = await fetch(
+      const resp = await apiFetch(
         "/api/analyze",
         uploadedFile
           ? { method: "POST", body: formData }

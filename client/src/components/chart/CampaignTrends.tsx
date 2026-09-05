@@ -7,6 +7,7 @@ import React, {
   useState,
 } from "react";
 import type { SaveRecord } from "@/types";
+import { apiFetch } from "@/lib/api-client";
 import type {
   CampaignTrend,
   CampaignEquipmentTrendsDto,
@@ -438,7 +439,7 @@ export function CampaignTrends({
     setError("");
     let reachedService = false;
     try {
-      const response = await fetch("/api/analyze/trends", {
+      const response = await apiFetch("/api/analyze/trends", {
         signal: controller.signal,
       });
       reachedService = true;
@@ -519,7 +520,7 @@ export function CampaignTrends({
           campaignKey: campaign.key,
           countryTag,
         });
-        const response = await fetch(
+        const response = await apiFetch(
           `/api/analyze/trends/equipment?${query.toString()}`,
           { signal: controller.signal },
         );

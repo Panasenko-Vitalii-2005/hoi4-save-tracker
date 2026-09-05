@@ -1,68 +1,48 @@
 import {
   Body,
-  ConflictException,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Inject,
   Post,
   Req,
   Res,
-  ServiceUnavailableException,
-  UnauthorizedException,
-  BadRequestException,
-  InternalServerErrorException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { SESSION_COOKIE_SECURE } from './auth.config';
-import {
-  clearSessionCookie,
-  readSessionCookie,
-  setSessionCookie,
-} from './auth.cookie';
-import {
-  AuthUnavailableError,
-  AuthValidationError,
-  DuplicateEmailError,
-  InvalidCredentialsError,
-  InvalidSessionError,
-} from './auth.errors';
+import { revokeSessionCookie, setSessionCookie } from './auth.cookie';
+import { authHttpError } from './auth.http-error';
 import { AuthService } from './auth.service';
+import { CsrfService } from './csrf.service';
+import { CurrentUser } from './current-user.decorator';
+import { Public } from './route-access.decorator';
+import type { SafeUserDto } from './auth.types';
 
 interface CredentialsBody {
   email?: unknown;
   password?: unknown;
 }
 
-function authHttpError(error: unknown): never {
-  if (error instanceof AuthValidationError) {
-    throw new BadRequestException(error.message);
-  }
-  if (error instanceof DuplicateEmailError) {
-    throw new ConflictException('An account with this email already exists');
-  }
-  if (
-    error instanceof InvalidCredentialsError ||
-    error instanceof InvalidSessionError
-  ) {
-    throw new UnauthorizedException('Invalid authentication');
-  }
-  if (error instanceof AuthUnavailableError) {
-    throw new ServiceUnavailableException(
-      'Authentication storage is unavailable',
-    );
-  }
-  throw new InternalServerErrorException('Authentication request failed');
-}
-
 @Controller('api/auth')
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
+    private readonly csrf: CsrfService,
     @Inject(SESSION_COOKIE_SECURE) private readonly secureCookie: boolean,
   ) {}
 
+  @Public()
+  @Get('csrf')
+  csrfToken(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return { csrfToken: this.csrf.bootstrap(request, response) };
+  }
+
+  @Public()
   @Post('register')
   async register(
     @Body() body: CredentialsBody,
@@ -82,6 +62,7 @@ export class AuthController {
     }
   }
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
@@ -103,17 +84,12 @@ export class AuthController {
   }
 
   @Get('me')
-  async me(@Req() request: Request) {
-    try {
-      const user = await this.auth.authenticateSession(
-        readSessionCookie(request.headers.cookie),
-      );
-      return { user };
-    } catch (error) {
-      authHttpError(error);
-    }
+  @Header('Cache-Control', 'no-store')
+  me(@CurrentUser() user: SafeUserDto) {
+    return { user };
   }
 
+  @Public()
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(
@@ -121,8 +97,12 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
     try {
-      await this.auth.logout(readSessionCookie(request.headers.cookie));
-      clearSessionCookie(response, this.secureCookie);
+      await revokeSessionCookie(
+        this.auth,
+        request,
+        response,
+        this.secureCookie,
+      );
     } catch (error) {
       authHttpError(error);
     }

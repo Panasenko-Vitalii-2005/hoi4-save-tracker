@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { DatabaseModule } from '../database/database.module';
 import {
   sessionCookieSecure,
@@ -8,10 +9,12 @@ import {
 } from './auth.config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { CsrfService } from './csrf.service';
 import { PasswordService } from './password.service';
 import { SessionRepository } from './session.repository';
 import { SessionTokenService } from './session-token.service';
 import { UserRepository } from './user.repository';
+import { SessionGuard } from './session.guard';
 
 @Module({
   imports: [DatabaseModule],
@@ -24,6 +27,9 @@ import { UserRepository } from './user.repository';
     PasswordService,
     SessionTokenService,
     AuthService,
+    CsrfService,
+    SessionGuard,
+    { provide: APP_GUARD, useExisting: SessionGuard },
   ],
 })
 export class AuthModule {}

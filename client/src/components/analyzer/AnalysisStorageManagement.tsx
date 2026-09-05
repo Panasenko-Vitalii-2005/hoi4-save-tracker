@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatCountryDisplayName } from "@/lib/countryNames";
+import { apiFetch } from "@/lib/api-client";
 import type {
   AnalysisStorageCampaign,
   AnalysisStorageMutationResult,
@@ -256,7 +257,7 @@ export function AnalysisStorageManagement({
     setLoadError("");
     void (async () => {
       try {
-        const response = await fetch("/api/analyze/storage", {
+        const response = await apiFetch("/api/analyze/storage", {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error("Storage unavailable");
@@ -295,7 +296,7 @@ export function AnalysisStorageManagement({
     setActionError("");
     onBusyChange(true);
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         action.kind === "campaign"
           ? `/api/analyze/storage/campaign/${encodeURIComponent(action.campaign.campaignId)}`
           : "/api/analyze/storage/unpinned",

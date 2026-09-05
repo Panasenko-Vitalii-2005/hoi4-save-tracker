@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { AnalyzeResult } from "@/types";
 import { isAnalyzeResult } from "@/lib/analyze-result";
 import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
+import { apiFetch } from "@/lib/api-client";
 import { AnalyzerTab } from "./AnalyzerTab";
 
 const PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
@@ -36,9 +37,10 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
     setLoading(true);
     void (async () => {
       try {
-        const response = await fetch(
+        const response = await apiFetch(
           `/api/share/${encodeURIComponent(publicId)}`,
           { signal: controller.signal },
+          "public",
         );
         if (response.status === 404 || response.status === 410) {
           if (active)

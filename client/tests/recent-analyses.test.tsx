@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AnalyzerTab } from "../src/components/analyzer/AnalyzerTab";
 import { RecentAnalyses } from "../src/components/analyzer/RecentAnalyses";
+import { seedCsrfCookie } from "./auth-fixture";
 
 vi.mock("react-plotly.js", () => ({ default: () => null }));
 
@@ -97,6 +98,7 @@ describe("Recent Analyses", () => {
   let storageStatusHandler: () => Promise<Response>;
 
   beforeEach(() => {
+    seedCsrfCookie();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     historyRequests = [];
     analyzeRequests = [];

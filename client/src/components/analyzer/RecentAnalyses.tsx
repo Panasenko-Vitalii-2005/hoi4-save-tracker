@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RecentAnalysis } from "@/types";
 import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
+import { apiFetch } from "@/lib/api-client";
 import { AnalysisComparison } from "./AnalysisComparison";
 import {
   ShareAnalysisDialog,
@@ -230,7 +231,7 @@ export function RecentAnalyses({
     void (async () => {
       let reachedService = false;
       try {
-        const response = await fetch("/api/analyze/recent", {
+        const response = await apiFetch("/api/analyze/recent", {
           signal: controller.signal,
         });
         reachedService = true;
@@ -314,7 +315,7 @@ export function RecentAnalyses({
     setLoading(false);
     setActionMessage("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/analyze/recent/${encodeURIComponent(item.hash)}`,
         action === "delete"
           ? { method: "DELETE" }

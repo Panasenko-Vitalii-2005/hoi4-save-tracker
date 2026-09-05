@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { BatchAnalysisPanel } from "../src/components/analyzer/BatchAnalysisPanel";
+import { seedCsrfCookie } from "./auth-fixture";
 
 function hash(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
@@ -30,6 +31,7 @@ describe("BatchAnalysisPanel", () => {
   let root: Root;
 
   beforeEach(() => {
+    seedCsrfCookie();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     container = document.createElement("div");
     document.body.append(container);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnalyzerTab } from "@/components/analyzer/AnalyzerTab";
 import { SharedAnalysisPage } from "@/components/analyzer/SharedAnalysisPage";
+import { AuthGate } from "@/components/auth/AuthGate";
 import { CampaignTrends } from "@/components/chart/CampaignTrends";
 import { SoldiersTab } from "@/components/soldiers/SoldiersTab";
 import { TabBar } from "@/components/ui/TabBar";
@@ -109,7 +110,7 @@ export default function App() {
       {publicId !== null ? (
         <SharedAnalysisPage publicId={publicId} />
       ) : (
-        <Dashboard />
+        <AuthGate><Dashboard /></AuthGate>
       )}
     </>
   );

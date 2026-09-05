@@ -14,6 +14,7 @@ import {
   SharedAnalysesService,
   SharedAnalysisLimitError,
 } from './shared-analyses.service';
+import { Public } from '../auth/route-access.decorator';
 
 @Controller()
 export class SharedAnalysesController {
@@ -49,6 +50,7 @@ export class SharedAnalysesController {
     }
   }
 
+  @Public()
   @Get('api/share/:id')
   async open(@Param('id') id: string) {
     const key = normalizeShareId(id);

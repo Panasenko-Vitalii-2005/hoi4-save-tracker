@@ -42,7 +42,7 @@ npx eslint "{src,apps,libs,test}/**/*.ts"
 | Variable | Default | Meaning |
 | --- | ---: | --- |
 | `PORT` | `3001` | Listen port |
-| `HOI4_CORS_ORIGIN` | `http://localhost:5173` | Exact frontend HTTP(S) origin allowed by CORS |
+| `HOI4_CORS_ORIGIN` | `http://localhost:5173` natively; `http://localhost:8081` in Compose | Exact credentialed frontend HTTP(S) origin; wildcard origins are rejected |
 | `HOI4_DATABASE_ENABLED` | `false` | Enable PostgreSQL validation only when exactly `true` |
 | `DATABASE_URL` | none | PostgreSQL URL required when database mode is enabled |
 | `HOI4_SESSION_TTL_SECONDS` | `604800` | Fixed auth-session lifetime; 300 seconds to 365 days |
@@ -74,7 +74,7 @@ npx eslint "{src,apps,libs,test}/**/*.ts"
 - `PersistedAnalysisResultService` writes versioned gzip envelopes atomically and enforces the compressed byte budget.
 - `RecentAnalysesService` stores compact metadata and reconciles availability, legacy context, pins, shares, and bulk cleanup.
 - `DatabaseService` owns the optional PostgreSQL pool lifecycle and startup/health validation. It does not run migrations or store analysis artifacts.
-- `AuthService` owns registration, credential verification, opaque-token issuance, expiry enforcement, and current-session revocation. Controllers never execute SQL or hash tokens.
+- `AuthService` owns registration, credential verification, opaque-token issuance, expiry enforcement, and current-session revocation. A global `SessionGuard` makes application routes private by default, while controllers never execute SQL or hash tokens.
 
 The persistence implementation is single-process. Do not run multiple backend instances against the same directory.
 
@@ -96,12 +96,14 @@ Versioned SQL migrations live in `migrations/`. Build and apply them with `npm r
 
 The existing `users` and `sessions` schema backs the Phase 2A auth endpoints. Passwords are versioned salted scrypt hashes. Raw 256-bit session tokens are sent only in the `hoi4_session` HttpOnly cookie; PostgreSQL stores their SHA-256 hashes and fixed expiry timestamps. Emails are trimmed/lowercased and remain protected by the database `CITEXT` unique constraint.
 
-Auth routes are `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout`. With database mode disabled, only these auth operations return a generic 503; the existing local application remains usable. The cookie is `SameSite=Lax`, `Path=/`, has matching expiry attributes, and becomes `Secure` by default in production. Local HTTP Compose explicitly sets `HOI4_SESSION_COOKIE_SECURE=false`; an HTTPS deployment must set it to `true`.
+Auth routes are `GET /api/auth/csrf`, `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, and `POST /api/auth/logout`. Registration, login, and logout are public but CSRF-protected; `/me` is private. The session cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, has matching expiry attributes, and becomes `Secure` by default in production. The independent readable CSRF cookie uses the same path/SameSite/Secure policy and must match `X-CSRF-Token` on unsafe methods. Local HTTP Compose explicitly sets `HOI4_SESSION_COOKIE_SECURE=false`; an HTTPS deployment must set it to `true`.
 
-Phase 2A does **not** apply authentication globally. Analyzer, Recent, Compare, Trends, storage, and share-management APIs remain unauthenticated and global. Ownership, CSRF enforcement, authorization guards, quotas, and frontend auth UX are deliberately deferred to Phase 2B/3. AnalyzeResult gzip artifacts, Recent metadata, and Share metadata remain filesystem-based and behaviorally unchanged. Backups for a future SaaS deployment need both PostgreSQL and artifact storage.
+Phase 2B applies authentication globally with explicit public metadata for health, CSRF bootstrap, registration, login, logout, and public share reads. Analyzer, Recent, Compare, Trends, storage, and share-management APIs require a valid session. They remain globally shared among authenticated users: ownership, per-user authorization, and quotas are deliberately deferred to Phase 3. AnalyzeResult gzip artifacts, Recent metadata, and Share metadata remain filesystem-based and behaviorally unchanged. Backups for a future SaaS deployment need both PostgreSQL and artifact storage.
+
+With database mode disabled, authentication is never bypassed. Private requests without a session cookie return 401, malformed cookies remain 401, and a well-formed cookie that requires a database lookup returns a generic 503. Health, CSRF bootstrap, public share reads, and idempotent logout without a usable session remain available.
 
 ## Public-deployment warning
 
 Local-save filesystem APIs are disabled unless `HOI4_LOCAL_SAVES_ENABLED=true`. When disabled, `/api/saves`, `/api/saves/default-dir`, `/saves/analyze`, and JSON `path` analysis through `/api/analyze` return 404; multipart uploads remain available. Keep local mode disabled for public/SaaS deployments because enabling it exposes server-side save browsing/path analysis.
 
-The backend has resource/input hardening plus an authentication core, but no product-route authorization, ownership, per-user isolation, CSRF enforcement, distributed admission, or cross-process locking. Treat it as a local/single-owner service until those later security phases are implemented.
+The backend has resource/input hardening, default-private session authentication, and double-submit CSRF enforcement, but no ownership, per-user authorization/isolation, distributed admission, or cross-process locking. Treat it as a local/single-owner service until Phase 3 is implemented.

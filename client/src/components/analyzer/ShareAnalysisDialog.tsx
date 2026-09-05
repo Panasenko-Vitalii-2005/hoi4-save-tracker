@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { RecentAnalysis } from "@/types";
+import { apiFetch } from "@/lib/api-client";
 
 export interface PublicShareLink {
   id: string;
@@ -46,7 +47,7 @@ export function ShareAnalysisDialog({
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/analyze/recent/${encodeURIComponent(item.hash)}/share`,
         { method: "POST" },
       );
@@ -91,7 +92,7 @@ export function ShareAnalysisDialog({
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/analyze/recent/${encodeURIComponent(item.hash)}/share`,
         { method: "DELETE" },
       );

@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import * as fs from 'fs';
 import { getLocalSavesRoot, resolveLocalSavePath } from './local-saves';
 import { requireLocalSavesEnabled } from './local-saves-access';
+import { LocalSaveRoute } from '../auth/route-access.decorator';
 
 export interface SaveFileInfo {
   name: string;
@@ -10,6 +11,7 @@ export interface SaveFileInfo {
   modified: string;
 }
 
+@LocalSaveRoute()
 @Controller('api/saves')
 export class SavesController {
   @Get()

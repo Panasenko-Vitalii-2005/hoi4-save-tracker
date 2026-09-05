@@ -10,9 +10,9 @@ import {
   AuthValidationError,
   DuplicateEmailError,
   InvalidCredentialsError,
-  InvalidSessionError,
 } from './auth.errors';
 import { AuthService } from './auth.service';
+import { CsrfService } from './csrf.service';
 
 const safeUser = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -33,6 +33,7 @@ describe('AuthController', () => {
     authenticateSession: jest.Mock;
     logout: jest.Mock;
   };
+  const csrf = { bootstrap: jest.fn() };
 
   beforeEach(async () => {
     auth = {
@@ -41,10 +42,13 @@ describe('AuthController', () => {
       authenticateSession: jest.fn(),
       logout: jest.fn(),
     };
+    csrf.bootstrap.mockReset();
+    csrf.bootstrap.mockReturnValue('c'.repeat(43));
     const moduleRef = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: auth },
+        { provide: CsrfService, useValue: csrf },
         { provide: SESSION_COOKIE_SECURE, useValue: false },
       ],
     }).compile();
@@ -53,6 +57,14 @@ describe('AuthController', () => {
   });
 
   afterEach(() => app.close());
+
+  test('CSRF bootstrap returns the independent readable token', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/auth/csrf')
+      .expect(200);
+    expect(response.body).toEqual({ csrfToken: 'c'.repeat(43) });
+    expect(csrf.bootstrap).toHaveBeenCalledTimes(1);
+  });
 
   test('register returns a safe user and hardened session cookie', async () => {
     auth.register.mockResolvedValue(authResult);
@@ -118,21 +130,9 @@ describe('AuthController', () => {
     expect(response.headers['set-cookie'][0]).toContain('HttpOnly');
   });
 
-  test('me authenticates only the auth cookie and rejects absent or invalid sessions', async () => {
-    auth.authenticateSession.mockResolvedValueOnce(safeUser);
-    const valid = await request(app.getHttpServer())
-      .get('/api/auth/me')
-      .set('Cookie', `hoi4_session=${authResult.token}`)
-      .expect(200);
-    expect(valid.body).toMatchObject({ user: { email: 'user@example.com' } });
-    expect(auth.authenticateSession).toHaveBeenCalledWith(authResult.token);
-
-    auth.authenticateSession.mockRejectedValueOnce(new InvalidSessionError());
-    const missing = await request(app.getHttpServer())
-      .get('/api/auth/me')
-      .expect(401);
-    expect(missing.body).toMatchObject({ message: 'Invalid authentication' });
-    expect(auth.authenticateSession).toHaveBeenLastCalledWith(null);
+  test('me returns only the safe principal supplied by the authentication boundary', () => {
+    expect(app.get(AuthController).me(safeUser)).toEqual({ user: safeUser });
+    expect(auth.authenticateSession).not.toHaveBeenCalled();
   });
 
   test('logout revokes the current session and clears the cookie idempotently', async () => {
@@ -149,7 +149,7 @@ describe('AuthController', () => {
     expect(cookie).toContain('SameSite=Lax');
 
     await request(app.getHttpServer()).post('/api/auth/logout').expect(204);
-    expect(auth.logout).toHaveBeenLastCalledWith(null);
+    expect(auth.logout).toHaveBeenCalledTimes(1);
   });
 
   test('unexpected hashing failures are generic and do not echo secrets', async () => {
@@ -186,12 +186,14 @@ describe('AuthController', () => {
   });
 });
 
-describe('Phase 2A application boundary', () => {
+describe('Phase 2B application boundary', () => {
   let app: INestApplication<App>;
   const previousEnabled = process.env.HOI4_DATABASE_ENABLED;
+  const previousLocal = process.env.HOI4_LOCAL_SAVES_ENABLED;
 
   beforeAll(async () => {
     delete process.env.HOI4_DATABASE_ENABLED;
+    delete process.env.HOI4_LOCAL_SAVES_ENABLED;
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -203,11 +205,22 @@ describe('Phase 2A application boundary', () => {
     await app.close();
     if (previousEnabled === undefined) delete process.env.HOI4_DATABASE_ENABLED;
     else process.env.HOI4_DATABASE_ENABLED = previousEnabled;
+    if (previousLocal === undefined)
+      delete process.env.HOI4_LOCAL_SAVES_ENABLED;
+    else process.env.HOI4_LOCAL_SAVES_ENABLED = previousLocal;
   });
 
   test('DB-disabled auth is unavailable while existing health API stays public', async () => {
+    const csrf = await request(app.getHttpServer())
+      .get('/api/auth/csrf')
+      .expect(200);
+    const cookie = (csrf.headers['set-cookie'] as unknown as string[])[0].split(
+      ';',
+    )[0];
     await request(app.getHttpServer())
       .post('/api/auth/login')
+      .set('Cookie', cookie)
+      .set('X-CSRF-Token', (csrf.body as { csrfToken: string }).csrfToken)
       .send({ email: 'user@example.com', password: 'valid password' })
       .expect(503);
     await request(app.getHttpServer())
@@ -216,11 +229,48 @@ describe('Phase 2A application boundary', () => {
       .expect({ status: 'ok', database: 'disabled' });
   });
 
-  test('existing analyzer endpoint has no accidental auth guard', async () => {
-    const response = await request(app.getHttpServer())
+  test('all local-disabled APIs stay hidden before authentication', async () => {
+    await request(app.getHttpServer()).get('/api/saves').expect(404);
+    await request(app.getHttpServer())
+      .get('/api/saves/default-dir')
+      .expect(404);
+    await request(app.getHttpServer())
+      .post('/saves/analyze')
+      .send({ paths: ['not-enabled.hoi4'] })
+      .expect(404);
+    await request(app.getHttpServer())
       .post('/api/analyze')
-      .send({ path: 'not-enabled.hoi4' });
-    expect(response.status).not.toBe(401);
-    expect(response.status).not.toBe(503);
+      .send({ path: 'not-enabled.hoi4' })
+      .expect(404);
+  });
+
+  test('local-enabled and multipart analysis APIs follow authentication policy', async () => {
+    process.env.HOI4_LOCAL_SAVES_ENABLED = 'true';
+    try {
+      await request(app.getHttpServer()).get('/api/saves').expect(401);
+      await request(app.getHttpServer())
+        .post('/saves/analyze')
+        .send({ paths: ['save.hoi4'] })
+        .expect(401);
+      await request(app.getHttpServer())
+        .post('/api/analyze')
+        .send({ path: 'save.hoi4' })
+        .expect(401);
+      await request(app.getHttpServer())
+        .post('/api/analyze')
+        .set('Content-Type', 'multipart/form-data; boundary=phase2b')
+        .send('--phase2b--')
+        .expect(401);
+    } finally {
+      delete process.env.HOI4_LOCAL_SAVES_ENABLED;
+    }
+  });
+
+  test('private application APIs do not become anonymous when DB mode is disabled', async () => {
+    await request(app.getHttpServer()).get('/api/analyze/recent').expect(401);
+    await request(app.getHttpServer())
+      .get('/api/analyze/recent')
+      .set('Cookie', `hoi4_session=${authResult.token}`)
+      .expect(503);
   });
 });

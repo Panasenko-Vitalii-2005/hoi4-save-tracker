@@ -30,6 +30,7 @@ import type { AnalysisComparisonDto } from './analysis-comparison.types';
 import { SaveUploadInterceptor } from './save-upload.interceptor';
 import { validateSaveFile } from '../hoi4/save-container';
 import { SaveInputError } from '../hoi4/save-input.error';
+import { LocalSaveInput } from '../auth/route-access.decorator';
 
 interface AnalyzeRequest {
   path: string;
@@ -242,6 +243,7 @@ export class AnalyzeController {
   }
 
   @Post()
+  @LocalSaveInput()
   @UseInterceptors(SaveUploadInterceptor)
   async analyze(
     @Body() body: AnalyzeRequest,

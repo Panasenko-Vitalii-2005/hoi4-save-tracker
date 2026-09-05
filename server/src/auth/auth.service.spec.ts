@@ -217,6 +217,22 @@ describe('AuthService', () => {
     expect(sessions.revoke).toHaveBeenCalledTimes(2);
   });
 
+  test('malformed stale logout is harmless even when PostgreSQL is disabled', async () => {
+    database.available.mockReturnValue(false);
+    tokens.valid.mockReturnValue(false);
+    await expect(auth.logout(null)).resolves.toBeUndefined();
+    expect(sessions.revoke).not.toHaveBeenCalled();
+  });
+
+  test('malformed session remains unauthorized when PostgreSQL is disabled', async () => {
+    database.available.mockReturnValue(false);
+    tokens.valid.mockReturnValue(false);
+    await expect(auth.authenticateSession('malformed')).rejects.toBeInstanceOf(
+      InvalidSessionError,
+    );
+    expect(sessions.findByTokenHash).not.toHaveBeenCalled();
+  });
+
   test.each(['register', 'login', 'authenticateSession', 'logout'] as const)(
     '%s fails predictably when PostgreSQL is disabled',
     async (operation) => {

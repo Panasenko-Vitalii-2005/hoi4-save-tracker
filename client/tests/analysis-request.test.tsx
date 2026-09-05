@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AnalyzerTab } from "../src/components/analyzer/AnalyzerTab";
 import App from "../src/App";
+import { seedCsrfCookie } from "./auth-fixture";
 
 // Test the actual request UI; plotting and the unrelated telemetry request are not needed.
 vi.mock("react-plotly.js", () => ({ default: () => null }));
@@ -57,11 +58,14 @@ describe("analysis request lifecycle", () => {
   }>;
 
   beforeEach(() => {
+    seedCsrfCookie();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     requests = [];
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/auth/me")
+          return Promise.resolve(Response.json({ user: { id: "test-user", email: "test@example.com", createdAt: "2026-01-01T00:00:00Z" } }));
         if (url === "/api/analyze/recent")
           return Promise.resolve(Response.json({ items: [] }));
         if (url === "/api/analyze/trends")

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { SaveRecord } from "@/types";
+import { apiFetch } from "@/lib/api-client";
 
 export function useRecords() {
   const [records, setRecords] = useState<SaveRecord[]>([]);
@@ -10,7 +11,7 @@ export function useRecords() {
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch(`/api/records?ts=${Date.now()}`);
+      const resp = await apiFetch(`/api/records?ts=${Date.now()}`);
       const data = (await resp.json()) as {
         records: SaveRecord[];
         error?: string;
