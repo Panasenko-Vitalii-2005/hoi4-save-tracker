@@ -40,6 +40,10 @@ import type {
   AnalysisStorageMutationResult,
   AnalysisStorageStatus,
 } from './analysis-storage.types';
+import { AnalysisOwnershipService } from './analysis-ownership.service';
+import type { SafeUserDto } from '../auth/auth.types';
+import type { NextFunction, Request, Response } from 'express';
+import { DatabaseUnavailableError } from '../database/database.service';
 
 class TrackedWorkerService extends Hoi4AnalysisWorkerService {
   created = 0;
@@ -55,6 +59,16 @@ const MOWE = 'M\u00f6we';
 const POTOSI = 'ARM Potos\u00ed';
 const UPLOAD_DIRECTORY = join(tmpdir(), 'hoi4-save-tracker');
 const UNKNOWN_CONTEXT = { campaignId: null, gameVersion: null } as const;
+const FIRST_USER: SafeUserDto = {
+  id: '11111111-1111-4111-8111-111111111111',
+  email: 'first@example.com',
+  createdAt: '2026-01-01T00:00:00.000Z',
+};
+const SECOND_USER: SafeUserDto = {
+  id: '22222222-2222-4222-8222-222222222222',
+  email: 'second@example.com',
+  createdAt: '2026-01-01T00:00:00.000Z',
+};
 
 interface AnalyzeResponse {
   game_date: string;
@@ -105,6 +119,8 @@ describe('AnalyzeController uploads', () => {
   let cache: AnalysisResultCacheService;
   let history: RecentAnalysesService;
   let results: PersistedAnalysisResultService;
+  let ownership: { ensureOwnership: jest.Mock };
+  let requestUser = FIRST_USER;
   const originalHistoryFile = process.env.HOI4_RECENT_ANALYSES_FILE;
   const originalResultsDir = process.env.HOI4_ANALYSIS_RESULTS_DIR;
   const originalResultsBytes = process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
@@ -122,6 +138,7 @@ describe('AnalyzeController uploads', () => {
     process.env.HOI4_RECENT_ANALYSES_FILE = join(localSaveRoot, 'recent.json');
     process.env.HOI4_ANALYSIS_RESULTS_DIR = join(localSaveRoot, 'results');
     delete process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
+    ownership = { ensureOwnership: jest.fn().mockResolvedValue(undefined) };
     const moduleRef = await Test.createTestingModule({
       controllers: [
         AnalyzeController,
@@ -137,6 +154,7 @@ describe('AnalyzeController uploads', () => {
         CampaignSnapshotProjectionCacheService,
         CampaignTrendsService,
         SaveUploadInterceptor,
+        { provide: AnalysisOwnershipService, useValue: ownership },
       ],
     }).compile();
     analysis = moduleRef.get(Hoi4AnalysisWorkerService);
@@ -144,11 +162,23 @@ describe('AnalyzeController uploads', () => {
     history = moduleRef.get(RecentAnalysesService);
     results = moduleRef.get(PersistedAnalysisResultService);
     app = moduleRef.createNestApplication();
+    app.use(
+      (
+        request: Request & { user?: SafeUserDto },
+        _response: Response,
+        next: NextFunction,
+      ) => {
+        request.user = requestUser;
+        next();
+      },
+    );
     await app.init();
   });
 
   beforeEach(async () => {
     process.env.HOI4_LOCAL_SAVES_ENABLED = 'true';
+    requestUser = FIRST_USER;
+    ownership.ensureOwnership.mockClear();
     await history.clear();
   });
 
@@ -232,6 +262,17 @@ describe('AnalyzeController uploads', () => {
         .expect(201);
       expect(cached.body).toEqual(response.body);
       expect(analysis.created).toBe(before + 1);
+      expect(ownership.ensureOwnership).toHaveBeenCalledTimes(2);
+      expect(ownership.ensureOwnership).toHaveBeenNthCalledWith(
+        1,
+        FIRST_USER.id,
+        firstItem.hash,
+      );
+      expect(ownership.ensureOwnership).toHaveBeenNthCalledWith(
+        2,
+        FIRST_USER.id,
+        firstItem.hash,
+      );
       const reopened = await request(app.getHttpServer())
         .get(`/api/analyze/recent/${firstItem.hash.toUpperCase()}/result`)
         .expect(200);
@@ -285,6 +326,28 @@ describe('AnalyzeController uploads', () => {
     expect(Number.isFinite(parse_seconds)).toBe(true);
     expect(Number.isFinite(directSeconds)).toBe(true);
     expect(semantic).toEqual(direct);
+  });
+
+  test('assigns the same cached hash to each authenticated principal', async () => {
+    const payload = Buffer.from(navalSave('Shared content'));
+    const hash = createHash('sha256').update(payload).digest('hex');
+    const before = analysis.created;
+
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', payload, 'first.hoi4')
+      .expect(201);
+    requestUser = SECOND_USER;
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', payload, 'second.hoi4')
+      .expect(201);
+
+    expect(analysis.created).toBe(before + 1);
+    expect(ownership.ensureOwnership.mock.calls).toEqual([
+      [FIRST_USER.id, hash],
+      [SECOND_USER.id, hash],
+    ]);
   });
 
   test('blocks JSON paths but preserves multipart uploads when local saves are disabled', async () => {
@@ -707,6 +770,10 @@ describe('AnalyzeController uploads', () => {
       expect((response.body as AnalyzeResponse).game_date).toBe('1944.5.1');
       const item = (await history.list())[0];
       expect(item.hasPersistedResult).toBe(false);
+      expect(ownership.ensureOwnership).toHaveBeenCalledWith(
+        FIRST_USER.id,
+        item.hash,
+      );
       await request(app.getHttpServer())
         .get(`/api/analyze/recent/${item.hash}/result`)
         .expect(404);
@@ -725,6 +792,7 @@ describe('AnalyzeController uploads', () => {
         .post('/api/analyze?response=batch')
         .attach('file', payload, 'failure.hoi4')
         .expect(503);
+      expect(ownership.ensureOwnership).not.toHaveBeenCalled();
       expect(response.body).toMatchObject({ code: 'PERSISTENCE_FAILED' });
       expect(JSON.stringify(response.body)).not.toMatch(
         /hoi4-save-tracker|stack|temporaryPath/i,
@@ -969,10 +1037,32 @@ describe('AnalyzeController uploads', () => {
         .attach('file', Buffer.from(navalSave('Hash failure')), 'failure.hoi4')
         .expect(500);
       expect(await history.list()).toEqual([]);
+      expect(ownership.ensureOwnership).not.toHaveBeenCalled();
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(before);
     } finally {
       hashFailure.mockRestore();
     }
+  });
+
+  test('ownership metadata failure fails closed with a safe response', async () => {
+    ownership.ensureOwnership.mockRejectedValueOnce(
+      new DatabaseUnavailableError(),
+    );
+
+    const response = await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach(
+        'file',
+        Buffer.from(navalSave('Ownership unavailable')),
+        'ownership.hoi4',
+      )
+      .expect(503);
+
+    expect(ownership.ensureOwnership).toHaveBeenCalledTimes(1);
+    expect(response.body).toMatchObject({ code: 'ANALYZER_BUSY' });
+    expect(JSON.stringify(response.body)).not.toMatch(
+      /postgres|database|session|password|token|stack/i,
+    );
   });
 
   test('history storage failure does not fail successful analysis or expose storage errors', async () => {

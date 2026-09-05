@@ -29,6 +29,15 @@ import { PersistedAnalysisResultService } from './persisted-analysis-result.serv
 import { AnalysisComparisonService } from './analysis-comparison.service';
 import { smallSave, zipSave, forgedZipSize } from './fixtures/upload.fixture';
 import { UPLOAD_STALE_MS } from '../hoi4/save-upload.policy';
+import { AnalysisOwnershipService } from './analysis-ownership.service';
+import type { SafeUserDto } from '../auth/auth.types';
+import type { NextFunction, Request, Response } from 'express';
+
+const USER: SafeUserDto = {
+  id: '11111111-1111-4111-8111-111111111111',
+  email: 'upload@example.com',
+  createdAt: '2026-01-01T00:00:00.000Z',
+};
 
 class TestWorker extends Hoi4AnalysisWorkerService {
   created: Worker[] = [];
@@ -97,6 +106,10 @@ describe('Public upload boundary and cleanup', () => {
         RecentAnalysesService,
         PersistedAnalysisResultService,
         AnalysisComparisonService,
+        {
+          provide: AnalysisOwnershipService,
+          useValue: { ensureOwnership: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
     boundary = module.get(SaveUploadInterceptor);
@@ -105,6 +118,16 @@ describe('Public upload boundary and cleanup', () => {
     history = module.get(RecentAnalysesService);
     results = module.get(PersistedAnalysisResultService);
     app = module.createNestApplication();
+    app.use(
+      (
+        request: Request & { user?: SafeUserDto },
+        _response: Response,
+        next: NextFunction,
+      ) => {
+        request.user = USER;
+        next();
+      },
+    );
     await app.listen(0, '127.0.0.1');
     closed = false;
     const server = app.getHttpServer() as Server;

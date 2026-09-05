@@ -24,6 +24,8 @@ import { CampaignSnapshotProjectionCacheService } from './analyze/campaign-snaps
 import { BatchAnalysisController } from './analyze/batch-analysis.controller';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
+import { AnalysisOwnershipRepository } from './analyze/analysis-ownership.repository';
+import { AnalysisOwnershipService } from './analyze/analysis-ownership.service';
 
 @Module({
   imports: [
@@ -56,6 +58,8 @@ import { AuthModule } from './auth/auth.module';
     CampaignSnapshotProjectionCacheService,
     CampaignTrendsService,
     SaveUploadInterceptor,
+    AnalysisOwnershipRepository,
+    AnalysisOwnershipService,
   ],
 })
 export class AppModule {}

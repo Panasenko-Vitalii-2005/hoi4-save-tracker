@@ -31,6 +31,9 @@ import { SaveUploadInterceptor } from './save-upload.interceptor';
 import { validateSaveFile } from '../hoi4/save-container';
 import { SaveInputError } from '../hoi4/save-input.error';
 import { LocalSaveInput } from '../auth/route-access.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { SafeUserDto } from '../auth/auth.types';
+import { AnalysisOwnershipService } from './analysis-ownership.service';
 
 interface AnalyzeRequest {
   path: string;
@@ -48,6 +51,7 @@ export class AnalyzeController {
     private readonly analysis: AnalysisResultCacheService,
     private readonly history: RecentAnalysesService,
     private readonly comparison: AnalysisComparisonService,
+    private readonly ownership: AnalysisOwnershipService,
   ) {}
 
   @Get('compare')
@@ -246,6 +250,7 @@ export class AnalyzeController {
   @LocalSaveInput()
   @UseInterceptors(SaveUploadInterceptor)
   async analyze(
+    @CurrentUser() currentUser: SafeUserDto,
     @Body() body: AnalyzeRequest,
     @Res({ passthrough: true }) response: Response,
     @UploadedFile() uploadedSave?: UploadedSave,
@@ -303,12 +308,28 @@ export class AnalyzeController {
     }
     if (responseMode === 'batch') {
       if (!persisted) throw new SaveInputError('PERSISTENCE_FAILED');
+      await this.assignOwnership(currentUser, hash);
       return {
         hash,
         gameDate: result.game_date,
         campaignId: comparisonContext.campaignId,
       };
     }
+    if (!response.destroyed) await this.assignOwnership(currentUser, hash);
     return result;
+  }
+
+  private async assignOwnership(
+    currentUser: SafeUserDto,
+    hash: string,
+  ): Promise<void> {
+    try {
+      await this.ownership.ensureOwnership(currentUser.id, hash);
+    } catch {
+      throw new HttpException(
+        'Could not record analysis ownership',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
   }
 }

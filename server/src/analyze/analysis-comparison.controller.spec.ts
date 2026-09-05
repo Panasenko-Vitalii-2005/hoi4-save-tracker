@@ -14,6 +14,7 @@ import { RecentAnalysesService } from './recent-analyses.service';
 import { comparisonResult } from './fixtures/analysis-comparison.fixture';
 import type { AnalysisComparisonDto } from './analysis-comparison.types';
 import { SaveUploadInterceptor } from './save-upload.interceptor';
+import { AnalysisOwnershipService } from './analysis-ownership.service';
 
 describe('Compare persisted analyses API', () => {
   let app: INestApplication<App>;
@@ -39,6 +40,10 @@ describe('Compare persisted analyses API', () => {
           useValue: { analyzeWithHash: analyze },
         },
         { provide: RecentAnalysesService, useValue: {} },
+        {
+          provide: AnalysisOwnershipService,
+          useValue: { ensureOwnership: jest.fn() },
+        },
       ],
     }).compile();
     results = module.get(PersistedAnalysisResultService);

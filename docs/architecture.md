@@ -100,7 +100,9 @@ Storage status lists recognized gzip files and sums filesystem sizes. It does no
 
 Original uploaded `.hoi4` files are managed temporary inputs and are not retained in these stores. The Compose `/app/saves` read-only mount is a separate source directory.
 
-PostgreSQL is an additional, optional metadata store. The auth core uses its versioned `users` and `sessions` schema for registration, salted scrypt password hashes, opaque-session token hashes, and fixed expiry. It does not contain AnalyzeResult data, artifact blobs, Recent metadata, Shares, projections, or parser caches. Database mode is disabled by default outside Compose; enabled startup validates connectivity but ordinary application startup never applies migrations.
+PostgreSQL is an additional, optional metadata store. The auth core uses its versioned `users` and `sessions` schema for registration, salted scrypt password hashes, opaque-session token hashes, and fixed expiry. `analysis_ownership` records the unique user/SHA-256 pairs created by successful authenticated analyses. It does not contain AnalyzeResult data, artifact blobs, Recent metadata, Shares, projections, or parser caches. Database mode is disabled by default outside Compose; enabled startup validates connectivity but ordinary application startup never applies migrations.
+
+Result artifacts remain globally deduplicated immutable objects keyed by save-content SHA-256. Ownership is separate metadata: one user/hash pair is idempotent, while the same hash may belong to multiple users without duplicating the gzip artifact. Existing artifacts without an ownership row remain explicitly unowned; no filename, campaign, IP, browser state, or first-user backfill is used. An ownership write failure fails the analysis request closed rather than creating an anonymous fallback relation.
 
 A global guard makes controller routes private by default. Explicit public exceptions are health, CSRF bootstrap, registration, login, idempotent logout, and public share reads. The guard authenticates `hoi4_session` into a safe `CurrentUser` principal, and validates the independent `hoi4_csrf` cookie against `X-CSRF-Token` on `POST`, `PUT`, `PATCH`, and `DELETE`. `GET`, `HEAD`, and CORS preflight are exempt. Login/register/logout deliberately use the same CSRF policy even though they do not require an existing session.
 
@@ -122,7 +124,7 @@ Compare reads two persisted results and calculates finite-number deltas as Targe
 
 Creating a share maps one persisted hash to a random 128-bit URL-safe ID. The public endpoint resolves only that ID and returns the persisted analysis. It does not expose a listing, original save, private filename, internal hash, filesystem path, or server diagnostics.
 
-Share links are unlisted but unauthenticated. Anyone with the URL can read the complete derived analysis. The management API requires authentication but remains global among authenticated users, so this is not per-user isolation.
+Share links are unlisted but unauthenticated. Anyone with the URL can read the complete derived analysis. Public capability reads intentionally remain independent of ownership during Phase 3A, including legacy shared artifacts. Share management and the rest of the application APIs remain global among authenticated users until Phase 3B authorization is implemented.
 
 ## Failure and cleanup behavior
 
@@ -159,12 +161,12 @@ Share links are unlisted but unauthenticated. Anyone with the URL can read the c
 
 Compose runs PostgreSQL, a one-shot migration service, one backend, and one nginx frontend. PostgreSQL and the existing backend data directory use separate named volumes; the optional saves directory remains a read-only bind mount.
 
-The current model enforces identity but still assumes one trusted data domain/process:
+The current model records identity and ownership metadata but still assumes one trusted data domain/process:
 
-- product APIs require sessions, but have no ownership, per-user authorization, or per-user quotas;
+- successful new analyses record ownership, but product APIs do not yet enforce it or provide per-user quotas;
 - no cross-process locks, distributed queue, or shared cache;
 - no application TLS or edge rate limiter;
 - no replication or automatic backup; PostgreSQL migrations are explicit and versioned;
 - process-local admission and Worker limits.
 
-A public multi-user deployment still needs Phase 3 ownership/authorization, per-user persistence, external rate/connection controls, TLS, backup, and multi-instance coordination. Those concerns are deliberately outside the Phase 2B identity boundary.
+Phase 3A answers which user owns a newly analyzed hash; it does not authorize resource access. Authenticated therefore does not yet mean authorized. A public multi-user deployment still needs Phase 3B filtering/enforcement, external rate/connection controls, TLS, backup, and multi-instance coordination.

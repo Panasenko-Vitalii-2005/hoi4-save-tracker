@@ -14,7 +14,7 @@ describeDatabase('PostgreSQL metadata schema', () => {
     }
     pool = new Pool({ connectionString });
     await pool.query(
-      'DROP TABLE IF EXISTS sessions, users, hoi4_schema_migrations CASCADE',
+      'DROP TABLE IF EXISTS analysis_ownership, sessions, users, hoi4_schema_migrations CASCADE',
     );
     await applyMigrations(pool);
   });
@@ -25,7 +25,7 @@ describeDatabase('PostgreSQL metadata schema', () => {
 
   afterAll(async () => {
     await pool.query(
-      'DROP TABLE IF EXISTS sessions, users, hoi4_schema_migrations CASCADE',
+      'DROP TABLE IF EXISTS analysis_ownership, sessions, users, hoi4_schema_migrations CASCADE',
     );
     await pool.end();
   });
@@ -33,9 +33,11 @@ describeDatabase('PostgreSQL metadata schema', () => {
   test('applies cleanly and is idempotent on an empty database', async () => {
     await expect(applyMigrations(pool)).resolves.toEqual([
       expect.objectContaining({ version: '0001', applied: true }),
+      expect.objectContaining({ version: '0002', applied: true }),
     ]);
     await expect(migrationStatus(pool)).resolves.toEqual([
       expect.objectContaining({ version: '0001', applied: true }),
+      expect.objectContaining({ version: '0002', applied: true }),
     ]);
   });
 
@@ -106,5 +108,43 @@ describeDatabase('PostgreSQL metadata schema', () => {
       'SELECT count(*) FROM sessions',
     );
     expect(sessions.rows[0].count).toBe('0');
+  });
+
+  test('creates constrained analysis ownership metadata without artifact data', async () => {
+    const tables = await pool.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'analysis_ownership'`,
+    );
+    expect(tables.rows).toEqual([{ table_name: 'analysis_ownership' }]);
+    const user = await pool.query<{ id: string }>(
+      'INSERT INTO users (email) VALUES ($1) RETURNING id',
+      ['owner@example.com'],
+    );
+    await pool.query(
+      `INSERT INTO analysis_ownership (user_id, analysis_hash)
+       VALUES ($1, $2)`,
+      [user.rows[0].id, 'a'.repeat(64)],
+    );
+    await expect(
+      pool.query(
+        `INSERT INTO analysis_ownership (user_id, analysis_hash)
+         VALUES ($1, $2)`,
+        [user.rows[0].id, 'a'.repeat(64)],
+      ),
+    ).rejects.toMatchObject({ code: '23505' });
+    await expect(
+      pool.query(
+        `INSERT INTO analysis_ownership (user_id, analysis_hash)
+         VALUES ($1, $2)`,
+        [user.rows[0].id, 'A'.repeat(64)],
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+    await expect(
+      pool.query(
+        `INSERT INTO analysis_ownership (user_id, analysis_hash)
+         VALUES (gen_random_uuid(), $1)`,
+        ['b'.repeat(64)],
+      ),
+    ).rejects.toMatchObject({ code: '23503' });
   });
 });
