@@ -44,6 +44,7 @@ import { AnalysisOwnershipService } from './analysis-ownership.service';
 import type { SafeUserDto } from '../auth/auth.types';
 import type { NextFunction, Request, Response } from 'express';
 import { DatabaseUnavailableError } from '../database/database.service';
+import { UserAnalysesService } from './user-analyses.service';
 
 class TrackedWorkerService extends Hoi4AnalysisWorkerService {
   created = 0;
@@ -119,7 +120,7 @@ describe('AnalyzeController uploads', () => {
   let cache: AnalysisResultCacheService;
   let history: RecentAnalysesService;
   let results: PersistedAnalysisResultService;
-  let ownership: { ensureOwnership: jest.Mock };
+  let ownership: { ensureOwnership: jest.Mock; ownedHashes: jest.Mock };
   let requestUser = FIRST_USER;
   const originalHistoryFile = process.env.HOI4_RECENT_ANALYSES_FILE;
   const originalResultsDir = process.env.HOI4_ANALYSIS_RESULTS_DIR;
@@ -138,7 +139,12 @@ describe('AnalyzeController uploads', () => {
     process.env.HOI4_RECENT_ANALYSES_FILE = join(localSaveRoot, 'recent.json');
     process.env.HOI4_ANALYSIS_RESULTS_DIR = join(localSaveRoot, 'results');
     delete process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES;
-    ownership = { ensureOwnership: jest.fn().mockResolvedValue(undefined) };
+    ownership = {
+      ensureOwnership: jest.fn().mockResolvedValue(undefined),
+      ownedHashes: jest.fn((_: string, hashes: readonly string[]) =>
+        Promise.resolve(new Set(hashes)),
+      ),
+    };
     const moduleRef = await Test.createTestingModule({
       controllers: [
         AnalyzeController,
@@ -155,6 +161,32 @@ describe('AnalyzeController uploads', () => {
         CampaignTrendsService,
         SaveUploadInterceptor,
         { provide: AnalysisOwnershipService, useValue: ownership },
+        {
+          provide: UserAnalysesService,
+          useFactory: (recent: RecentAnalysesService) => ({
+            list: () => recent.list(),
+            storageStatus: () => recent.storageStatus(),
+            deleteUnpinned: () => recent.deleteUnpinned(),
+            deleteCampaign: (
+              _userId: string,
+              campaignId: string,
+              includePinned: boolean,
+            ) => recent.deleteCampaign(campaignId, includePinned),
+            clear: () => recent.clear(),
+            getResult: (_userId: string, hash: string) =>
+              recent.getResult(hash),
+            delete: async (_userId: string, hash: string) => {
+              const found = (await recent.list()).some(
+                (item) => item.hash === hash,
+              );
+              if (found) await recent.delete(hash);
+              return found;
+            },
+            setPinned: (_userId: string, hash: string, pinned: boolean) =>
+              recent.setPinned(hash, pinned),
+          }),
+          inject: [RecentAnalysesService],
+        },
       ],
     }).compile();
     analysis = moduleRef.get(Hoi4AnalysisWorkerService);
@@ -267,11 +299,13 @@ describe('AnalyzeController uploads', () => {
         1,
         FIRST_USER.id,
         firstItem.hash,
+        { fileName: 'fixture.hoi4' },
       );
       expect(ownership.ensureOwnership).toHaveBeenNthCalledWith(
         2,
         FIRST_USER.id,
         firstItem.hash,
+        { fileName: 'renamed.hoi4' },
       );
       const reopened = await request(app.getHttpServer())
         .get(`/api/analyze/recent/${firstItem.hash.toUpperCase()}/result`)
@@ -345,8 +379,8 @@ describe('AnalyzeController uploads', () => {
 
     expect(analysis.created).toBe(before + 1);
     expect(ownership.ensureOwnership.mock.calls).toEqual([
-      [FIRST_USER.id, hash],
-      [SECOND_USER.id, hash],
+      [FIRST_USER.id, hash, { fileName: 'first.hoi4' }],
+      [SECOND_USER.id, hash, { fileName: 'second.hoi4' }],
     ]);
   });
 
@@ -689,7 +723,7 @@ describe('AnalyzeController uploads', () => {
     expect(analysis.created).toBe(before);
   });
 
-  test('campaign delete requires pinned acknowledgement and then clears matching cache entries', async () => {
+  test('campaign delete requires pinned acknowledgement without evicting shared cache entries', async () => {
     await request(app.getHttpServer())
       .post('/api/analyze')
       .attach('file', Buffer.from(navalSave('Campaign A')), 'a.hoi4')
@@ -717,7 +751,7 @@ describe('AnalyzeController uploads', () => {
       .send({ includePinned: true })
       .expect(200);
     expect(deleted.body).toMatchObject({ deletedCount: 1, items: [] });
-    expect(cache['completed'].has(item.hash)).toBe(false);
+    expect(cache['completed'].has(item.hash)).toBe(true);
   });
 
   test('unpinned cleanup protects pins and rejects unsafe campaign requests', async () => {
@@ -773,6 +807,7 @@ describe('AnalyzeController uploads', () => {
       expect(ownership.ensureOwnership).toHaveBeenCalledWith(
         FIRST_USER.id,
         item.hash,
+        { fileName: 'failure.hoi4' },
       );
       await request(app.getHttpServer())
         .get(`/api/analyze/recent/${item.hash}/result`)
@@ -875,7 +910,7 @@ describe('AnalyzeController uploads', () => {
     expect(analysis.created).toBe(before);
   });
 
-  test('pin/unpin/refresh/delete API preserves unrelated entries and evicts the deleted RAM result', async () => {
+  test('pin/unpin/refresh/delete API preserves unrelated entries and shared RAM results', async () => {
     const savePath = join(localSaveRoot, 'managed.hoi4');
     writeFileSync(savePath, navalSave('Managed fixture'));
     const original = await request(app.getHttpServer())
@@ -920,9 +955,9 @@ describe('AnalyzeController uploads', () => {
       .expect(200);
     await request(app.getHttpServer())
       .delete(`/api/analyze/recent/${item.hash}`)
-      .expect(200);
+      .expect(404);
     expect(await results.exists(item.hash)).toBe(false);
-    expect(cache['completed'].has(item.hash)).toBe(false);
+    expect(cache['completed'].has(item.hash)).toBe(true);
     expect(cache['completed'].has(other.hash)).toBe(true);
     expect(await history.list()).toEqual([other]);
     expect(existsSync(savePath)).toBe(true);
@@ -933,7 +968,7 @@ describe('AnalyzeController uploads', () => {
       .post('/api/analyze')
       .send({ path: savePath })
       .expect(201);
-    expect(analysis.created).toBe(workers + 1);
+    expect(analysis.created).toBe(workers);
   });
 
   test.each([
@@ -965,14 +1000,14 @@ describe('AnalyzeController uploads', () => {
       .expect(400);
   });
 
-  test('unknown pin returns 404 while delete is idempotently successful', async () => {
+  test('unknown private mutations return the same non-disclosing 404', async () => {
     await request(app.getHttpServer())
       .patch(`/api/analyze/recent/${'0'.repeat(64)}`)
       .send({ pinned: true })
       .expect(404);
     await request(app.getHttpServer())
       .delete(`/api/analyze/recent/${'0'.repeat(64)}`)
-      .expect(200, { items: [] });
+      .expect(404);
   });
 
   test('management write errors stay generic and preserve history', async () => {

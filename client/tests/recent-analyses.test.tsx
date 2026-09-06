@@ -24,6 +24,8 @@ const entry = {
 };
 const campaignId = "0731c3c7-035e-46b1-b07b-6c35b27e8dc2";
 const storageStatus = {
+  storageAccounting: "owned_logical_artifacts",
+  storageLimitScope: "global_physical_artifacts",
   recentAnalysisCount: 2,
   persistedAnalysisCount: 2,
   persistedResultBytes: 86 * 1024 * 1024,
@@ -697,22 +699,21 @@ describe("Recent Analyses", () => {
     await render();
     await respond(0, [entry, { ...entry, hash: "b".repeat(64) }]);
     const storage = section().querySelector(
-      '[aria-label="Local analysis storage"]',
+      '[aria-label="Your saved analyses"]',
     )!;
 
-    expect(storage.textContent).toContain("Local analysis storage");
+    expect(storage.textContent).toContain("Your saved analyses");
     expect(storage.textContent).toContain("2 stored results");
     expect(storage.textContent).toContain("1 known campaign");
-    expect(storage.textContent).toContain("86 MiB of 128 MiB");
+    expect(storage.textContent).toContain("86 MiB logical result data");
+    expect(storage.textContent).toContain(
+      "Shared artifact-store limit: 128 MiB",
+    );
     expect(storage.textContent).toContain(
       "Uploaded .hoi4 files are processed temporarily",
     );
     expect(storage.textContent).not.toContain(campaignId);
-    expect(
-      storage.querySelector(
-        'progress[aria-label="Analysis results storage used"]',
-      ),
-    ).not.toBeNull();
+    expect(storage.querySelector("progress")).toBeNull();
   });
 
   test("storage confirmation returns focus to its trigger when cancelled", async () => {

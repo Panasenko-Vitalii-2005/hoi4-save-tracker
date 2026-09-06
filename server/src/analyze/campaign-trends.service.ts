@@ -180,9 +180,12 @@ export class CampaignTrendsService {
     private readonly projections: CampaignSnapshotProjectionCacheService,
   ) {}
 
-  async build(): Promise<CampaignTrendsDto> {
+  async build(
+    visibleItems?: readonly RecentAnalysis[],
+  ): Promise<CampaignTrendsDto> {
     return this.withStableInventory(
-      () => this.recent.list(),
+      () =>
+        visibleItems ? Promise.resolve([...visibleItems]) : this.recent.list(),
       async (items, inventory) => {
         const loaded = await this.loadAvailable(items, inventory);
         const groups = new Map<
@@ -244,6 +247,7 @@ export class CampaignTrendsService {
   async buildEquipment(
     campaignKey: string,
     countryTag: string,
+    visibleItems?: readonly RecentAnalysis[],
   ): Promise<CampaignEquipmentTrendsDto> {
     const targetCampaignId = campaignKey.startsWith('campaign:')
       ? campaignKey.slice('campaign:'.length)
@@ -263,7 +267,8 @@ export class CampaignTrendsService {
     };
 
     return this.withStableInventory(
-      () => this.recent.list(),
+      () =>
+        visibleItems ? Promise.resolve([...visibleItems]) : this.recent.list(),
       async (items, inventory) => {
         const loaded = await this.loadAvailable(
           items.filter(candidate),

@@ -4,15 +4,25 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { CampaignTrendsController } from './campaign-trends.controller';
 import { CampaignTrendsService } from './campaign-trends.service';
+import { UserAnalysesService } from './user-analyses.service';
+import type { NextFunction, Request, Response } from 'express';
+import type { SafeUserDto } from '../auth/auth.types';
 
 describe('Campaign Trends API', () => {
   let app: INestApplication<App>;
   const build = jest.fn();
   const buildEquipment = jest.fn();
+  const list = jest.fn().mockResolvedValue([]);
+  const user: SafeUserDto = {
+    id: '11111111-1111-4111-8111-111111111111',
+    email: 'owner@example.com',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  };
 
   beforeEach(async () => {
     build.mockReset();
     buildEquipment.mockReset();
+    list.mockReset().mockResolvedValue([]);
     const module = await Test.createTestingModule({
       controllers: [CampaignTrendsController],
       providers: [
@@ -20,9 +30,20 @@ describe('Campaign Trends API', () => {
           provide: CampaignTrendsService,
           useValue: { build, buildEquipment },
         },
+        { provide: UserAnalysesService, useValue: { list } },
       ],
     }).compile();
     app = module.createNestApplication();
+    app.use(
+      (
+        request: Request & { user?: SafeUserDto },
+        _response: Response,
+        next: NextFunction,
+      ) => {
+        request.user = user;
+        next();
+      },
+    );
     await app.init();
   });
 
@@ -34,6 +55,7 @@ describe('Campaign Trends API', () => {
       .get('/api/analyze/trends')
       .expect(HttpStatus.OK)
       .expect({ snapshotCount: 0, campaigns: [] });
+    expect(build).toHaveBeenCalledWith([]);
   });
 
   test('returns a generic service error without leaking details', async () => {
@@ -58,7 +80,7 @@ describe('Campaign Trends API', () => {
       .query({ campaignKey: dto.campaignKey, countryTag: 'GER' })
       .expect(HttpStatus.OK)
       .expect(dto);
-    expect(buildEquipment).toHaveBeenCalledWith(dto.campaignKey, 'GER');
+    expect(buildEquipment).toHaveBeenCalledWith(dto.campaignKey, 'GER', []);
   });
 
   test('rejects malformed equipment trend identity without invoking the service', async () => {
@@ -67,5 +89,14 @@ describe('Campaign Trends API', () => {
       .query({ campaignKey: 'campaign:guess', countryTag: 'Germany' })
       .expect(HttpStatus.BAD_REQUEST);
     expect(buildEquipment).not.toHaveBeenCalled();
+  });
+
+  test('fails closed without invoking trends when ownership listing fails', async () => {
+    list.mockRejectedValueOnce(new Error('database unavailable'));
+
+    await request(app.getHttpServer())
+      .get('/api/analyze/trends')
+      .expect(HttpStatus.SERVICE_UNAVAILABLE);
+    expect(build).not.toHaveBeenCalled();
   });
 });

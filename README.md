@@ -272,7 +272,7 @@ Limits are per backend process. The result byte ceiling is authoritative: unpinn
 | `DELETE` | `/api/analyze/recent/:hash/share` | Revoke a public link |
 | `GET` | `/api/share/:id` | Open a shared read-only analysis |
 
-Application APIs are private by default through a global session guard. Health, CSRF bootstrap, registration, login, idempotent logout, and `GET /api/share/:id` are the explicit public exceptions. Public unsafe auth operations still require the double-submit CSRF token. New successful analyses record ownership, but analysis visibility remains global among authenticated users until Phase 3B enforces it, so this is not yet a multi-tenant authorization contract.
+Application APIs are private by default through a global session guard. Health, CSRF bootstrap, registration, login, idempotent logout, and `GET /api/share/:id` are the explicit public exceptions. Public unsafe auth operations still require the double-submit CSRF token. Private analysis listing, reads, comparisons, trends, storage views, mutations, share management, and batch preflight enforce the authenticated user's PostgreSQL ownership relation.
 
 Local filesystem APIs are safe-by-default: when `HOI4_LOCAL_SAVES_ENABLED` is unset or anything other than `true`, `/api/saves`, `/api/saves/default-dir`, `/saves/analyze`, and JSON `path` requests to `/api/analyze` return 404. Keep this disabled for public/SaaS deployments. Enabling it deliberately exposes server-side save discovery/path analysis and is intended only for a trusted local environment. Multipart upload analysis is unaffected.
 
@@ -282,9 +282,9 @@ PostgreSQL stores account identities, server-side sessions, and analysis ownersh
 
 Successful registration/login sets `hoi4_session` as `HttpOnly`, `SameSite=Lax`, `Path=/`, with matching `Max-Age`/`Expires`; it is `Secure` by default when `NODE_ENV=production`. `HOI4_SESSION_COOKIE_SECURE` is an explicit exact-boolean override: local HTTP Compose sets it to `false`, while an HTTPS deployment must use `true`. Sessions have fixed expiry controlled by `HOI4_SESSION_TTL_SECONDS`; there are no refresh tokens or sliding expiry. Passwords must be 12–128 characters, with no composition rule. Emails are trimmed and lowercased while PostgreSQL `CITEXT` remains the final case-insensitive uniqueness authority.
 
-When database mode is disabled, credential operations and a well-formed session lookup fail safely with a generic `503`; a private request without a cookie remains `401`. Authentication is never bypassed. Health, CSRF bootstrap, idempotent stale-cookie logout, and public share reads remain available. AnalyzeResult payloads remain compressed files under `data/analysis-results`; Recent Analyses and Shares remain the existing JSON stores and are still authoritative.
+When database mode is disabled, credential operations and a well-formed session lookup fail safely with a generic `503`; a private request without a cookie remains `401`. Authentication is never bypassed. Health, CSRF bootstrap, idempotent stale-cookie logout, and public share reads remain available. AnalyzeResult payloads remain compressed files under `data/analysis-results`; Recent content metadata and Shares remain the existing JSON stores, while PostgreSQL ownership is authoritative for private access.
 
-The global guard authenticates product APIs through the `hoi4_session` HttpOnly cookie, and unsafe methods require the independent readable `hoi4_csrf` cookie to match `X-CSRF-Token`. A successful analysis inserts the authenticated user/SHA-256 pair into `analysis_ownership`; repeated uploads by one user are idempotent and different users may own the same globally deduplicated artifact. Legacy artifacts without a row remain unowned—there is no automatic backfill. Recent, Compare, Trends, storage, reopen, and share-management data is still shared among authenticated users: Phase 3A records ownership but Phase 3B must enforce it.
+The global guard authenticates product APIs through the `hoi4_session` HttpOnly cookie, and unsafe methods require the independent readable `hoi4_csrf` cookie to match `X-CSRF-Token`. A successful analysis inserts the authenticated user/SHA-256 pair into `analysis_ownership`; repeated uploads by one user are idempotent and different users may own the same globally deduplicated artifact. Per-user pin, safe filename, and analysis time live on that relation. Legacy artifacts without a row remain unowned and invisible to private APIs—there is no automatic backfill. Public capability-link reads are the explicit ownership exception.
 
 Native startup leaves database mode disabled unless `HOI4_DATABASE_ENABLED=true`. Disabled mode creates no connection. Enabled mode requires a valid `DATABASE_URL` and fails startup if connectivity validation fails; credentials and connection URLs are never returned by health diagnostics. `/api/health` reports `database: disabled`, `ok`, or `unavailable`.
 
@@ -315,7 +315,7 @@ Writes use managed temporary files, fsync, and atomic rename. Mutations are seri
 
 The analysis-result store does **not** retain uploaded original `.hoi4` files. The optional `./saves:/app/saves:ro` Compose mount is a separate user-provided source directory.
 
-PostgreSQL provides account, opaque-session, and analysis-ownership persistence. Ownership metadata does not duplicate results: analysis artifacts remain file-based and keyed globally by SHA-256. Recent Analyses and Shares also remain file-based and global, and there is still no cross-process storage lock. Public capability-link reads remain independent of ownership during this transition. One backend should own a persistence directory.
+PostgreSQL provides account, opaque-session, and analysis-ownership persistence. Ownership metadata does not duplicate results: analysis artifacts remain file-based and keyed globally by SHA-256. Recent content metadata and Shares also remain file-based and global, but private views are ownership-filtered. Logical owned bytes are distinct from shared physical artifact bytes. Public capability-link reads remain independent of ownership. One backend should own a persistence directory because there is still no cross-process file-store lock.
 
 ## Testing
 
@@ -369,15 +369,15 @@ Implemented safeguards include strict upload/container validation, byte and entr
 
 Important remaining limitations:
 
-- authentication and ownership recording are implemented, but product APIs do not yet enforce per-user authorization;
-- Recent, storage-management, Compare, Trends, and share-management APIs are global to all authenticated users;
+- authentication, ownership recording, and per-user authorization are implemented; per-user quotas and administrative recovery are not;
+- Recent content metadata and public-share metadata remain global file stores, while private API projections and mutations are ownership-scoped;
 - possession of a share link grants access to the complete derived analysis;
 - admission, caches, rate semantics, and mutation queues are process-local;
 - filesystem persistence has no multi-process locking or distributed coordination;
-- no application-level TLS, per-user authorization, or durable audit log;
+- no application-level TLS or durable authorization audit log;
 - nginx/reverse-proxy TLS, external connection/rate limits, container memory, and volume backup are deployment responsibilities.
 
-The current identity and ownership foundation is a controlled development checkpoint. Authenticated is not yet authorized: public multi-user hosting still requires Phase 3B isolation/enforcement and edge-security design.
+The current identity and ownership boundary enforces private per-user analysis access. Public hosting still requires edge-security deployment, operational backups, monitoring, and a deliberate lifecycle policy for ownerless deduplicated artifacts.
 
 ## Known limitations
 
@@ -392,7 +392,7 @@ The current identity and ownership foundation is a controlled development checkp
 
 ## Roadmap
 
-- Enforce the existing ownership relation across private resources in Phase 3B before any multi-user deployment.
+- Add a bounded ownerless-artifact lifecycle/garbage-collection policy and per-user quota model before larger multi-user deployment.
 - Expand compatibility fixtures for newer HOI4 versions and representative mods.
 - Add shared persistence/admission only if multi-instance deployment becomes a real requirement.
 - Externalize and consolidate the optional Python telemetry configuration.

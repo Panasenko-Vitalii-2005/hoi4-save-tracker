@@ -97,4 +97,42 @@ describeDatabase('PostgreSQL analysis ownership integration', () => {
     );
     expect(count.rows[0].count).toBe('0');
   });
+
+  test('keeps display metadata and pins private to each owner', async () => {
+    const first = await user('first-metadata@example.com');
+    const second = await user('second-metadata@example.com');
+    await ownership.ensureOwnership(first, hash, {
+      fileName: '../first.hoi4',
+      analyzedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await ownership.ensureOwnership(second, hash, {
+      fileName: 'second.hoi4',
+      analyzedAt: new Date('2026-02-01T00:00:00.000Z'),
+    });
+    await ownership.setPinned(first, hash, true);
+
+    await expect(ownership.listForUser(first)).resolves.toEqual([
+      {
+        analysisHash: hash,
+        pinned: true,
+        fileName: 'first.hoi4',
+        analyzedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    await expect(ownership.listForUser(second)).resolves.toEqual([
+      {
+        analysisHash: hash,
+        pinned: false,
+        fileName: 'second.hoi4',
+        analyzedAt: '2026-02-01T00:00:00.000Z',
+      },
+    ]);
+    await expect(ownership.pinnedHashes([hash])).resolves.toEqual(
+      new Set([hash]),
+    );
+
+    await expect(ownership.remove(first, [hash])).resolves.toEqual([hash]);
+    await expect(ownership.hasOwnership(first, hash)).resolves.toBe(false);
+    await expect(ownership.hasOwnership(second, hash)).resolves.toBe(true);
+  });
 });

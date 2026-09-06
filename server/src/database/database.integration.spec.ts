@@ -34,10 +34,12 @@ describeDatabase('PostgreSQL metadata schema', () => {
     await expect(applyMigrations(pool)).resolves.toEqual([
       expect.objectContaining({ version: '0001', applied: true }),
       expect.objectContaining({ version: '0002', applied: true }),
+      expect.objectContaining({ version: '0003', applied: true }),
     ]);
     await expect(migrationStatus(pool)).resolves.toEqual([
       expect.objectContaining({ version: '0001', applied: true }),
       expect.objectContaining({ version: '0002', applied: true }),
+      expect.objectContaining({ version: '0003', applied: true }),
     ]);
   });
 
@@ -116,6 +118,22 @@ describeDatabase('PostgreSQL metadata schema', () => {
        WHERE table_schema = 'public' AND table_name = 'analysis_ownership'`,
     );
     expect(tables.rows).toEqual([{ table_name: 'analysis_ownership' }]);
+    const columns = await pool.query<{
+      column_name: string;
+      is_nullable: string;
+    }>(
+      `SELECT column_name, is_nullable
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'analysis_ownership'
+         AND column_name IN ('pinned', 'file_name', 'analyzed_at')
+       ORDER BY column_name`,
+    );
+    expect(columns.rows).toEqual([
+      { column_name: 'analyzed_at', is_nullable: 'NO' },
+      { column_name: 'file_name', is_nullable: 'YES' },
+      { column_name: 'pinned', is_nullable: 'NO' },
+    ]);
     const user = await pool.query<{ id: string }>(
       'INSERT INTO users (email) VALUES ($1) RETURNING id',
       ['owner@example.com'],

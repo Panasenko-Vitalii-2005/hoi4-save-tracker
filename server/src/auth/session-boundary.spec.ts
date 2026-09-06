@@ -10,6 +10,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { SharedAnalysesController } from '../analyze/shared-analyses.controller';
 import { RecentAnalysesService } from '../analyze/recent-analyses.service';
+import { AnalysisOwnershipService } from '../analyze/analysis-ownership.service';
 import { SharedAnalysesService } from '../analyze/shared-analyses.service';
 import { DatabaseService } from '../database/database.service';
 import { configureHttpSecurity } from '../http-security';
@@ -109,6 +110,10 @@ describe('HTTP session security boundary', () => {
         {
           provide: RecentAnalysesService,
           useValue: { revokeShare: jest.fn() },
+        },
+        {
+          provide: AnalysisOwnershipService,
+          useValue: { hasOwnership: jest.fn().mockResolvedValue(true) },
         },
       ],
     })

@@ -9,6 +9,9 @@ import {
   normalizeAnalysisHash,
   PersistedAnalysisResultService,
 } from './persisted-analysis-result.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { SafeUserDto } from '../auth/auth.types';
+import { AnalysisOwnershipService } from './analysis-ownership.service';
 
 const MAX_PREFLIGHT_HASHES = 200;
 
@@ -18,10 +21,16 @@ interface BatchPreflightRequest {
 
 @Controller('api/analyze/batch')
 export class BatchAnalysisController {
-  constructor(private readonly results: PersistedAnalysisResultService) {}
+  constructor(
+    private readonly results: PersistedAnalysisResultService,
+    private readonly ownership: AnalysisOwnershipService,
+  ) {}
 
   @Post('preflight')
-  async preflight(@Body() body: BatchPreflightRequest) {
+  async preflight(
+    @CurrentUser() currentUser: SafeUserDto,
+    @Body() body: BatchPreflightRequest,
+  ) {
     if (
       !Array.isArray(body?.hashes) ||
       body.hashes.length > MAX_PREFLIGHT_HASHES
@@ -44,7 +53,18 @@ export class BatchAnalysisController {
       }
     }
 
-    const available = await this.results.available(hashes);
+    let owned: Set<string>;
+    try {
+      owned = await this.ownership.ownedHashes(currentUser.id, hashes);
+    } catch {
+      throw new HttpException(
+        'Could not check saved analyses',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    const available = await this.results.available(
+      hashes.filter((hash) => owned.has(hash)),
+    );
     return { knownHashes: hashes.filter((hash) => available.has(hash)) };
   }
 }

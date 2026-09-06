@@ -13,6 +13,10 @@ export interface AnalysisStorageCampaign {
 }
 
 export interface AnalysisStorageStatus {
+  /** Byte totals describe either the global store or the user's logical set. */
+  storageAccounting: 'global_physical_artifacts' | 'owned_logical_artifacts';
+  /** The configured ceiling applies to the shared deduplicated artifact store. */
+  storageLimitScope: 'global_physical_artifacts';
   recentAnalysisCount: number;
   persistedAnalysisCount: number;
   persistedResultBytes: number;

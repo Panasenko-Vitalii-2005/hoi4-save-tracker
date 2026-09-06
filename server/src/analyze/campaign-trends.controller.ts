@@ -7,15 +7,23 @@ import {
   Query,
 } from '@nestjs/common';
 import { CampaignTrendsService } from './campaign-trends.service';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { SafeUserDto } from '../auth/auth.types';
+import { UserAnalysesService } from './user-analyses.service';
 
 @Controller('api/analyze/trends')
 export class CampaignTrendsController {
-  constructor(private readonly trends: CampaignTrendsService) {}
+  constructor(
+    private readonly trends: CampaignTrendsService,
+    private readonly userAnalyses: UserAnalysesService,
+  ) {}
 
   @Get()
-  async getTrends() {
+  async getTrends(@CurrentUser() currentUser: SafeUserDto) {
     try {
-      return await this.trends.build();
+      return await this.trends.build(
+        await this.userAnalyses.list(currentUser.id),
+      );
     } catch {
       throw new HttpException(
         'Could not load campaign trends',
@@ -26,6 +34,7 @@ export class CampaignTrendsController {
 
   @Get('equipment')
   async getEquipmentTrends(
+    @CurrentUser() currentUser: SafeUserDto,
     @Query('campaignKey') campaignKey: string,
     @Query('countryTag') countryTag: string,
   ) {
@@ -37,7 +46,11 @@ export class CampaignTrendsController {
     )
       throw new BadRequestException('Invalid campaign equipment query');
     try {
-      return await this.trends.buildEquipment(campaignKey, countryTag);
+      return await this.trends.buildEquipment(
+        campaignKey,
+        countryTag,
+        await this.userAnalyses.list(currentUser.id),
+      );
     } catch {
       throw new HttpException(
         'Could not load campaign equipment trends',

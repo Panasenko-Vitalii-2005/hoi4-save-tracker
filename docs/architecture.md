@@ -100,9 +100,11 @@ Storage status lists recognized gzip files and sums filesystem sizes. It does no
 
 Original uploaded `.hoi4` files are managed temporary inputs and are not retained in these stores. The Compose `/app/saves` read-only mount is a separate source directory.
 
-PostgreSQL is an additional, optional metadata store. The auth core uses its versioned `users` and `sessions` schema for registration, salted scrypt password hashes, opaque-session token hashes, and fixed expiry. `analysis_ownership` records the unique user/SHA-256 pairs created by successful authenticated analyses. It does not contain AnalyzeResult data, artifact blobs, Recent metadata, Shares, projections, or parser caches. Database mode is disabled by default outside Compose; enabled startup validates connectivity but ordinary application startup never applies migrations.
+PostgreSQL is an additional, optional metadata store. The auth core uses its versioned `users` and `sessions` schema for registration, salted scrypt password hashes, opaque-session token hashes, and fixed expiry. `analysis_ownership` records the unique user/SHA-256 pairs created by successful authenticated analyses plus the small per-user Recent fields (`pinned`, safe display filename, analysis time). It does not contain AnalyzeResult data, artifact blobs, campaign/result metrics, Shares, projections, or parser caches. Database mode is disabled by default outside Compose; enabled startup validates connectivity but ordinary application startup never applies migrations.
 
-Result artifacts remain globally deduplicated immutable objects keyed by save-content SHA-256. Ownership is separate metadata: one user/hash pair is idempotent, while the same hash may belong to multiple users without duplicating the gzip artifact. Existing artifacts without an ownership row remain explicitly unowned; no filename, campaign, IP, browser state, or first-user backfill is used. An ownership write failure fails the analysis request closed rather than creating an anonymous fallback relation.
+Result artifacts remain globally deduplicated immutable objects keyed by save-content SHA-256. Ownership is separate metadata: one user/hash pair is idempotent, while the same hash may belong to multiple users without duplicating the gzip artifact. Private Recent, reopen, Compare, Trends, storage, deletion, pin, share-management, and batch-preflight surfaces authorize against this relation. Missing ownership always hides the private resource with the same unavailable response; existing legacy artifacts without a row remain explicitly unowned. No filename, campaign, IP, browser state, public share, or first-user backfill establishes ownership. An ownership-store failure fails private access closed.
+
+Storage status reports the requesting user's logical sum of owned artifact bytes. The configured byte ceiling still applies to the shared physical artifact store, so those numbers are deliberately labelled as different scopes. Removing an analysis removes only that user's ownership relation. It never directly deletes the globally deduplicated blob; existing global retention and public-share protection continue to own physical lifecycle, and another owner remains unaffected. Per-user pins are stored on ownership rows, while the legacy global pin bit is maintained only as a conservative retention signal.
 
 A global guard makes controller routes private by default. Explicit public exceptions are health, CSRF bootstrap, registration, login, idempotent logout, and public share reads. The guard authenticates `hoi4_session` into a safe `CurrentUser` principal, and validates the independent `hoi4_csrf` cookie against `X-CSRF-Token` on `POST`, `PUT`, `PATCH`, and `DELETE`. `GET`, `HEAD`, and CORS preflight are exempt. Login/register/logout deliberately use the same CSRF policy even though they do not require an existing session.
 
@@ -124,7 +126,7 @@ Compare reads two persisted results and calculates finite-number deltas as Targe
 
 Creating a share maps one persisted hash to a random 128-bit URL-safe ID. The public endpoint resolves only that ID and returns the persisted analysis. It does not expose a listing, original save, private filename, internal hash, filesystem path, or server diagnostics.
 
-Share links are unlisted but unauthenticated. Anyone with the URL can read the complete derived analysis. Public capability reads intentionally remain independent of ownership during Phase 3A, including legacy shared artifacts. Share management and the rest of the application APIs remain global among authenticated users until Phase 3B authorization is implemented.
+Share links are unlisted but unauthenticated. Anyone with the URL can read the complete derived analysis. Public capability reads intentionally remain independent of ownership, including legacy shared artifacts. Creating or revoking a share is private and requires ownership of the underlying analysis; a public link does not grant private ownership.
 
 ## Failure and cleanup behavior
 
@@ -161,9 +163,9 @@ Share links are unlisted but unauthenticated. Anyone with the URL can read the c
 
 Compose runs PostgreSQL, a one-shot migration service, one backend, and one nginx frontend. PostgreSQL and the existing backend data directory use separate named volumes; the optional saves directory remains a read-only bind mount.
 
-The current model records identity and ownership metadata but still assumes one trusted data domain/process:
+The current model enforces per-user ownership but still assumes one application process owns the file stores:
 
-- successful new analyses record ownership, but product APIs do not yet enforce it or provide per-user quotas;
+- successful new analyses record ownership and private product APIs enforce it; there are no per-user storage quotas;
 - no cross-process locks, distributed queue, or shared cache;
 - no application TLS or edge rate limiter;
 - no replication or automatic backup; PostgreSQL migrations are explicit and versioned;

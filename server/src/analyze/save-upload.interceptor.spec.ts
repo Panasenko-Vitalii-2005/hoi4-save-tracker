@@ -30,6 +30,7 @@ import { AnalysisComparisonService } from './analysis-comparison.service';
 import { smallSave, zipSave, forgedZipSize } from './fixtures/upload.fixture';
 import { UPLOAD_STALE_MS } from '../hoi4/save-upload.policy';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
+import { UserAnalysesService } from './user-analyses.service';
 import type { SafeUserDto } from '../auth/auth.types';
 import type { NextFunction, Request, Response } from 'express';
 
@@ -110,6 +111,7 @@ describe('Public upload boundary and cleanup', () => {
           provide: AnalysisOwnershipService,
           useValue: { ensureOwnership: jest.fn().mockResolvedValue(undefined) },
         },
+        { provide: UserAnalysesService, useValue: {} },
       ],
     }).compile();
     boundary = module.get(SaveUploadInterceptor);

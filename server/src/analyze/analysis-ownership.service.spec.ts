@@ -41,10 +41,23 @@ describe('analysis ownership repository and service', () => {
     ).resolves.toBeUndefined();
 
     expect(database.query).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'ON CONFLICT (user_id, analysis_hash) DO NOTHING',
-      ),
-      [userId, hash],
+      expect.stringContaining('ON CONFLICT (user_id, analysis_hash) DO UPDATE'),
+      [userId, hash, null, null],
+    );
+  });
+
+  test('stores sanitized per-user display metadata without changing hash identity', async () => {
+    database.query.mockResolvedValue(result([]));
+    const analyzedAt = new Date('2026-02-03T04:05:06.000Z');
+
+    await service.ensureOwnership(userId, hash, {
+      fileName: '../private/path/save.hoi4',
+      analyzedAt,
+    });
+
+    expect(database.query).toHaveBeenCalledWith(
+      expect.stringContaining('file_name = COALESCE'),
+      [userId, hash, 'save.hoi4', analyzedAt],
     );
   });
 
@@ -85,6 +98,64 @@ describe('analysis ownership repository and service', () => {
     );
     await expect(service.hasOwnership(userId, hash)).rejects.toBeInstanceOf(
       DatabaseUnavailableError,
+    );
+  });
+
+  test('uses bulk ownership queries and keeps pin/removal scoped to one user', async () => {
+    const other = 'b'.repeat(64);
+    database.query
+      .mockResolvedValueOnce(
+        result([
+          {
+            analysisHash: hash,
+            pinned: true,
+            fileName: 'mine.hoi4',
+            analyzedAt: new Date('2026-01-01T00:00:00.000Z'),
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(result([{ analysisHash: hash }]))
+      .mockResolvedValueOnce(result([{ analysisHash: hash }]))
+      .mockResolvedValueOnce(result([{ analysisHash: hash }]))
+      .mockResolvedValueOnce(result([{ analysisHash: other }]));
+
+    await expect(service.listForUser(userId)).resolves.toEqual([
+      {
+        analysisHash: hash,
+        pinned: true,
+        fileName: 'mine.hoi4',
+        analyzedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    await expect(service.ownedHashes(userId, [hash, other])).resolves.toEqual(
+      new Set([hash]),
+    );
+    await expect(service.setPinned(userId, hash, false)).resolves.toBe(true);
+    await expect(service.remove(userId, [hash])).resolves.toEqual([hash]);
+    await expect(service.pinnedHashes([hash, other])).resolves.toEqual(
+      new Set([other]),
+    );
+
+    expect(database.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('analysis_hash = ANY($2::text[])'),
+      [userId, [hash, other]],
+    );
+  });
+
+  test('checks multiple required hashes in one query', async () => {
+    const other = 'b'.repeat(64);
+    database.query.mockResolvedValueOnce(
+      result([{ analysisHash: hash }, { analysisHash: other }]),
+    );
+
+    await expect(service.hasAllOwnership(userId, [hash, other])).resolves.toBe(
+      true,
+    );
+    expect(database.query).toHaveBeenCalledTimes(1);
+    expect(database.query).toHaveBeenCalledWith(
+      expect.stringContaining('analysis_hash = ANY($2::text[])'),
+      [userId, [hash, other]],
     );
   });
 });

@@ -15,6 +15,15 @@ import { comparisonResult } from './fixtures/analysis-comparison.fixture';
 import type { AnalysisComparisonDto } from './analysis-comparison.types';
 import { SaveUploadInterceptor } from './save-upload.interceptor';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
+import { UserAnalysesService } from './user-analyses.service';
+import type { NextFunction, Request, Response } from 'express';
+import type { SafeUserDto } from '../auth/auth.types';
+
+const USER: SafeUserDto = {
+  id: '11111111-1111-4111-8111-111111111111',
+  email: 'owner@example.com',
+  createdAt: '2026-01-01T00:00:00.000Z',
+};
 
 describe('Compare persisted analyses API', () => {
   let app: INestApplication<App>;
@@ -28,6 +37,7 @@ describe('Compare persisted analyses API', () => {
     gameVersion: '1.19.2',
   };
   const analyze = jest.fn();
+  const hasAllOwnership = jest.fn().mockResolvedValue(true);
   const start = async () => {
     const module = await Test.createTestingModule({
       controllers: [AnalyzeController],
@@ -42,18 +52,33 @@ describe('Compare persisted analyses API', () => {
         { provide: RecentAnalysesService, useValue: {} },
         {
           provide: AnalysisOwnershipService,
-          useValue: { ensureOwnership: jest.fn() },
+          useValue: {
+            ensureOwnership: jest.fn(),
+            hasAllOwnership,
+          },
         },
+        { provide: UserAnalysesService, useValue: {} },
       ],
     }).compile();
     results = module.get(PersistedAnalysisResultService);
     app = module.createNestApplication();
+    app.use(
+      (
+        request: Request & { user?: SafeUserDto },
+        _response: Response,
+        next: NextFunction,
+      ) => {
+        request.user = USER;
+        next();
+      },
+    );
     await app.init();
   };
   beforeEach(async () => {
     directory = await mkdtemp(join(tmpdir(), 'hoi4-compare-'));
     process.env.HOI4_ANALYSIS_RESULTS_DIR = directory;
     analyze.mockClear();
+    hasAllOwnership.mockReset().mockResolvedValue(true);
     jest.spyOn(parser, 'analyzeSave');
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     await start();
@@ -141,6 +166,18 @@ describe('Compare persisted analyses API', () => {
     expect(body.hasChanges).toBe(false);
     expect(body.summary.divisions.delta).toBe(0);
     expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  test('requires both analyses before reading either persisted result', async () => {
+    hasAllOwnership.mockResolvedValueOnce(false);
+    const read = jest.spyOn(results, 'getWithContext');
+
+    const response = await get().expect(404);
+    expect(response.body).toMatchObject({
+      message: 'One or both saved analysis results are unavailable',
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(response.text).not.toMatch(/owner|base|target/i);
   });
 
   test.each([

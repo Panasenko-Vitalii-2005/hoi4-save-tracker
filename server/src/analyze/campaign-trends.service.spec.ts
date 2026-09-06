@@ -137,6 +137,37 @@ describe('CampaignTrendsService', () => {
     expect(dto.campaigns[1].campaignId).toBe(campaignB);
   });
 
+  test('loads only the ownership-filtered snapshots supplied by the controller', async () => {
+    const owned = item('a', '1936.1.1', '2026-01-01T00:00:00Z');
+    const foreign = item('b', '1936.2.1', '2026-01-02T00:00:00Z');
+    add(owned, campaignA);
+    add(foreign, campaignA);
+
+    const dto = await service.build([owned]);
+
+    expect(dto.snapshotCount).toBe(1);
+    expect(dto.campaigns[0].snapshots.map((snapshot) => snapshot.hash)).toEqual(
+      [owned.hash],
+    );
+    expect(results.getWithContext).toHaveBeenCalledTimes(1);
+    expect(results.getWithContext).toHaveBeenCalledWith(owned.hash);
+  });
+
+  test('equipment trends use the same ownership-filtered snapshot set', async () => {
+    const owned = item('a', '1936.1.1', '2026-01-01T00:00:00Z');
+    const foreign = item('b', '1936.2.1', '2026-01-02T00:00:00Z');
+    add(owned, campaignA);
+    add(foreign, campaignA);
+
+    const dto = await service.buildEquipment(`campaign:${campaignA}`, 'GER', [
+      owned,
+    ]);
+
+    expect(dto.snapshotHashes).toEqual([owned.hash]);
+    expect(results.getWithContext).toHaveBeenCalledTimes(1);
+    expect(results.getWithContext).toHaveBeenCalledWith(owned.hash);
+  });
+
   test('isolates every unknown legacy analysis instead of guessing continuity', async () => {
     add(item('a', '1936.1.1', '2026-01-01T00:00:00Z'), null);
     add(item('b', '1936.2.1', '2026-01-02T00:00:00Z'), null);

@@ -367,6 +367,20 @@ export class RecentAnalysesService {
     });
   }
 
+  setPinnedStates(states: ReadonlyMap<string, boolean>): Promise<void> {
+    return this.enqueue(async () => {
+      if (states.size === 0) return;
+      const next = this.retain(
+        this.items.map((item) => {
+          const pinned = states.get(item.hash);
+          return pinned === undefined ? item : { ...item, pinned };
+        }),
+      );
+      await this.persist(next);
+      this.items = next;
+    });
+  }
+
   revokeShare(hash: string): Promise<boolean> {
     return this.enqueue(async () => {
       if (!this.shares) return false;
@@ -546,6 +560,8 @@ export class RecentAnalysesService {
       );
     const pinnedAnalysisCount = this.items.filter((item) => item.pinned).length;
     return {
+      storageAccounting: 'global_physical_artifacts',
+      storageLimitScope: 'global_physical_artifacts',
       recentAnalysisCount: this.items.length,
       persistedAnalysisCount: storage.files.length,
       persistedResultBytes: storage.totalBytes,

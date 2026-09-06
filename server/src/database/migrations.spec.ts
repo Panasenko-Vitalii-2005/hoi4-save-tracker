@@ -7,7 +7,7 @@ describe('database migrations', () => {
       resolve(process.cwd(), 'migrations'),
     );
 
-    expect(migrations).toHaveLength(2);
+    expect(migrations).toHaveLength(3);
     expect(migrations[0]).toMatchObject({
       version: '0001',
       name: '0001_users_sessions.sql',
@@ -24,5 +24,12 @@ describe('database migrations', () => {
     expect(migrations[1].sql).toContain('CREATE TABLE analysis_ownership');
     expect(migrations[1].sql).toContain('PRIMARY KEY (user_id, analysis_hash)');
     expect(migrations[1].sql).not.toContain('AnalyzeResult');
+    expect(migrations[2]).toMatchObject({
+      version: '0003',
+      name: '0003_analysis_ownership_metadata.sql',
+    });
+    expect(migrations[2].sql).toContain('ADD COLUMN pinned');
+    expect(migrations[2].sql).toContain('ADD COLUMN file_name');
+    expect(migrations[2].sql).not.toContain('AnalyzeResult');
   });
 });

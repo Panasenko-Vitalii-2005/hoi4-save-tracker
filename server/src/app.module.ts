@@ -26,6 +26,7 @@ import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { AnalysisOwnershipRepository } from './analyze/analysis-ownership.repository';
 import { AnalysisOwnershipService } from './analyze/analysis-ownership.service';
+import { UserAnalysesService } from './analyze/user-analyses.service';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { AnalysisOwnershipService } from './analyze/analysis-ownership.service';
     SaveUploadInterceptor,
     AnalysisOwnershipRepository,
     AnalysisOwnershipService,
+    UserAnalysesService,
   ],
 })
 export class AppModule {}

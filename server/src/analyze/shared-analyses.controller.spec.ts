@@ -11,6 +11,9 @@ import { PersistedAnalysisResultService } from './persisted-analysis-result.serv
 import { RecentAnalysesService } from './recent-analyses.service';
 import { SharedAnalysesController } from './shared-analyses.controller';
 import { SharedAnalysesService } from './shared-analyses.service';
+import { AnalysisOwnershipService } from './analysis-ownership.service';
+import type { NextFunction, Request, Response } from 'express';
+import type { SafeUserDto } from '../auth/auth.types';
 
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
@@ -25,6 +28,11 @@ interface ErrorResponse {
 }
 
 describe('SharedAnalysesController', () => {
+  const user: SafeUserDto = {
+    id: '11111111-1111-4111-8111-111111111111',
+    email: 'owner@example.com',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  };
   const originalShareFile = process.env.HOI4_SHARED_ANALYSES_FILE;
   const originalRecentFile = process.env.HOI4_RECENT_ANALYSES_FILE;
   const originalResultDirectory = process.env.HOI4_ANALYSIS_RESULTS_DIR;
@@ -34,6 +42,7 @@ describe('SharedAnalysesController', () => {
   let results: PersistedAnalysisResultService;
   let shares: SharedAnalysesService;
   let history: RecentAnalysesService;
+  const hasOwnership = jest.fn().mockResolvedValue(true);
 
   beforeEach(async () => {
     directory = await files.mkdtemp(join(tmpdir(), 'hoi4-share-api-'));
@@ -49,13 +58,28 @@ describe('SharedAnalysesController', () => {
         PersistedAnalysisResultService,
         SharedAnalysesService,
         RecentAnalysesService,
+        {
+          provide: AnalysisOwnershipService,
+          useValue: { hasOwnership },
+        },
       ],
     }).compile();
     results = moduleRef.get(PersistedAnalysisResultService);
     shares = moduleRef.get(SharedAnalysesService);
     history = moduleRef.get(RecentAnalysesService);
     app = moduleRef.createNestApplication();
+    app.use(
+      (
+        request: Request & { user?: SafeUserDto },
+        _response: Response,
+        next: NextFunction,
+      ) => {
+        request.user = user;
+        next();
+      },
+    );
     await app.init();
+    hasOwnership.mockReset().mockResolvedValue(true);
     await history.list();
   });
 
@@ -120,6 +144,26 @@ describe('SharedAnalysesController', () => {
     expect((response.body as ErrorResponse).message).toBe(
       'Saved analysis result is unavailable',
     );
+  });
+
+  test('foreign and legacy hashes cannot create or revoke shares', async () => {
+    const key = await persist('foreign');
+    const existing = await shares.create(key);
+    hasOwnership.mockResolvedValue(false);
+
+    const create = await request(app.getHttpServer())
+      .post(`/api/analyze/recent/${key}/share`)
+      .expect(404);
+    const revoke = await request(app.getHttpServer())
+      .delete(`/api/analyze/recent/${key}/share`)
+      .expect(404);
+    expect((create.body as ErrorResponse).message).toBe(
+      'Saved analysis result is unavailable',
+    );
+    expect((revoke.body as ErrorResponse).message).toBe(
+      'Saved analysis result is unavailable',
+    );
+    expect(await shares.getResult(existing!.id)).toEqual(result);
   });
 
   test.each([

@@ -64,6 +64,8 @@ function validStatus(value: unknown): value is AnalysisStorageStatus {
         Number.isSafeInteger(status[key]) &&
         status[key] >= 0,
     ) &&
+    status.storageAccounting === "owned_logical_artifacts" &&
+    status.storageLimitScope === "global_physical_artifacts" &&
     typeof status.shareStatusReliable === "boolean" &&
     Array.isArray(status.campaigns)
   );
@@ -327,19 +329,16 @@ export function AnalysisStorageManagement({
     }
   };
 
-  const usedPercent = status?.maxPersistedResultBytes
-    ? (status.persistedResultBytes / status.maxPersistedResultBytes) * 100
-    : 0;
   const selected = status?.campaigns.find(
     (campaign) => campaign.campaignId === selectedCampaign,
   );
 
   if (!loading && !status && !loadError) return null;
   return (
-    <section className="analyzer-storage" aria-label="Local analysis storage">
+    <section className="analyzer-storage" aria-label="Your saved analyses">
       <div className="analyzer-storage-summary">
         <div>
-          <strong>Local analysis storage</strong>
+          <strong>Your saved analyses</strong>
           {status ? (
             <span>
               {countLabel(status.persistedAnalysisCount, "stored result")} ·{" "}
@@ -354,17 +353,12 @@ export function AnalysisStorageManagement({
         {status && (
           <div className="analyzer-storage-usage">
             <span>
-              {formatBytes(status.persistedResultBytes)} of{" "}
+              {formatBytes(status.persistedResultBytes)} logical result data
+            </span>
+            <span className="micro-copy">
+              Shared artifact-store limit:{" "}
               {formatBytes(status.maxPersistedResultBytes)}
             </span>
-            <progress
-              max={status.maxPersistedResultBytes}
-              value={Math.min(
-                status.persistedResultBytes,
-                status.maxPersistedResultBytes,
-              )}
-              aria-label="Analysis results storage used"
-            />
           </div>
         )}
       </div>
@@ -373,13 +367,6 @@ export function AnalysisStorageManagement({
         here. Derived analysis results and Recent metadata are stored locally;
         deleting a result means analyzing the original save again to reopen it.
       </p>
-      {status && usedPercent >= 85 && (
-        <div className="analyzer-storage-warning" role="status">
-          Analysis result storage is{" "}
-          {usedPercent >= 100 ? "full" : "nearly full"}. Remove unneeded
-          unpinned analyses to free space.
-        </div>
-      )}
       {loadError && (
         <div className="recovery-notice" role="alert">
           <div>
@@ -451,9 +438,9 @@ export function AnalysisStorageManagement({
                 )}
               </div>
               <p className="micro-copy">
-                Pinned analyses are protected from unpinned cleanup. The hard
-                storage limit may still prevent reopening old results when space
-                is exhausted.
+                Pinned analyses are protected from unpinned cleanup. Removing an
+                analysis revokes your access; its deduplicated result
+                artifact may remain for another owner or an active public link.
               </p>
             </div>
           </details>

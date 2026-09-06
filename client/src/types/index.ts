@@ -29,6 +29,8 @@ export interface AnalysisStorageCampaign {
 }
 
 export interface AnalysisStorageStatus {
+  storageAccounting: "owned_logical_artifacts";
+  storageLimitScope: "global_physical_artifacts";
   recentAnalysisCount: number;
   persistedAnalysisCount: number;
   persistedResultBytes: number;

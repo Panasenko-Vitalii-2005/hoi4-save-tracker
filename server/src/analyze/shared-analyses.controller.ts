@@ -15,20 +15,32 @@ import {
   SharedAnalysisLimitError,
 } from './shared-analyses.service';
 import { Public } from '../auth/route-access.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import type { SafeUserDto } from '../auth/auth.types';
+import { AnalysisOwnershipService } from './analysis-ownership.service';
 
 @Controller()
 export class SharedAnalysesController {
   constructor(
     private readonly shares: SharedAnalysesService,
     private readonly history: RecentAnalysesService,
+    private readonly ownership: AnalysisOwnershipService,
   ) {}
 
   @Post('api/analyze/recent/:hash/share')
-  async create(@Param('hash') hash: string) {
+  async create(
+    @CurrentUser() currentUser: SafeUserDto,
+    @Param('hash') hash: string,
+  ) {
     const key = normalizeAnalysisHash(hash);
     if (!key)
       throw new HttpException('Invalid analysis hash', HttpStatus.BAD_REQUEST);
     try {
+      if (!(await this.ownership.hasOwnership(currentUser.id, key)))
+        throw new HttpException(
+          'Saved analysis result is unavailable',
+          HttpStatus.NOT_FOUND,
+        );
       const link = await this.shares.create(key);
       if (!link)
         throw new HttpException(
@@ -77,13 +89,22 @@ export class SharedAnalysesController {
   }
 
   @Delete('api/analyze/recent/:hash/share')
-  async revoke(@Param('hash') hash: string) {
+  async revoke(
+    @CurrentUser() currentUser: SafeUserDto,
+    @Param('hash') hash: string,
+  ) {
     const key = normalizeAnalysisHash(hash);
     if (!key)
       throw new HttpException('Invalid analysis hash', HttpStatus.BAD_REQUEST);
     try {
+      if (!(await this.ownership.hasOwnership(currentUser.id, key)))
+        throw new HttpException(
+          'Saved analysis result is unavailable',
+          HttpStatus.NOT_FOUND,
+        );
       return { revoked: await this.history.revokeShare(key) };
-    } catch {
+    } catch (error: unknown) {
+      if (error instanceof HttpException) throw error;
       throw new HttpException(
         'Could not revoke the public share link',
         HttpStatus.SERVICE_UNAVAILABLE,

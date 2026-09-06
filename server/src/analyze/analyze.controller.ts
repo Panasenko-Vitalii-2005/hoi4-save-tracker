@@ -34,6 +34,7 @@ import { LocalSaveInput } from '../auth/route-access.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SafeUserDto } from '../auth/auth.types';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
+import { UserAnalysesService } from './user-analyses.service';
 
 interface AnalyzeRequest {
   path: string;
@@ -52,10 +53,12 @@ export class AnalyzeController {
     private readonly history: RecentAnalysesService,
     private readonly comparison: AnalysisComparisonService,
     private readonly ownership: AnalysisOwnershipService,
+    private readonly userAnalyses: UserAnalysesService,
   ) {}
 
   @Get('compare')
   async compare(
+    @CurrentUser() currentUser: SafeUserDto,
     @Query('base') base: unknown,
     @Query('target') target: unknown,
   ) {
@@ -70,8 +73,19 @@ export class AnalyzeController {
       );
     let result: AnalysisComparisonDto | null;
     try {
+      if (
+        !(await this.ownership.hasAllOwnership(currentUser.id, [
+          baseHash,
+          targetHash,
+        ]))
+      )
+        throw new HttpException(
+          'One or both saved analysis results are unavailable',
+          HttpStatus.NOT_FOUND,
+        );
       result = await this.comparison.compare(baseHash, targetHash);
-    } catch {
+    } catch (error: unknown) {
+      if (error instanceof HttpException) throw error;
       throw new HttpException(
         'Could not compare saved analyses',
         HttpStatus.SERVICE_UNAVAILABLE,
@@ -86,14 +100,21 @@ export class AnalyzeController {
   }
 
   @Get('recent')
-  async recent() {
-    return { items: await this.history.list() };
+  async recent(@CurrentUser() currentUser: SafeUserDto) {
+    try {
+      return { items: await this.userAnalyses.list(currentUser.id) };
+    } catch {
+      throw new HttpException(
+        'Could not load recent analyses',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
   }
 
   @Get('storage')
-  async storage() {
+  async storage(@CurrentUser() currentUser: SafeUserDto) {
     try {
-      return await this.history.storageStatus();
+      return await this.userAnalyses.storageStatus(currentUser.id);
     } catch {
       throw new HttpException(
         'Could not read local analysis storage',
@@ -103,14 +124,13 @@ export class AnalyzeController {
   }
 
   @Delete('storage/unpinned')
-  async deleteUnpinned() {
+  async deleteUnpinned(@CurrentUser() currentUser: SafeUserDto) {
     try {
-      const deleted = await this.history.deleteUnpinned();
-      for (const hash of deleted) this.analysis.delete(hash);
+      const deleted = await this.userAnalyses.deleteUnpinned(currentUser.id);
       return {
         deletedCount: deleted.length,
-        items: await this.history.list(),
-        storage: await this.history.storageStatus(),
+        items: await this.userAnalyses.list(currentUser.id),
+        storage: await this.userAnalyses.storageStatus(currentUser.id),
       };
     } catch {
       throw new HttpException(
@@ -122,6 +142,7 @@ export class AnalyzeController {
 
   @Delete('storage/campaign/:campaignId')
   async deleteCampaign(
+    @CurrentUser() currentUser: SafeUserDto,
     @Param('campaignId') campaignId: string,
     @Body() body: unknown,
   ) {
@@ -141,15 +162,15 @@ export class AnalyzeController {
         HttpStatus.BAD_REQUEST,
       );
     try {
-      const deleted = await this.history.deleteCampaign(
+      const deleted = await this.userAnalyses.deleteCampaign(
+        currentUser.id,
         key,
         body.includePinned,
       );
-      for (const hash of deleted) this.analysis.delete(hash);
       return {
         deletedCount: deleted.length,
-        items: await this.history.list(),
-        storage: await this.history.storageStatus(),
+        items: await this.userAnalyses.list(currentUser.id),
+        storage: await this.userAnalyses.storageStatus(currentUser.id),
       };
     } catch (error: unknown) {
       if (error instanceof PinnedCampaignAnalysesError)
@@ -169,9 +190,9 @@ export class AnalyzeController {
   }
 
   @Delete('recent')
-  async clearRecent() {
+  async clearRecent(@CurrentUser() currentUser: SafeUserDto) {
     try {
-      await this.history.clear();
+      await this.userAnalyses.clear(currentUser.id);
       return { items: [] };
     } catch {
       throw new HttpException(
@@ -182,11 +203,22 @@ export class AnalyzeController {
   }
 
   @Get('recent/:hash/result')
-  async openResult(@Param('hash') hash: string) {
+  async openResult(
+    @CurrentUser() currentUser: SafeUserDto,
+    @Param('hash') hash: string,
+  ) {
     const key = normalizeAnalysisHash(hash);
     if (!key)
       throw new HttpException('Invalid analysis hash', HttpStatus.BAD_REQUEST);
-    const result = await this.history.getResult(key);
+    let result: Awaited<ReturnType<UserAnalysesService['getResult']>>;
+    try {
+      result = await this.userAnalyses.getResult(currentUser.id, key);
+    } catch {
+      throw new HttpException(
+        'Could not load the saved analysis',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
     if (!result)
       throw new HttpException(
         'Saved analysis result is unavailable',
@@ -196,15 +228,23 @@ export class AnalyzeController {
   }
 
   @Delete('recent/:hash')
-  async deleteRecent(@Param('hash') hash: string) {
+  async deleteRecent(
+    @CurrentUser() currentUser: SafeUserDto,
+    @Param('hash') hash: string,
+  ) {
     const key = normalizeAnalysisHash(hash);
     if (!key)
       throw new HttpException('Invalid analysis hash', HttpStatus.BAD_REQUEST);
     try {
-      await this.history.delete(key);
-      this.analysis.delete(key);
-      return { items: await this.history.list() };
-    } catch {
+      const found = await this.userAnalyses.delete(currentUser.id, key);
+      if (!found)
+        throw new HttpException(
+          'Saved analysis result is unavailable',
+          HttpStatus.NOT_FOUND,
+        );
+      return { items: await this.userAnalyses.list(currentUser.id) };
+    } catch (error: unknown) {
+      if (error instanceof HttpException) throw error;
       throw new HttpException(
         'Could not delete the saved analysis',
         HttpStatus.SERVICE_UNAVAILABLE,
@@ -213,7 +253,11 @@ export class AnalyzeController {
   }
 
   @Patch('recent/:hash')
-  async pinRecent(@Param('hash') hash: string, @Body() body: unknown) {
+  async pinRecent(
+    @CurrentUser() currentUser: SafeUserDto,
+    @Param('hash') hash: string,
+    @Body() body: unknown,
+  ) {
     const key = normalizeAnalysisHash(hash);
     if (!key)
       throw new HttpException('Invalid analysis hash', HttpStatus.BAD_REQUEST);
@@ -231,7 +275,11 @@ export class AnalyzeController {
       );
     let found: boolean;
     try {
-      found = await this.history.setPinned(key, body.pinned);
+      found = await this.userAnalyses.setPinned(
+        currentUser.id,
+        key,
+        body.pinned,
+      );
     } catch {
       throw new HttpException(
         'Could not update the saved analysis',
@@ -240,10 +288,10 @@ export class AnalyzeController {
     }
     if (!found)
       throw new HttpException(
-        'Recent analysis was not found',
+        'Saved analysis result is unavailable',
         HttpStatus.NOT_FOUND,
       );
-    return { items: await this.history.list() };
+    return { items: await this.userAnalyses.list(currentUser.id) };
   }
 
   @Post()
@@ -288,14 +336,14 @@ export class AnalyzeController {
       uploadedSave?.size ?? (await fs.promises.stat(filePath)).size;
     const { hash, result, comparisonContext } =
       await this.analysis.analyzeWithHash(filePath);
+    const record = {
+      hash,
+      fileName: uploadedSave?.originalname ?? path.basename(filePath),
+      fileSizeBytes,
+    };
     // The interceptor owns cleanup, including pre-controller failures and disconnects.
     let persisted = false;
     if (!response.destroyed) {
-      const record = {
-        hash,
-        fileName: uploadedSave?.originalname ?? path.basename(filePath),
-        fileSizeBytes,
-      };
       if (responseMode === 'batch') {
         persisted = await this.history.recordWithStatus(
           record,
@@ -308,23 +356,25 @@ export class AnalyzeController {
     }
     if (responseMode === 'batch') {
       if (!persisted) throw new SaveInputError('PERSISTENCE_FAILED');
-      await this.assignOwnership(currentUser, hash);
+      await this.assignOwnership(currentUser, hash, record.fileName);
       return {
         hash,
         gameDate: result.game_date,
         campaignId: comparisonContext.campaignId,
       };
     }
-    if (!response.destroyed) await this.assignOwnership(currentUser, hash);
+    if (!response.destroyed)
+      await this.assignOwnership(currentUser, hash, record.fileName);
     return result;
   }
 
   private async assignOwnership(
     currentUser: SafeUserDto,
     hash: string,
+    fileName: string,
   ): Promise<void> {
     try {
-      await this.ownership.ensureOwnership(currentUser.id, hash);
+      await this.ownership.ensureOwnership(currentUser.id, hash, { fileName });
     } catch {
       throw new HttpException(
         'Could not record analysis ownership',
