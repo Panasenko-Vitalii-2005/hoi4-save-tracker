@@ -60,7 +60,10 @@ describe('SharedAnalysesController', () => {
         RecentAnalysesService,
         {
           provide: AnalysisOwnershipService,
-          useValue: { hasOwnership },
+          useValue: {
+            hasOwnership,
+            listAllOwnedHashes: jest.fn().mockResolvedValue(new Set()),
+          },
         },
       ],
     }).compile();

@@ -308,7 +308,32 @@ describe('SharedAnalysesService', () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain(directory);
   });
 
-  test('hard byte cap evicts shared results only as a last resort and invalidates links', async () => {
+  test('unreliable share state cannot budget-evict a Recent-listed artifact', async () => {
+    const history = new RecentAnalysesService(results, shares);
+    await history.record(
+      { hash: hash('a'), fileName: 'a.hoi4', fileSizeBytes: 100 },
+      result,
+    );
+    const size = (
+      await files.stat(join(directory, 'results', `${hash('a')}.json.gz`))
+    ).size;
+    await files.writeFile(shareFile, '{broken');
+    process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
+    results = new PersistedAnalysisResultService();
+    shares = new SharedAnalysesService(results);
+    const restarted = new RecentAnalysesService(results, shares);
+
+    expect(
+      await restarted.record(
+        { hash: hash('b'), fileName: 'b.hoi4', fileSizeBytes: 100 },
+        result,
+      ),
+    ).toBe(false);
+    expect(await results.get(hash('a'))).toEqual(result);
+    expect(await results.exists(hash('b'))).toBe(false);
+  });
+
+  test('lowered hard byte cap preserves a shared result and removes only unprotected data', async () => {
     await results.save(hash('a'), result);
     const link = await shares.create(hash('a'));
     const size = (
@@ -320,16 +345,18 @@ describe('SharedAnalysesService', () => {
     shares = new SharedAnalysesService(results);
     const history = new RecentAnalysesService(results, shares);
     await history.list();
-    expect(await results.exists(hash('a'))).toBe(false);
+    expect(await results.exists(hash('a'))).toBe(true);
     expect(await results.exists(hash('b'))).toBe(false);
-    expect(await shares.getResult(link!.id)).toBeNull();
+    expect(await shares.getResult(link!.id)).toEqual(result);
     shares = new SharedAnalysesService(results);
-    expect(await shares.getResult(link!.id)).toBeNull();
-    expect((await shares.protection()).references).toEqual([]);
+    expect(await shares.getResult(link!.id)).toEqual(result);
+    expect((await shares.protection()).references).toEqual([
+      expect.objectContaining({ hash: hash('a'), shared: true }),
+    ]);
     expect(size).toBeGreaterThan(1);
   });
 
-  test('shared result outranks pinned and ordinary results during disk eviction', async () => {
+  test('lowered disk budget preserves both shared and pinned results', async () => {
     let history = new RecentAnalysesService(results, shares);
     await history.record(
       { hash: hash('a'), fileName: 'a.hoi4', fileSizeBytes: 100 },
@@ -350,7 +377,7 @@ describe('SharedAnalysesService', () => {
     history = new RecentAnalysesService(results, shares);
     await history.list();
     expect(await results.exists(hash('a'))).toBe(true);
-    expect(await results.exists(hash('b'))).toBe(false);
+    expect(await results.exists(hash('b'))).toBe(true);
   });
 
   test('bounded share registry refuses a new link without deleting an existing one', async () => {

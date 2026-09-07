@@ -344,27 +344,21 @@ export class AnalyzeController {
     // The interceptor owns cleanup, including pre-controller failures and disconnects.
     let persisted = false;
     if (!response.destroyed) {
-      if (responseMode === 'batch') {
-        persisted = await this.history.recordWithStatus(
-          record,
-          result,
-          comparisonContext,
-        );
-      } else {
-        await this.history.record(record, result, comparisonContext);
-      }
+      persisted = await this.history.record(
+        record,
+        result,
+        comparisonContext,
+        () => this.assignOwnership(currentUser, hash, record.fileName),
+      );
     }
     if (responseMode === 'batch') {
       if (!persisted) throw new SaveInputError('PERSISTENCE_FAILED');
-      await this.assignOwnership(currentUser, hash, record.fileName);
       return {
         hash,
         gameDate: result.game_date,
         campaignId: comparisonContext.campaignId,
       };
     }
-    if (!response.destroyed)
-      await this.assignOwnership(currentUser, hash, record.fileName);
     return result;
   }
 

@@ -55,6 +55,7 @@ describe('Compare persisted analyses API', () => {
           useValue: {
             ensureOwnership: jest.fn(),
             hasAllOwnership,
+            listAllOwnedHashes: jest.fn().mockResolvedValue(new Set()),
           },
         },
         { provide: UserAnalysesService, useValue: {} },

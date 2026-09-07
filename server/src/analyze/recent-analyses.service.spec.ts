@@ -4,6 +4,7 @@ import files from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
+import type { AnalysisOwnershipService } from './analysis-ownership.service';
 import { RecentAnalysesService } from './recent-analyses.service';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
 import { SharedAnalysesService } from './shared-analyses.service';
@@ -391,6 +392,52 @@ describe('RecentAnalysesService', () => {
     expect(items[39].hash).toBe(input('0').hash);
   });
 
+  test('Recent truncation beyond 200 entries never deletes an owned early artifact', async () => {
+    const protectedHash = input('0').hash;
+    const listAllOwnedHashes = jest
+      .fn()
+      .mockResolvedValue(new Set([protectedHash]));
+    const ownership = {
+      listAllOwnedHashes,
+    } as unknown as AnalysisOwnershipService;
+    results = new PersistedAnalysisResultService(ownership);
+    history = new RecentAnalysesService(results);
+
+    for (let index = 0; index <= 200; index += 1)
+      await history.record(input(String(index)), result);
+
+    const items = await history.list();
+    expect(items).toHaveLength(200);
+    expect(items.some((item) => item.hash === protectedHash)).toBe(false);
+    expect(await results.exists(protectedHash)).toBe(true);
+    expect(listAllOwnedHashes).toHaveBeenCalled();
+  }, 30_000);
+
+  test.each(['missing', 'empty', 'corrupt'])(
+    '%s Recent metadata cannot delete an owned persisted artifact',
+    async (kind) => {
+      const protectedHash = input(`owned-${kind}`).hash;
+      const ownership = {
+        listAllOwnedHashes: jest
+          .fn()
+          .mockResolvedValue(new Set([protectedHash])),
+      } as unknown as AnalysisOwnershipService;
+      results = new PersistedAnalysisResultService(ownership);
+      expect(await results.save(protectedHash, result)).toBe(true);
+      if (kind !== 'missing') {
+        await files.mkdir(join(directory, 'data'), { recursive: true });
+        await files.writeFile(
+          file,
+          kind === 'empty' ? JSON.stringify({ items: [] }) : '{broken',
+        );
+      }
+
+      history = new RecentAnalysesService(results);
+      expect(await history.list()).toEqual([]);
+      expect(await results.get(protectedHash)).toEqual(result);
+    },
+  );
+
   test.each(['', '0', '-1', '1.5', 'abc', 'Infinity'])(
     'falls back to the 200-item default for invalid limit %j',
     (limit) => {
@@ -440,6 +487,28 @@ describe('RecentAnalysesService', () => {
     expect(await new RecentAnalysesService(results).list()).toEqual(items);
   });
 
+  test('keeps post-persistence work inside the existing mutation queue', async () => {
+    const events: string[] = [];
+    let second: Promise<boolean> | undefined;
+
+    await history.record(input('a'), result, undefined, async () => {
+      events.push('ownership-start');
+      second = history.record(input('b'), result).then((persisted) => {
+        events.push('second-record');
+        return persisted;
+      });
+      await Promise.resolve();
+      events.push('ownership-end');
+    });
+    await second;
+
+    expect(events).toEqual([
+      'ownership-start',
+      'ownership-end',
+      'second-record',
+    ]);
+  });
+
   test('failed atomic replacement leaves old store intact and does not poison later writes', async () => {
     await history.record(input('a'), result);
     const before = await files.readFile(file, 'utf8');
@@ -451,7 +520,7 @@ describe('RecentAnalysesService', () => {
           ? Promise.reject(new Error('Disk unavailable'))
           : rename(from, to),
       );
-    await expect(history.record(input('b'), result)).resolves.toBeUndefined();
+    await expect(history.record(input('b'), result)).resolves.toBe(false);
     await history.record(input('c'), result);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(await files.readFile(file, 'utf8')).toBe(before);
@@ -551,7 +620,7 @@ describe('RecentAnalysesService', () => {
 
   test('unavailable result directory does not prevent recording metadata with false availability', async () => {
     await files.writeFile(join(directory, 'results'), 'not a directory');
-    await expect(history.record(input('a'), result)).resolves.toBeUndefined();
+    await expect(history.record(input('a'), result)).resolves.toBe(false);
     expect(await history.list()).toEqual([
       expect.objectContaining({
         hash: input('a').hash,
@@ -821,7 +890,7 @@ describe('RecentAnalysesService', () => {
     expect(await history.list()).toEqual([]);
   });
 
-  test('pin-only disk overflow marks oldest pinned result unavailable without removing metadata', async () => {
+  test('lowered disk budget preserves all pinned results even when they exceed it', async () => {
     await history.record(input('a'), result);
     await history.setPinned(input('a').hash, true);
     await history.record(input('b'), result);
@@ -839,7 +908,7 @@ describe('RecentAnalysesService', () => {
       ]),
     ).toEqual([
       [true, true],
-      [true, false],
+      [true, true],
     ]);
     await history.clear();
     expect(await files.readdir(join(directory, 'results'))).toEqual([]);

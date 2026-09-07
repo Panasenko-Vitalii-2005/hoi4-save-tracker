@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { basename, win32 } from 'node:path';
-import { normalizeAnalysisHash } from './persisted-analysis-result.service';
+import { normalizeAnalysisHash } from './analysis-hash';
 import {
   AnalysisOwnershipRepository,
   type AnalysisOwnershipRow,
@@ -50,6 +50,14 @@ export class AnalysisOwnershipService {
   async listForUser(userId: string): Promise<AnalysisOwnership[]> {
     return (await this.ownership.listForUser(userId)).map((row) =>
       this.toOwnership(row),
+    );
+  }
+
+  async listAllOwnedHashes(): Promise<Set<string>> {
+    return new Set(
+      (await this.ownership.listAllOwnedHashes()).map((hash) =>
+        this.hash(hash),
+      ),
     );
   }
 

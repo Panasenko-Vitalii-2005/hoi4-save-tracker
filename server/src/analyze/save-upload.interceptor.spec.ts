@@ -109,7 +109,10 @@ describe('Public upload boundary and cleanup', () => {
         AnalysisComparisonService,
         {
           provide: AnalysisOwnershipService,
-          useValue: { ensureOwnership: jest.fn().mockResolvedValue(undefined) },
+          useValue: {
+            ensureOwnership: jest.fn().mockResolvedValue(undefined),
+            listAllOwnedHashes: jest.fn().mockResolvedValue(new Set()),
+          },
         },
         { provide: UserAnalysesService, useValue: {} },
       ],

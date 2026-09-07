@@ -233,14 +233,16 @@ export class RecentAnalysesService {
     input: Pick<RecentAnalysis, 'hash' | 'fileName' | 'fileSizeBytes'>,
     result: AnalyzeResult,
     comparisonContext?: SaveComparisonContext,
-  ): Promise<void> {
-    await this.recordWithStatus(input, result, comparisonContext);
+    onPersisted?: () => Promise<void>,
+  ): Promise<boolean> {
+    return this.recordWithStatus(input, result, comparisonContext, onPersisted);
   }
 
   async recordWithStatus(
     input: Pick<RecentAnalysis, 'hash' | 'fileName' | 'fileSizeBytes'>,
     result: AnalyzeResult,
     comparisonContext?: SaveComparisonContext,
+    onPersisted?: () => Promise<void>,
   ): Promise<boolean> {
     const context = normalizeSaveComparisonContext(comparisonContext);
     const item: RecentAnalysis = {
@@ -260,8 +262,10 @@ export class RecentAnalysesService {
       campaignId: context?.campaignId ?? null,
       playerCountryTag: context?.playerCountryTag ?? null,
     };
+    let persisted = false;
+    let onPersistedFailed = false;
+    let onPersistedError: unknown;
     try {
-      let persisted = false;
       await this.enqueue(async () => {
         // Read the latest pin state inside the mutation queue, not at request start.
         item.pinned =
@@ -291,14 +295,22 @@ export class RecentAnalysesService {
         await this.persist(next);
         this.items = next;
         persisted = next.includes(item) && item.hasPersistedResult;
+        if (persisted && onPersisted)
+          try {
+            await onPersisted();
+          } catch (error: unknown) {
+            onPersistedFailed = true;
+            onPersistedError = error;
+          }
       });
-      return persisted;
     } catch {
       this.warnWrite();
       // A result written before a failed metadata commit must not become an orphan.
       await this.enqueue(() => this.reconcile());
       return false;
     }
+    if (onPersistedFailed) throw onPersistedError;
+    return persisted;
   }
 
   clear(): Promise<void> {

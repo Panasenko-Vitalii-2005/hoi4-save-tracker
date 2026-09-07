@@ -315,7 +315,9 @@ Writes use managed temporary files, fsync, and atomic rename. Mutations are seri
 
 The analysis-result store does **not** retain uploaded original `.hoi4` files. The optional `./saves:/app/saves:ro` Compose mount is a separate user-provided source directory.
 
-PostgreSQL provides account, opaque-session, and analysis-ownership persistence. Ownership metadata does not duplicate results: analysis artifacts remain file-based and keyed globally by SHA-256. Recent content metadata and Shares also remain file-based and global, but private views are ownership-filtered. Logical owned bytes are distinct from shared physical artifact bytes. Public capability-link reads remain independent of ownership. One backend should own a persistence directory because there is still no cross-process file-store lock.
+PostgreSQL provides account, opaque-session, and analysis-ownership persistence. Ownership metadata does not duplicate results: analysis artifacts remain file-based and keyed globally by SHA-256. Recent content metadata and Shares also remain file-based and global, but private views are ownership-filtered. Logical owned bytes are distinct from shared physical artifact bytes. Public capability-link reads remain independent of ownership.
+
+At least one PostgreSQL ownership row or a valid public share protects an artifact from automated reconciliation and byte-budget eviction. Recent metadata remains useful for UI ordering and unowned cleanup, but is not retention authority for owned data. Ownership or share-state lookup failures fail closed by preserving unknown artifacts; if protected files consume the configured budget, a new result is declined instead of displacing them. Zero-owner, unshared artifacts remain eligible for the existing bounded reconciliation, while eager or scheduled garbage collection is deferred. One backend should own a persistence directory because there is still no cross-process file-store lock.
 
 ## Testing
 
@@ -377,7 +379,7 @@ Important remaining limitations:
 - no application-level TLS or durable authorization audit log;
 - nginx/reverse-proxy TLS, external connection/rate limits, container memory, and volume backup are deployment responsibilities.
 
-The current identity and ownership boundary enforces private per-user analysis access. Public hosting still requires edge-security deployment, operational backups, monitoring, and a deliberate lifecycle policy for ownerless deduplicated artifacts.
+The current identity and ownership boundary enforces private per-user analysis access and protects owned/shared artifacts from automated physical eviction. Public hosting still requires edge-security deployment, operational backups, monitoring, and per-user quotas.
 
 ## Known limitations
 
@@ -392,7 +394,7 @@ The current identity and ownership boundary enforces private per-user analysis a
 
 ## Roadmap
 
-- Add a bounded ownerless-artifact lifecycle/garbage-collection policy and per-user quota model before larger multi-user deployment.
+- Add a per-user quota model before larger multi-user deployment; eager/scheduled ownerless-artifact collection remains deferred.
 - Expand compatibility fixtures for newer HOI4 versions and representative mods.
 - Add shared persistence/admission only if multi-instance deployment becomes a real requirement.
 - Externalize and consolidate the optional Python telemetry configuration.

@@ -120,7 +120,11 @@ describe('AnalyzeController uploads', () => {
   let cache: AnalysisResultCacheService;
   let history: RecentAnalysesService;
   let results: PersistedAnalysisResultService;
-  let ownership: { ensureOwnership: jest.Mock; ownedHashes: jest.Mock };
+  let ownership: {
+    ensureOwnership: jest.Mock;
+    ownedHashes: jest.Mock;
+    listAllOwnedHashes: jest.Mock;
+  };
   let requestUser = FIRST_USER;
   const originalHistoryFile = process.env.HOI4_RECENT_ANALYSES_FILE;
   const originalResultsDir = process.env.HOI4_ANALYSIS_RESULTS_DIR;
@@ -144,6 +148,7 @@ describe('AnalyzeController uploads', () => {
       ownedHashes: jest.fn((_: string, hashes: readonly string[]) =>
         Promise.resolve(new Set(hashes)),
       ),
+      listAllOwnedHashes: jest.fn().mockResolvedValue(new Set()),
     };
     const moduleRef = await Test.createTestingModule({
       controllers: [
@@ -211,6 +216,7 @@ describe('AnalyzeController uploads', () => {
     process.env.HOI4_LOCAL_SAVES_ENABLED = 'true';
     requestUser = FIRST_USER;
     ownership.ensureOwnership.mockClear();
+    ownership.listAllOwnedHashes.mockClear();
     await history.clear();
   });
 
@@ -804,11 +810,7 @@ describe('AnalyzeController uploads', () => {
       expect((response.body as AnalyzeResponse).game_date).toBe('1944.5.1');
       const item = (await history.list())[0];
       expect(item.hasPersistedResult).toBe(false);
-      expect(ownership.ensureOwnership).toHaveBeenCalledWith(
-        FIRST_USER.id,
-        item.hash,
-        { fileName: 'failure.hoi4' },
-      );
+      expect(ownership.ensureOwnership).not.toHaveBeenCalled();
       await request(app.getHttpServer())
         .get(`/api/analyze/recent/${item.hash}/result`)
         .expect(404);

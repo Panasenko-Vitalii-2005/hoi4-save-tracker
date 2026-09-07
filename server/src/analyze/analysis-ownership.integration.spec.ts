@@ -1,8 +1,14 @@
 import { Pool } from 'pg';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { DatabaseService } from '../database/database.service';
 import { applyMigrations } from '../database/migrations';
+import { analyzeSave } from '../hoi4/hoi4-parser';
 import { AnalysisOwnershipRepository } from './analysis-ownership.repository';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
+import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
+import { SharedAnalysesService } from './shared-analyses.service';
 
 const connectionString = process.env.HOI4_TEST_DATABASE_URL;
 const describeDatabase = connectionString ? describe : describe.skip;
@@ -74,6 +80,9 @@ describeDatabase('PostgreSQL analysis ownership integration', () => {
     );
     expect(stored.rows).toHaveLength(2);
     expect(stored.rows.map((row) => row.analysis_hash)).toEqual([hash, hash]);
+    await expect(ownership.listAllOwnedHashes()).resolves.toEqual(
+      new Set([hash]),
+    );
   });
 
   test('deleting a user cascades ownership without affecting another owner', async () => {
@@ -86,6 +95,9 @@ describeDatabase('PostgreSQL analysis ownership integration', () => {
 
     await expect(ownership.hasOwnership(removed, hash)).resolves.toBe(false);
     await expect(ownership.hasOwnership(retained, hash)).resolves.toBe(true);
+    await expect(ownership.listAllOwnedHashes()).resolves.toEqual(
+      new Set([hash]),
+    );
   });
 
   test('an existing hash has unknown ownership until an explicit relation is created', async () => {
@@ -134,5 +146,49 @@ describeDatabase('PostgreSQL analysis ownership integration', () => {
     await expect(ownership.remove(first, [hash])).resolves.toEqual([hash]);
     await expect(ownership.hasOwnership(first, hash)).resolves.toBe(false);
     await expect(ownership.hasOwnership(second, hash)).resolves.toBe(true);
+  });
+
+  test('physical retention follows the last owner and then a public share', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'hoi4-owned-retention-'));
+    const previousResults = process.env.HOI4_ANALYSIS_RESULTS_DIR;
+    const previousShares = process.env.HOI4_SHARED_ANALYSES_FILE;
+    process.env.HOI4_ANALYSIS_RESULTS_DIR = join(directory, 'results');
+    process.env.HOI4_SHARED_ANALYSES_FILE = join(directory, 'shares.json');
+    try {
+      const save = join(directory, 'fixture.hoi4');
+      await writeFile(save, 'HOI4txt\ndate="1944.5.1.2"\ncountries={}');
+      const result = analyzeSave(save);
+      const first = await user('physical-first@example.com');
+      const second = await user('physical-second@example.com');
+      await ownership.ensureOwnership(first, hash);
+      await ownership.ensureOwnership(second, hash);
+      const results = new PersistedAnalysisResultService(ownership);
+      const shares = new SharedAnalysesService(results);
+
+      expect(await results.save(hash, result)).toBe(true);
+      await ownership.remove(first, [hash]);
+      await results.reconcile([]);
+      expect(await results.get(hash)).toEqual(result);
+
+      const link = await shares.create(hash);
+      await ownership.remove(second, [hash]);
+      const shared = await shares.protection();
+      await results.reconcile(shared.references, {
+        preserveUnknown: !shared.reliable,
+      });
+      expect(await shares.getResult(link!.id)).toEqual(result);
+
+      await shares.revokeByHash(hash);
+      await results.reconcile([]);
+      expect(await results.exists(hash)).toBe(false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+      if (previousResults === undefined)
+        delete process.env.HOI4_ANALYSIS_RESULTS_DIR;
+      else process.env.HOI4_ANALYSIS_RESULTS_DIR = previousResults;
+      if (previousShares === undefined)
+        delete process.env.HOI4_SHARED_ANALYSES_FILE;
+      else process.env.HOI4_SHARED_ANALYSES_FILE = previousShares;
+    }
   });
 });

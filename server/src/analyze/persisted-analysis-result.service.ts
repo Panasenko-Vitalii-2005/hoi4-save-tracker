@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import {
@@ -14,6 +14,8 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { createGunzip, gzip, gunzip } from 'node:zlib';
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
+import { normalizeAnalysisHash } from './analysis-hash';
+import { AnalysisOwnershipService } from './analysis-ownership.service';
 import {
   normalizeSaveComparisonContext,
   unknownSaveComparisonContext,
@@ -48,6 +50,7 @@ export interface PersistedResultReference {
 }
 
 export interface PersistedResultRetentionOptions {
+  /** Fail closed by preserving every artifact when protection state is unknown. */
   preserveUnknown?: boolean;
   comparisonContext?: SaveComparisonContext;
 }
@@ -81,11 +84,7 @@ const DEFAULT_MAX_BYTES = 128 * 1024 * 1024;
 const MAX_JSON_BYTES = 512 * 1024 * 1024;
 const MAX_CONTEXT_PREFIX_BYTES = 64 * 1024;
 
-export function normalizeAnalysisHash(hash: string): string | null {
-  return hash.length === 64 && /^[a-fA-F0-9]{64}$/.test(hash)
-    ? hash.toLowerCase()
-    : null;
-}
+export { normalizeAnalysisHash } from './analysis-hash';
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -133,7 +132,9 @@ export class PersistedAnalysisResultService {
   private readonly warned = new Set<string>();
   private readonly invalid = new Set<string>();
 
-  constructor() {
+  constructor(
+    @Optional() private readonly ownership?: AnalysisOwnershipService,
+  ) {
     const configured = Number(
       process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES ?? DEFAULT_MAX_BYTES,
     );
@@ -141,6 +142,27 @@ export class PersistedAnalysisResultService {
       Number.isSafeInteger(configured) && configured > 0
         ? configured
         : DEFAULT_MAX_BYTES;
+  }
+
+  private async ownershipProtection(): Promise<{
+    hashes: ReadonlySet<string>;
+    reliable: boolean;
+  }> {
+    // Direct construction is retained for isolated parser/storage consumers.
+    // The production Nest graph always provides the ownership service.
+    if (!this.ownership) return { hashes: new Set(), reliable: true };
+    try {
+      return {
+        hashes: await this.ownership.listAllOwnedHashes(),
+        reliable: true,
+      };
+    } catch {
+      this.warn(
+        'ownership',
+        'Could not verify analysis ownership; destructive artifact cleanup was skipped.',
+      );
+      return { hashes: new Set(), reliable: false };
+    }
   }
 
   private key(hash: string): string {
@@ -217,7 +239,7 @@ export class PersistedAnalysisResultService {
       if (
         !entry.isFile() ||
         entry.isSymbolicLink() ||
-        entry.size > this.maxBytes
+        entry.size > MAX_JSON_BYTES
       )
         return null;
       source = createReadStream(file, { highWaterMark: 4096 });
@@ -262,7 +284,7 @@ export class PersistedAnalysisResultService {
       if (
         !entry.isFile() ||
         entry.isSymbolicLink() ||
-        entry.size > this.maxBytes
+        entry.size > MAX_JSON_BYTES
       )
         throw new Error('Unsafe result file');
       const json = await decompress(await readFile(file), {
@@ -306,6 +328,7 @@ export class PersistedAnalysisResultService {
     const key = this.key(hash);
     return this.enqueue(async () => {
       try {
+        const ownership = await this.ownershipProtection();
         const envelope: PersistedAnalysisResultV2 = {
           formatVersion: 2,
           hash: key,
@@ -331,7 +354,8 @@ export class PersistedAnalysisResultService {
             hash: key,
             bytes: bytes.length,
           },
-          options.preserveUnknown === true,
+          options.preserveUnknown === true || !ownership.reliable,
+          ownership.hashes,
         );
         if (!admitted) return false;
         const destination = this.path(key);
@@ -457,6 +481,7 @@ export class PersistedAnalysisResultService {
     recent: readonly PersistedResultReference[],
     incoming?: { hash: string; bytes: number },
     preserveUnknown = false,
+    protectedHashes: ReadonlySet<string> = new Set(),
   ): Promise<boolean> {
     const metadata = new Map(recent.map((entry) => [entry.hash, entry]));
     const candidates = files.filter((file) => file.hash !== incoming?.hash);
@@ -471,33 +496,45 @@ export class PersistedAnalysisResultService {
       const entry = metadata.get(file.hash);
       return entry ? Date.parse(entry.analyzedAt) : file.modified;
     };
-    const oldest = candidates.sort(
-      (a, b) =>
-        this.protectionRank(a.hash, metadata, preserveUnknown) -
-          this.protectionRank(b.hash, metadata, preserveUnknown) ||
-        timestamp(a) - timestamp(b) ||
-        a.hash.localeCompare(b.hash),
-    );
+    const oldest = candidates
+      .filter(
+        (file) =>
+          file.hash !== incoming?.hash &&
+          !this.isProtected(
+            file.hash,
+            metadata,
+            preserveUnknown,
+            protectedHashes,
+          ),
+      )
+      .sort(
+        (a, b) => timestamp(a) - timestamp(b) || a.hash.localeCompare(b.hash),
+      );
     const evicted: ResultFile[] = [];
     for (const file of oldest) {
       if (total <= this.maxBytes) break;
-      // A new ordinary result cannot displace pins or shares. Decide before deleting.
-      if (file.hash === incoming?.hash) return false;
       evicted.push(file);
       total -= file.bytes;
     }
+    // Decide before deleting existing data when a new write cannot fit.
+    if (incoming && total > this.maxBytes) return false;
     for (const file of evicted) await this.remove(file.hash);
-    return true;
+    return total <= this.maxBytes;
   }
 
-  private protectionRank(
+  private isProtected(
     hash: string,
     metadata: ReadonlyMap<string, PersistedResultReference>,
     preserveUnknown: boolean,
-  ): number {
+    protectedHashes: ReadonlySet<string>,
+  ): boolean {
     const entry = metadata.get(hash);
-    if (entry?.shared === true || (preserveUnknown && !entry)) return 2;
-    return entry?.pinned === true ? 1 : 0;
+    return (
+      preserveUnknown ||
+      protectedHashes.has(hash) ||
+      entry?.shared === true ||
+      entry?.pinned === true
+    );
   }
 
   /** Reconcile only this service's regular files, never arbitrary files or links. */
@@ -506,19 +543,39 @@ export class PersistedAnalysisResultService {
     options: PersistedResultRetentionOptions = {},
   ): Promise<Set<string>> {
     return this.enqueue(async () => {
+      const ownership = await this.ownershipProtection();
+      const preserveUnknown =
+        options.preserveUnknown === true || !ownership.reliable;
       const wanted = new Set(recent.map((entry) => this.key(entry.hash)));
+      const metadata = new Map(recent.map((entry) => [entry.hash, entry]));
       const files = await this.inventory();
       for (const file of files)
-        if (!options.preserveUnknown && !wanted.has(file.hash))
+        if (
+          !wanted.has(file.hash) &&
+          !this.isProtected(
+            file.hash,
+            metadata,
+            preserveUnknown,
+            ownership.hashes,
+          )
+        )
           await this.remove(file.hash);
-      const retained = options.preserveUnknown
-        ? files
-        : files.filter((file) => wanted.has(file.hash));
+      const retained = files.filter(
+        (file) =>
+          wanted.has(file.hash) ||
+          this.isProtected(
+            file.hash,
+            metadata,
+            preserveUnknown,
+            ownership.hashes,
+          ),
+      );
       await this.enforceBudget(
         retained,
         recent,
         undefined,
-        options.preserveUnknown === true,
+        preserveUnknown,
+        ownership.hashes,
       );
       if (await this.checkDirectory()) {
         for (const entry of await readdir(this.directory, {

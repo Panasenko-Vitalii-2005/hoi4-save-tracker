@@ -71,6 +71,15 @@ export class AnalysisOwnershipRepository {
     return result.rows;
   }
 
+  async listAllOwnedHashes(): Promise<string[]> {
+    const result = await this.database.query<AnalysisHashRow>(
+      `SELECT DISTINCT analysis_hash AS "analysisHash"
+       FROM analysis_ownership
+       ORDER BY analysis_hash ASC`,
+    );
+    return result.rows.map((row) => row.analysisHash);
+  }
+
   async ownedHashes(
     userId: string,
     analysisHashes: readonly string[],

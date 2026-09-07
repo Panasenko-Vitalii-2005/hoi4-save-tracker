@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { gzip, gunzip } from 'node:zlib';
 import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
+import type { AnalysisOwnershipService } from './analysis-ownership.service';
 import {
   PersistedAnalysisResultService,
   type PersistedAnalysisResultV1,
@@ -15,6 +16,13 @@ import {
 const compress = promisify(gzip);
 const decompress = promisify(gunzip);
 const hash = (name: string) => createHash('sha256').update(name).digest('hex');
+type OwnershipReader = AnalysisOwnershipService & {
+  listAllOwnedHashes: jest.Mock;
+};
+const ownershipReader = (load: () => Promise<Set<string>>): OwnershipReader =>
+  ({
+    listAllOwnedHashes: jest.fn(load),
+  }) as unknown as OwnershipReader;
 
 describe('PersistedAnalysisResultService', () => {
   const originalDirectory = process.env.HOI4_ANALYSIS_RESULTS_DIR;
@@ -348,6 +356,88 @@ describe('PersistedAnalysisResultService', () => {
     );
   });
 
+  test('ownership protects an artifact outside Recent without reading or inflating it', async () => {
+    await service.save(hash('a'), result);
+    const ownership = ownershipReader(() =>
+      Promise.resolve(new Set([hash('a')])),
+    );
+    service = new PersistedAnalysisResultService(ownership);
+    const read = jest.spyOn(files, 'readFile');
+
+    expect([...(await service.reconcile([]))]).toEqual([hash('a')]);
+    expect(ownership.listAllOwnedHashes.mock.calls).toHaveLength(1);
+    expect(read).not.toHaveBeenCalled();
+    expect(await service.exists(hash('a'))).toBe(true);
+  });
+
+  test('ownership lookup failure fails closed without deleting unknown artifacts', async () => {
+    await service.save(hash('a'), result);
+    await service.save(hash('b'), result);
+    const ownership = ownershipReader(() =>
+      Promise.reject(new Error('PostgreSQL unavailable')),
+    );
+    service = new PersistedAnalysisResultService(ownership);
+
+    expect([...(await service.reconcile([]))].sort()).toEqual(
+      [hash('a'), hash('b')].sort(),
+    );
+    expect(await service.exists(hash('a'))).toBe(true);
+    expect(await service.exists(hash('b'))).toBe(true);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('destructive artifact cleanup was skipped'),
+    );
+  });
+
+  test('ownership lookup failure cannot budget-evict a Recent-listed artifact', async () => {
+    await service.save(hash('a'), result);
+    const size = (await files.stat(path())).size;
+    process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
+    const ownership = ownershipReader(() =>
+      Promise.reject(new Error('PostgreSQL unavailable')),
+    );
+    service = new PersistedAnalysisResultService(ownership);
+
+    expect(
+      await service.save(hash('b'), result, [
+        { hash: hash('a'), analyzedAt: '2026-08-01T00:00:00Z' },
+      ]),
+    ).toBe(false);
+    expect(await service.get(hash('a'))).toEqual(result);
+    expect(await service.exists(hash('b'))).toBe(false);
+  });
+
+  test('the last remaining owner controls when an unreferenced artifact becomes collectible', async () => {
+    let ownerCount = 2;
+    const ownership = ownershipReader(() =>
+      Promise.resolve(ownerCount > 0 ? new Set([hash('a')]) : new Set()),
+    );
+    service = new PersistedAnalysisResultService(ownership);
+    expect(await service.save(hash('a'), result)).toBe(true);
+
+    ownerCount -= 1;
+    await service.reconcile([]);
+    expect(await service.exists(hash('a'))).toBe(true);
+
+    ownerCount -= 1;
+    await service.reconcile([]);
+    expect(await service.exists(hash('a'))).toBe(false);
+  });
+
+  test('protected budget exhaustion rejects a new result without evicting owned data', async () => {
+    await service.save(hash('a'), result);
+    const size = (await files.stat(path())).size;
+    process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
+    const ownership = ownershipReader(() =>
+      Promise.resolve(new Set([hash('a')])),
+    );
+    service = new PersistedAnalysisResultService(ownership);
+
+    expect(await service.save(hash('b'), result)).toBe(false);
+    expect(await service.get(hash('a'))).toEqual(result);
+    expect(await service.exists(hash('b'))).toBe(false);
+    expect(await service.reconcile([])).toEqual(new Set([hash('a')]));
+  });
+
   test('does not delete or overwrite a directory masquerading as a result file', async () => {
     await files.mkdir(path(), { recursive: true });
     expect(await service.save(hash('a'), result)).toBe(false);
@@ -390,7 +480,7 @@ describe('PersistedAnalysisResultService', () => {
     expect(await service.exists(hash('b'))).toBe(false);
   });
 
-  test('newer pinned result can replace oldest pin when all results are pinned', async () => {
+  test('newer pinned result is declined rather than replacing an existing pin', async () => {
     await service.save(hash('a'), result);
     const size = (await files.stat(path())).size;
     process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
@@ -400,8 +490,8 @@ describe('PersistedAnalysisResultService', () => {
         { hash: hash('a'), analyzedAt: '2026-08-01T00:00:00Z', pinned: true },
         { hash: hash('b'), analyzedAt: '2026-08-02T00:00:00Z', pinned: true },
       ]),
-    ).toBe(true);
-    expect(await service.exists(hash('a'))).toBe(false);
-    expect(await service.exists(hash('b'))).toBe(true);
+    ).toBe(false);
+    expect(await service.exists(hash('a'))).toBe(true);
+    expect(await service.exists(hash('b'))).toBe(false);
   });
 });

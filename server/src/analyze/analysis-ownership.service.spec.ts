@@ -158,4 +158,19 @@ describe('analysis ownership repository and service', () => {
       [userId, [hash, other]],
     );
   });
+
+  test('loads all distinct owned hashes with one bulk query', async () => {
+    const other = 'b'.repeat(64);
+    database.query.mockResolvedValueOnce(
+      result([{ analysisHash: hash }, { analysisHash: other }]),
+    );
+
+    await expect(service.listAllOwnedHashes()).resolves.toEqual(
+      new Set([hash, other]),
+    );
+    expect(database.query).toHaveBeenCalledTimes(1);
+    expect(database.query).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT DISTINCT analysis_hash'),
+    );
+  });
 });
