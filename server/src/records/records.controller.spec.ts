@@ -9,11 +9,16 @@ describe('HealthController', () => {
         health: jest.fn().mockResolvedValue(database),
       } as unknown as DatabaseService;
       const controller = new HealthController(service);
+      const status = jest.fn();
 
-      await expect(controller.health()).resolves.toEqual({
-        status: 'ok',
+      await expect(
+        controller.health({ status } as unknown as import('express').Response),
+      ).resolves.toEqual({
+        status: database === 'unavailable' ? 'unavailable' : 'ok',
         database,
       });
+      expect(status).toHaveBeenCalledTimes(database === 'unavailable' ? 1 : 0);
+      if (database === 'unavailable') expect(status).toHaveBeenCalledWith(503);
     },
   );
 });

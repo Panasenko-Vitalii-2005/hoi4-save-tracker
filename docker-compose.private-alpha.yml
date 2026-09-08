@@ -1,0 +1,80 @@
+x-private-alpha-logging: &private-alpha-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env.private-alpha}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env.private-alpha}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.private-alpha}
+    restart: unless-stopped
+    logging: *private-alpha-logging
+    networks:
+      - database
+
+  migrate:
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:?Set POSTGRES_USER in .env.private-alpha}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.private-alpha}@postgres:5432/${POSTGRES_DB:?Set POSTGRES_DB in .env.private-alpha}
+    logging: *private-alpha-logging
+    networks:
+      - database
+
+  backend:
+    environment:
+      HOI4_CORS_ORIGIN: ${HOI4_HTTPS_ORIGIN:?Set the exact HTTPS origin in .env.private-alpha}
+      HOI4_DATABASE_ENABLED: "true"
+      DATABASE_URL: postgresql://${POSTGRES_USER:?Set POSTGRES_USER in .env.private-alpha}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.private-alpha}@postgres:5432/${POSTGRES_DB:?Set POSTGRES_DB in .env.private-alpha}
+      HOI4_SESSION_COOKIE_SECURE: "true"
+      HOI4_LOCAL_SAVES_ENABLED: "false"
+      HOI4_ANALYSIS_WORKERS: "1"
+      HOI4_ANALYSIS_REQUESTS: "2"
+    volumes: !override
+      - analysis-history:/app/data
+    restart: unless-stopped
+    logging: *private-alpha-logging
+    networks:
+      - application
+      - database
+
+  frontend:
+    ports: !reset []
+    expose:
+      - "80"
+    restart: unless-stopped
+    logging: *private-alpha-logging
+    networks:
+      - application
+
+  edge:
+    image: caddy:2.10-alpine
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env.private-alpha}
+      HOI4_HTTPS_ORIGIN: ${HOI4_HTTPS_ORIGIN:?Set the exact HTTPS origin in .env.private-alpha}
+      PRIVATE_ALPHA_USERNAME: ${PRIVATE_ALPHA_USERNAME:?Set PRIVATE_ALPHA_USERNAME in .env.private-alpha}
+      PRIVATE_ALPHA_PASSWORD_HASH: ${PRIVATE_ALPHA_PASSWORD_HASH:?Set PRIVATE_ALPHA_PASSWORD_HASH in .env.private-alpha}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/private-alpha/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *private-alpha-logging
+    networks:
+      - application
+
+networks:
+  application:
+  database:
+    internal: true
+
+volumes:
+  caddy-data:
+  caddy-config:

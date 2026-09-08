@@ -1,0 +1,18 @@
+{
+	admin off
+	email {$ACME_EMAIL}
+}
+
+{$HOI4_HTTPS_ORIGIN} {
+	basic_auth {
+		{$PRIVATE_ALPHA_USERNAME} {$PRIVATE_ALPHA_PASSWORD_HASH}
+	}
+
+	handle /api/* {
+		reverse_proxy backend:3001
+	}
+
+	handle {
+		reverse_proxy frontend:80
+	}
+}

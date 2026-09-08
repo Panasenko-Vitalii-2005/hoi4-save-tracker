@@ -1,6 +1,7 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Res } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Response } from 'express';
 import { DatabaseService } from '../database/database.service';
 import { Public } from '../auth/route-access.decorator';
 
@@ -113,7 +114,12 @@ export class HealthController {
 
   @Public()
   @Get()
-  async health() {
-    return { status: 'ok', database: await this.database.health() };
+  async health(@Res({ passthrough: true }) response: Response) {
+    const database = await this.database.health();
+    if (database === 'unavailable') response.status(503);
+    return {
+      status: database === 'unavailable' ? 'unavailable' : 'ok',
+      database,
+    };
   }
 }

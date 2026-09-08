@@ -161,7 +161,7 @@ These are regression checkpoints for one save, not universal expectations for HO
 | Backend | Node.js 22, NestJS 11, TypeScript, Worker Threads, Jest |
 | Parsing | Custom HOI4 text/ZIP decoder, structural indexes, deterministic aggregators |
 | Persistence | SHA-256 identity, gzip, atomic filesystem writes |
-| Deployment | Docker Compose, nginx |
+| Deployment | Docker Compose, nginx, optional Caddy private-alpha edge |
 | Optional telemetry | Python, watchdog, psutil |
 
 ## Running locally
@@ -185,6 +185,12 @@ Open [http://localhost:8081](http://localhost:8081). Stop with `docker compose d
 Set both `FRONTEND_PORT` and the matching exact `HOI4_CORS_ORIGIN` when changing the host port, for example `FRONTEND_PORT=8090 HOI4_CORS_ORIGIN=http://localhost:8090 docker compose up --build` in a shell that supports inline environment variables.
 
 For trusted local browsing/path analysis, opt in explicitly with `HOI4_LOCAL_SAVES_ENABLED=true docker compose up --build`. Do not enable this mode on a public deployment.
+
+### Private Alpha deployment
+
+For 2–5 trusted users on one Internet-facing VPS, use the dedicated [Private Alpha deployment profile](docs/private-alpha.md). It adds Caddy-managed HTTPS and a deployment-level Basic Auth gate while keeping the normal application authentication active. The profile requires operator-supplied secrets, removes the host `./saves` mount, keeps PostgreSQL/backend private, and preserves the PostgreSQL and analysis-history volumes.
+
+This profile is **not** a public closed-beta configuration. Per-user quotas, abuse controls, application registration gating, automated/coordinated backups, and stronger readiness/alerting remain outstanding.
 
 ### Native development
 
