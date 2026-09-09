@@ -126,12 +126,23 @@ describe("analysis request lifecycle", () => {
       requests[index].resolve(Response.json(body, { status: code })),
     );
   };
-  const chooseFile = () => {
+  const chooseFile = async (
+    file = new File(["HOI4txt"], "upload.hoi4"),
+  ) => {
+    const requestCount = requests.length;
     Object.defineProperty(picker(), "files", {
       configurable: true,
-      value: [new File(["HOI4txt"], "upload.hoi4")],
+      value: [file],
     });
     picker().dispatchEvent(new Event("change", { bubbles: true }));
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (
+        requests.length > requestCount ||
+        !status().textContent?.includes("Uploading and analyzing")
+      )
+        break;
+    }
   };
 
   test("starts idle with enabled controls and a persistent polite status region", async () => {
@@ -238,6 +249,27 @@ describe("analysis request lifecycle", () => {
     await respond(1, snapshot());
     expect(date()).toBe("1944.5.1");
     expect(picker().disabled).toBe(false);
+  });
+
+  test("reports an unreadable selected file before sending multipart", async () => {
+    await render();
+    const file = new File(["HOI4txt"], "unavailable.hoi4");
+    const read = vi
+      .spyOn(FileReader.prototype, "readAsArrayBuffer")
+      .mockImplementation(() => {
+        throw new DOMException("private path");
+      });
+
+    await act(async () => chooseFile(file));
+    read.mockRestore();
+
+    expect(requests).toHaveLength(0);
+    expect(status().textContent).toContain("selected save could not be read");
+    expect(status().textContent).toContain("still available");
+    expect(status().textContent).not.toContain("analyzer service");
+    expect(status().textContent).not.toContain("private path");
+    expect(button("Choose another file")).toBeDefined();
+    expect(button("Analyze Save").disabled).toBe(false);
   });
 
   test("success clears loading, renders the result and reenables controls", async () => {

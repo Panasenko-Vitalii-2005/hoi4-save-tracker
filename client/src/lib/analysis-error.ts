@@ -101,3 +101,11 @@ export function analysisNetworkError(): AnalysisFailure {
     recovery: "retry",
   };
 }
+
+export function analysisFileReadError(): AnalysisFailure {
+  return {
+    type: "error",
+    msg: "The selected save could not be read. Choose the file again and make sure it is still available.",
+    recovery: "choose-file",
+  };
+}

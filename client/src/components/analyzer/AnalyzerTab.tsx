@@ -30,6 +30,7 @@ import {
 import {
   ANALYZER_UNAVAILABLE_MESSAGE,
   analysisError,
+  analysisFileReadError,
   analysisNetworkError,
   type AnalysisFailure,
 } from "@/lib/analysis-error";
@@ -53,6 +54,20 @@ interface SaveFile {
   path: string;
   size_mb: number;
   modified: string;
+}
+
+function probeUploadFile(file: File): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve();
+    reader.onerror = () => reject(reader.error);
+    reader.onabort = () => reject(new DOMException("File read aborted"));
+    try {
+      reader.readAsArrayBuffer(file.slice(0, 1));
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 function isSaveBrowserData(
@@ -561,6 +576,17 @@ export function AnalyzerTab({
       msg: `${uploadedFile ? "Uploading and analyzing" : "Analyzing"} ${fileName}…${result ? " Previous results remain visible until the new analysis succeeds." : ""}`,
     });
     try {
+      if (uploadedFile) {
+        try {
+          // Force a bounded read before fetch so a stale/unavailable browser
+          // File is not misreported as an analyzer-service outage.
+          await probeUploadFile(uploadedFile);
+        } catch {
+          lastAnalysis.current = null;
+          setStatus(analysisFileReadError());
+          return;
+        }
+      }
       const formData = new FormData();
       if (uploadedFile) formData.append("file", uploadedFile);
       const resp = await apiFetch(
