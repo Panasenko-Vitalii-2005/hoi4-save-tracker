@@ -81,6 +81,72 @@ const snapshot = {
   navalKillerShipSummaries: [],
 };
 
+const countryStats = (tag: string) => ({
+  tag,
+  divisions: 0,
+  manpowerInField: 0,
+  manpowerCasualties: null,
+  warCasualties: [],
+  aircraft: 0,
+  ships: 0,
+  militaryFactories: 0,
+  civilianFactories: 0,
+  dockyards: 0,
+  occupiedMilitaryFactories: 0,
+  subjectMilitaryFactories: 0,
+  effectiveOwnMilitaryFactories: 0,
+  effectiveMilitaryFactories: 0,
+  subjectCivilianFactories: 0,
+  occupiedCivilianFactories: 0,
+  ownedCivilianFactories: 0,
+  tradeCivilianFactories: 0,
+  effectiveCivilianFactories: 0,
+  shipProductionDockyards: 0,
+  repairDockyards: 0,
+  effectiveDockyards: 0,
+});
+
+const productionSummary = (countryTag: string) => ({
+  countryTag,
+  lineCount: 0,
+  definitionCount: 0,
+  requestedFactories: 0,
+  activeFactories: 0,
+  queuedFactories: 0,
+  damagedFactories: 0,
+  resourceShortageLineCount: 0,
+  definitions: [],
+  unresolvedLines: [],
+});
+
+const divisionSummary = (countryTag: string) => ({
+  countryTag,
+  divisionCount: 0,
+  resolvedTemplateCount: 0,
+  unresolvedTemplateCount: 0,
+  currentManpowerTotal: 0,
+  requiredManpowerTotal: 0,
+  missingManpowerTotal: 0,
+  fullManpowerDivisionCount: 0,
+  underManpowerDivisionCount: 0,
+  divisions: [],
+});
+
+const snapshotWithCountryViews = {
+  ...snapshot,
+  by_country: [countryStats("AFG"), countryStats("GER")],
+  equipment_by_country: { AFG: {}, GER: {} },
+  stockpileSummaries: [
+    { countryTag: "AFG", definitions: [], unresolvedVariants: [] },
+    { countryTag: "GER", definitions: [], unresolvedVariants: [] },
+  ],
+  militaryProductionSummaries: [
+    productionSummary("AFG"),
+    productionSummary("GER"),
+  ],
+  divisionSummaries: [divisionSummary("AFG"), divisionSummary("GER")],
+};
+
 describe("Recent Analyses", () => {
   let root: Root;
   let container: HTMLDivElement;
@@ -178,12 +244,17 @@ describe("Recent Analyses", () => {
     const picker =
       container.querySelector<HTMLInputElement>('input[type="file"]')!;
     expect(picker.disabled).toBe(false);
+    const requestCount = analyzeRequests.length;
     await act(async () => {
       Object.defineProperty(picker, "files", {
         configurable: true,
         value: [new File(["HOI4txt"], "autosave.hoi4")],
       });
       picker.dispatchEvent(new Event("change", { bubbles: true }));
+      for (let attempt = 0; attempt < 20; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (analyzeRequests.length > requestCount) break;
+      }
     });
   };
 
@@ -424,6 +495,82 @@ describe("Recent Analyses", () => {
       ),
     );
     expect(resultDate()).toBe("1945.1.1");
+  });
+
+  test("reopened analysis defaults modern country views to player country without overriding user selection", async () => {
+    await act(async () => root.render(<AnalyzerTab />));
+    await respond(0, [
+      {
+        ...entry,
+        hasPersistedResult: true,
+        playerCountryTag: "GER",
+      },
+    ]);
+    await act(async () => openButton().click());
+    await act(async () =>
+      openRequests[0].resolve(Response.json(snapshotWithCountryViews)),
+    );
+
+    const assertCountrySelection = (
+      label: string,
+      selected: "true" | "false",
+    ) =>
+      expect(
+        container
+          .querySelector(`[aria-label="${label}"]`)
+          ?.getAttribute("aria-selected"),
+      ).toBe(selected);
+
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((item) => item.textContent === "Stockpile")!
+        .click(),
+    );
+    assertCountrySelection("Inspect Germany stockpile", "true");
+    await act(async () =>
+      container
+        .querySelector<HTMLElement>(
+          '[aria-label="Inspect Afghanistan stockpile"]',
+        )!
+        .click(),
+    );
+    assertCountrySelection("Inspect Afghanistan stockpile", "true");
+
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((item) => item.textContent === "Production")!
+        .click(),
+    );
+    assertCountrySelection(
+      "Inspect Germany current military production",
+      "true",
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLElement>(
+          '[aria-label="Inspect Afghanistan current military production"]',
+        )!
+        .click(),
+    );
+    assertCountrySelection(
+      "Inspect Afghanistan current military production",
+      "true",
+    );
+
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((item) => item.textContent === "Land Forces")!
+        .click(),
+    );
+    assertCountrySelection("Inspect Germany land forces", "true");
+    await act(async () =>
+      container
+        .querySelector<HTMLElement>(
+          '[aria-label="Inspect Afghanistan land forces"]',
+        )!
+        .click(),
+    );
+    assertCountrySelection("Inspect Afghanistan land forces", "true");
   });
 
   test.each(["network", "server", "non-json", "malformed"])(

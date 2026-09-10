@@ -34,6 +34,16 @@ export function equipmentReferenceKey(
   return reference ? `${reference.type}:${reference.id}` : null;
 }
 
+export function resolvePreferredCountryTag(
+  availableTags: readonly string[],
+  preferredTag: string | null | undefined,
+): string | null {
+  if (preferredTag && availableTags.includes(preferredTag)) {
+    return preferredTag;
+  }
+  return availableTags[0] ?? null;
+}
+
 const DIVISION_RATIO_FORMATTER = new Intl.NumberFormat("en-US", {
   style: "percent",
   maximumFractionDigits: 1,

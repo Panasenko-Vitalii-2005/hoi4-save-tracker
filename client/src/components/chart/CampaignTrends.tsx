@@ -27,7 +27,11 @@ import {
 } from "@/lib/data-export";
 import { CampaignReport } from "@/components/reports/CampaignReport";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
-import { countryFullName, formatEquipmentDefinition } from "@/lib/utils";
+import {
+  countryFullName,
+  formatEquipmentDefinition,
+  resolvePreferredCountryTag,
+} from "@/lib/utils";
 import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
@@ -404,6 +408,7 @@ export function CampaignTrends({
   const request = useRef<AbortController | null>(null);
   const equipmentRequest = useRef<AbortController | null>(null);
   const equipmentCache = useRef(new Map<string, CampaignEquipmentTrendsDto>());
+  const countryCampaignKey = useRef<string | null>(null);
   const [data, setData] = useState<CampaignTrendsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -494,8 +499,14 @@ export function CampaignTrends({
   );
 
   useEffect(() => {
-    if (!countries.includes(countryTag)) setCountryTag(countries[0] ?? "");
-  }, [countries, countryTag]);
+    const currentCampaignKey = campaign?.key ?? null;
+    const campaignChanged = countryCampaignKey.current !== currentCampaignKey;
+    countryCampaignKey.current = currentCampaignKey;
+    if (!campaignChanged && countries.includes(countryTag)) return;
+    setCountryTag(
+      resolvePreferredCountryTag(countries, campaign?.playerCountryTag) ?? "",
+    );
+  }, [campaign?.key, campaign?.playerCountryTag, countries, countryTag]);
 
   useEffect(() => {
     if (trendMode !== "equipment" || !campaign || !countryTag) return;

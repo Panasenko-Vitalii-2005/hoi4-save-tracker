@@ -803,10 +803,15 @@ describe("Save comparison UI", () => {
     await act(async () => {
       const picker =
         container.querySelector<HTMLInputElement>('input[type="file"]')!;
+      const requestCount = requests.length;
       Object.defineProperty(picker, "files", {
         value: [new File(["fixture"], "new.hoi4")],
       });
       picker.dispatchEvent(new Event("change", { bubbles: true }));
+      for (let attempt = 0; attempt < 20; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (requests.length > requestCount) break;
+      }
     });
     await act(async () =>
       requests

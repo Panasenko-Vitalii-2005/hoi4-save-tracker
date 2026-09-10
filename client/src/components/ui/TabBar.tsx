@@ -2,7 +2,6 @@ import type { TabId } from "@/types";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "chart", label: "Campaign Trends" },
-  { id: "soldiers", label: "Soldiers by Country" },
   { id: "analyzer", label: "Save Analyzer" },
 ];
 

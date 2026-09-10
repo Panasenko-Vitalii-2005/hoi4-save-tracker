@@ -353,6 +353,68 @@ describe("Campaign Trends", () => {
     expect(text()).toContain("D01");
   });
 
+  test("defaults country trends to the known player country and preserves an explicit selection", async () => {
+    const countries = (value: number) => [
+      {
+        tag: "AFG",
+        metrics: {
+          divisions: value,
+          manpowerInField: value,
+          aircraft: value,
+          ships: value,
+          militaryFactories: value,
+          civilianFactories: value,
+          dockyards: value,
+          calculatedCasualties: value,
+        },
+      },
+      snapshot("x", "1936.1.1", value).countries[0],
+    ];
+    response = dto([
+      snapshot("a", "1936.6.1", 1, countries(1)),
+      snapshot("b", "1936.8.1", 2, countries(2)),
+    ]);
+
+    await render();
+    const countryButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Country",
+    )!;
+    await act(async () => countryButton.click());
+    expect(select("Country").value).toBe("GER");
+
+    await choose(select("Country"), "AFG");
+    expect(select("Country").value).toBe("AFG");
+    const refresh = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Refresh"),
+    )!;
+    await act(async () => refresh.click());
+    expect(select("Country").value).toBe("AFG");
+  });
+
+  test.each([null, "ZZZ"])(
+    "uses the safe first-country fallback when player country %s is unavailable",
+    async (playerCountryTag) => {
+      const germany = snapshot("x", "1936.1.1", 1).countries[0];
+      response = dto([
+        snapshot("a", "1936.6.1", 1, [
+          {
+            ...germany,
+            tag: "AFG",
+          },
+          germany,
+        ]),
+      ]);
+      response.campaigns[0].playerCountryTag = playerCountryTag;
+
+      await render();
+      const countryButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Country",
+      )!;
+      await act(async () => countryButton.click());
+      expect(select("Country").value).toBe("AFG");
+    },
+  );
+
   test("supports presets and compact multi-select metrics", async () => {
     await render();
     await choose(select("Preset"), "Industry Growth");

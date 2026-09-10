@@ -6,7 +6,10 @@ import type {
   DivisionSummary,
   DivisionTemplateCatalogEntry,
 } from "@/types";
-import { equipmentReferenceKey } from "@/lib/utils";
+import {
+  equipmentReferenceKey,
+  resolvePreferredCountryTag,
+} from "@/lib/utils";
 import { CountryDivisionTable } from "./CountryDivisionTable";
 import { CountryLandForcesDetails } from "./CountryLandForcesDetails";
 
@@ -17,6 +20,7 @@ interface Props {
   hierarchies: CountryArmyHierarchySummary[];
   selectedTag: string | null;
   selectedDivisionKey: string | null;
+  preferredCountryTag?: string | null;
   onSelectedTagChange: (tag: string | null) => void;
   onSelectedDivisionKeyChange: (key: string | null) => void;
 }
@@ -28,6 +32,7 @@ export function LandForcesTab({
   hierarchies,
   selectedTag,
   selectedDivisionKey,
+  preferredCountryTag,
   onSelectedTagChange,
   onSelectedDivisionKeyChange,
 }: Props) {
@@ -116,11 +121,17 @@ export function LandForcesTab({
     ) {
       return;
     }
-    onSelectedTagChange(summaries[0]?.countryTag ?? null);
+    onSelectedTagChange(
+      resolvePreferredCountryTag(
+        summaries.map(({ countryTag }) => countryTag),
+        preferredCountryTag,
+      ),
+    );
     onSelectedDivisionKeyChange(null);
   }, [
     onSelectedDivisionKeyChange,
     onSelectedTagChange,
+    preferredCountryTag,
     selectedTag,
     summaries,
   ]);

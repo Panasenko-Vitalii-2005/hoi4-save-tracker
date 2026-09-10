@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo } from "react";
 import type { CountryMilitaryProductionSummary } from "@/types";
+import { resolvePreferredCountryTag } from "@/lib/utils";
 import { CountryProductionDetails } from "./CountryProductionDetails";
 import { CountryProductionTable } from "./CountryProductionTable";
 
@@ -8,6 +9,7 @@ export function ProductionTab({
   selectedTag,
   selectedDefinitionName,
   effectiveMilitaryFactories,
+  preferredCountryTag,
   onSelectedTagChange,
   onSelectedDefinitionChange,
 }: {
@@ -15,6 +17,7 @@ export function ProductionTab({
   selectedTag: string | null;
   selectedDefinitionName: string | null;
   effectiveMilitaryFactories: number | null;
+  preferredCountryTag?: string | null;
   onSelectedTagChange: (tag: string | null) => void;
   onSelectedDefinitionChange: (definition: string | null) => void;
 }) {
@@ -40,8 +43,13 @@ export function ProductionTab({
     ) {
       return;
     }
-    onSelectedTagChange(summaries[0]?.countryTag ?? null);
-  }, [onSelectedTagChange, selectedTag, summaries]);
+    onSelectedTagChange(
+      resolvePreferredCountryTag(
+        summaries.map(({ countryTag }) => countryTag),
+        preferredCountryTag,
+      ),
+    );
+  }, [onSelectedTagChange, preferredCountryTag, selectedTag, summaries]);
 
   useEffect(() => {
     if (

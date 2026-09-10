@@ -13,6 +13,7 @@ import {
   countryFullName,
   fmtBig,
   formatCountryDisplayName,
+  resolvePreferredCountryTag,
   shortEqName,
 } from "@/lib/utils";
 import { usePlotTheme } from "@/hooks/usePlotTheme";
@@ -488,7 +489,10 @@ export function AnalyzerTab({
     source: SingleSaveReportContext,
   ) => {
     const initialEqCountry =
-      Object.keys(data.equipment_by_country).sort()[0] ??
+      resolvePreferredCountryTag(
+        Object.keys(data.equipment_by_country).sort(),
+        source.playerCountryTag,
+      ) ??
       data.by_country[0]?.tag ??
       "";
     setPrevResult(result);
@@ -497,6 +501,20 @@ export function AnalyzerTab({
     setReportOpen(false);
     setAnalysisView("overview");
     setEqCountry(initialEqCountry);
+    setProductionCountryTag(
+      resolvePreferredCountryTag(
+        data.militaryProductionSummaries.map(({ countryTag }) => countryTag),
+        source.playerCountryTag,
+      ),
+    );
+    setProductionDefinitionName(null);
+    setLandForcesCountryTag(
+      resolvePreferredCountryTag(
+        data.divisionSummaries.map(({ countryTag }) => countryTag),
+        source.playerCountryTag,
+      ),
+    );
+    setLandForcesDivisionKey(null);
     setShowEq(true);
   };
 
@@ -1079,12 +1097,16 @@ export function AnalyzerTab({
               onSelectKill={setNavalKillCountryTag}
             />
           ) : analysisView === "stockpile" ? (
-            <StockpileTab summaries={result.stockpileSummaries ?? []} />
+            <StockpileTab
+              summaries={result.stockpileSummaries ?? []}
+              preferredCountryTag={resultSource.playerCountryTag}
+            />
           ) : analysisView === "production" ? (
             <ProductionTab
               summaries={result.militaryProductionSummaries ?? []}
               selectedTag={productionCountryTag}
               selectedDefinitionName={productionDefinitionName}
+              preferredCountryTag={resultSource.playerCountryTag}
               effectiveMilitaryFactories={
                 selectedProductionEffectiveMilitaryFactories
               }
@@ -1099,6 +1121,7 @@ export function AnalyzerTab({
               hierarchies={result.armyHierarchySummaries}
               selectedTag={landForcesCountryTag}
               selectedDivisionKey={landForcesDivisionKey}
+              preferredCountryTag={resultSource.playerCountryTag}
               onSelectedTagChange={setLandForcesCountryTag}
               onSelectedDivisionKeyChange={setLandForcesDivisionKey}
             />

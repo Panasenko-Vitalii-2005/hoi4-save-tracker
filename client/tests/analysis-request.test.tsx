@@ -155,6 +155,16 @@ describe("analysis request lifecycle", () => {
     expect(requests).toHaveLength(0);
   });
 
+  test("normal SaaS navigation omits the legacy soldiers tracker", async () => {
+    await render(true);
+    expect(
+      [...container.querySelectorAll(".page-shell > .tab-bar .tab-btn")].map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(["Campaign Trends", "Save Analyzer"]);
+    expect(container.textContent).not.toContain("Soldiers by Country");
+  });
+
   test("local-save discovery failure is safe, keeps upload available, and retries explicitly", async () => {
     let savesAttempts = 0;
     vi.mocked(fetch).mockImplementation((url: string) => {
@@ -215,12 +225,12 @@ describe("analysis request lifecycle", () => {
         row().dispatchEvent(
           new KeyboardEvent("keydown", { key, bubbles: true }),
         );
-      chooseFile();
+      await chooseFile();
     });
     expect(requests).toHaveLength(1);
     await act(async () => {
       row("second.hoi4").click();
-      chooseFile();
+      await chooseFile();
     });
     expect(requests).toHaveLength(1);
   });

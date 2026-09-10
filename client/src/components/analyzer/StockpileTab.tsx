@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CountryStockpileSummary } from "@/types";
+import { resolvePreferredCountryTag } from "@/lib/utils";
 import { CountryStockpileDetails } from "./CountryStockpileDetails";
 import { CountryStockpileTable } from "./CountryStockpileTable";
 
 export function StockpileTab({
   summaries,
+  preferredCountryTag,
 }: {
   summaries: CountryStockpileSummary[];
+  preferredCountryTag?: string | null;
 }) {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedDefinitionName, setSelectedDefinitionName] = useState<
@@ -34,8 +37,13 @@ export function StockpileTab({
     ) {
       return;
     }
-    setSelectedTag(summaries[0]?.countryTag ?? null);
-  }, [selectedTag, summaries]);
+    setSelectedTag(
+      resolvePreferredCountryTag(
+        summaries.map(({ countryTag }) => countryTag),
+        preferredCountryTag,
+      ),
+    );
+  }, [preferredCountryTag, selectedTag, summaries]);
 
   useEffect(() => {
     if (
