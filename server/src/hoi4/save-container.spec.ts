@@ -11,6 +11,7 @@ import { saveUploadPolicy, MAX_ZIP_ENTRIES } from './save-upload.policy';
 import { findDirectBlocks } from './naval-loss/global-history.parser';
 import {
   smallSave,
+  binarySave,
   zipSave,
   forgedZipSize,
   zipOffsets,
@@ -58,7 +59,7 @@ describe('Bounded HoI4 save containers', () => {
     ['EU4txt\ndate="1444.11.11"', 'INVALID_SAVE'],
     [Buffer.from([255, 216, 255, 224, 1, 2, 3]), 'INVALID_SAVE'],
     ['PKinvalid', 'CORRUPT_ARCHIVE'],
-    ['HOI4bin\nunsupported', 'UNSUPPORTED_SAVE'],
+    [binarySave(), 'UNSUPPORTED_BINARY_SAVE'],
   ])(
     'rejects unsupported/empty/corrupt prefix %# safely',
     async (input, code) => {
@@ -66,6 +67,27 @@ describe('Bounded HoI4 save containers', () => {
       await expect(validateSaveFile(file)).rejects.toMatchObject({ code });
     },
   );
+  test('detects binary payloads in plain and supported ZIP containers', async () => {
+    const expectBinaryError = () => {
+      let failure: unknown;
+      try {
+        readSaveText(file, true);
+      } catch (error: unknown) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({ code: 'UNSUPPORTED_BINARY_SAVE' });
+    };
+
+    put(binarySave());
+    await expect(validateSaveFile(file)).rejects.toMatchObject({
+      code: 'UNSUPPORTED_BINARY_SAVE',
+    });
+    expectBinaryError();
+
+    put(zipSave(binarySave()));
+    await expect(validateSaveFile(file)).resolves.toBeUndefined();
+    expectBinaryError();
+  });
   test('raw upload and plain uncompressed limits are independent', async () => {
     put(smallSave());
     await expect(

@@ -27,7 +27,12 @@ import { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.servic
 import { RecentAnalysesService } from './recent-analyses.service';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
 import { AnalysisComparisonService } from './analysis-comparison.service';
-import { smallSave, zipSave, forgedZipSize } from './fixtures/upload.fixture';
+import {
+  smallSave,
+  binarySave,
+  zipSave,
+  forgedZipSize,
+} from './fixtures/upload.fixture';
 import { UPLOAD_STALE_MS } from '../hoi4/save-upload.policy';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
 import { UserAnalysesService } from './user-analyses.service';
@@ -242,6 +247,21 @@ describe('Public upload boundary and cleanup', () => {
     expect(response.body).toMatchObject({ code: 'UNSUPPORTED_SAVE' });
     await emptyStores();
   });
+  test.each([
+    ['plain', binarySave(), 0],
+    ['zip', zipSave(binarySave()), 1],
+  ])(
+    '%s binary save receives an actionable format error and is never persisted',
+    async (_kind, bytes, workerCount) => {
+      const response = await send(bytes).expect(422);
+      expect(response.body).toMatchObject({
+        code: 'UNSUPPORTED_BINARY_SAVE',
+      });
+      expect(response.text).not.toMatch(/stack|ENOENT|C:\\|\/tmp\//);
+      expect(worker.created).toHaveLength(workerCount);
+      await emptyStores();
+    },
+  );
   test('crash and timeout both clean files, release capacity, avoid stores and permit retry', async () => {
     worker.script = 'process.exit(7)';
     expect((await send(smallSave()).expect(500)).body).toMatchObject({

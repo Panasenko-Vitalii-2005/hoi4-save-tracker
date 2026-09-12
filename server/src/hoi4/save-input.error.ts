@@ -10,6 +10,10 @@ export const SAVE_ERRORS = {
     422,
     'This HoI4 save uses a structure or format that this analyzer does not support.',
   ],
+  UNSUPPORTED_BINARY_SAVE: [
+    422,
+    'Binary Hearts of Iron IV save detected. Binary saves are not supported yet. Set save_as_binary=no and create a new save.',
+  ],
   CORRUPT_ARCHIVE: [
     400,
     'This compressed save appears to be corrupted or incomplete.',

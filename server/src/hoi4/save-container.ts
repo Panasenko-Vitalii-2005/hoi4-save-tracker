@@ -12,6 +12,7 @@ import {
 import type { LocatedBlock } from './naval-loss/global-history.parser';
 
 const ZIP_TAIL_BYTES = 22 + 65535;
+const HOI4_BINARY_HEADER = Buffer.from('HOI4bin', 'ascii');
 const corrupt = () => new SaveInputError('CORRUPT_ARCHIVE');
 const unsupported = () => new SaveInputError('UNSUPPORTED_SAVE');
 
@@ -21,8 +22,17 @@ function checkSize(size: number, policy: SaveUploadPolicy) {
 }
 
 function checkPlainPrefix(prefix: Buffer) {
-  const text = prefix.toString('utf8').replace(/^\uFEFF/, '');
-  if (/^HOI4bin(?:\s|$)/.test(text)) throw unsupported();
+  const payload = prefix.subarray(
+    prefix.length >= 3 &&
+      prefix[0] === 0xef &&
+      prefix[1] === 0xbb &&
+      prefix[2] === 0xbf
+      ? 3
+      : 0,
+  );
+  if (payload.subarray(0, HOI4_BINARY_HEADER.length).equals(HOI4_BINARY_HEADER))
+    throw new SaveInputError('UNSUPPORTED_BINARY_SAVE');
+  const text = payload.toString('utf8');
   if (!/^HOI4txt(?:\s|$)/.test(text) || text.includes('\0'))
     throw new SaveInputError('INVALID_SAVE');
 }

@@ -7,6 +7,8 @@ const MESSAGES: Record<string, string> = {
     "This compressed save appears to be corrupted or incomplete.",
   UNSUPPORTED_SAVE:
     "This HoI4 save could not be analyzed. It may use an unsupported game version or mod configuration.",
+  UNSUPPORTED_BINARY_SAVE:
+    "Binary Hearts of Iron IV save detected. Binary saves are not supported yet. Set save_as_binary=no and create a new save.",
   DECOMPRESSED_SIZE_LIMIT:
     "The uncompressed save is too large to analyze within the current server limit.",
   UPLOAD_TIMEOUT: "The upload took too long and was stopped. Please try again.",
@@ -35,6 +37,7 @@ const CHOOSE_ANOTHER_FILE = new Set([
   "INVALID_SAVE",
   "CORRUPT_ARCHIVE",
   "UNSUPPORTED_SAVE",
+  "UNSUPPORTED_BINARY_SAVE",
   "DECOMPRESSED_SIZE_LIMIT",
   "FILE_TOO_LARGE",
   "SAVE_NOT_FOUND",

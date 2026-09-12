@@ -389,6 +389,7 @@ describe("analysis request lifecycle", () => {
     ["INVALID_SAVE", 400, "not a valid Hearts of Iron IV"],
     ["CORRUPT_ARCHIVE", 400, "corrupted or incomplete"],
     ["UNSUPPORTED_SAVE", 422, "unsupported game version or mod configuration"],
+    ["UNSUPPORTED_BINARY_SAVE", 422, "Set save_as_binary=no"],
     ["DECOMPRESSED_SIZE_LIMIT", 413, "uncompressed save is too large"],
     ["UPLOAD_TIMEOUT", 408, "upload took too long"],
     ["ANALYSIS_TIMEOUT", 504, "Analysis took too long and was stopped"],
@@ -424,6 +425,7 @@ describe("analysis request lifecycle", () => {
         "INVALID_SAVE",
         "CORRUPT_ARCHIVE",
         "UNSUPPORTED_SAVE",
+        "UNSUPPORTED_BINARY_SAVE",
         "DECOMPRESSED_SIZE_LIMIT",
       ]).has(String(code));
       expect(
