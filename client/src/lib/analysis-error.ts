@@ -29,6 +29,7 @@ export type AnalysisFailure = {
   type: "error" | "busy";
   msg: string;
   recovery: "retry" | "choose-file";
+  reason?: "unsupported-binary-save";
 };
 
 const CHOOSE_ANOTHER_FILE = new Set([
@@ -71,6 +72,10 @@ export async function analysisError(
       type: code === "ANALYZER_BUSY" ? "busy" : "error",
       msg: MESSAGES[code],
       recovery: CHOOSE_ANOTHER_FILE.has(code) ? "choose-file" : "retry",
+      reason:
+        code === "UNSUPPORTED_BINARY_SAVE"
+          ? "unsupported-binary-save"
+          : undefined,
     };
   if (response.status === 503)
     return {

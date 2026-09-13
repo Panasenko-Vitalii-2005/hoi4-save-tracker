@@ -389,7 +389,6 @@ describe("analysis request lifecycle", () => {
     ["INVALID_SAVE", 400, "not a valid Hearts of Iron IV"],
     ["CORRUPT_ARCHIVE", 400, "corrupted or incomplete"],
     ["UNSUPPORTED_SAVE", 422, "unsupported game version or mod configuration"],
-    ["UNSUPPORTED_BINARY_SAVE", 422, "Set save_as_binary=no"],
     ["DECOMPRESSED_SIZE_LIMIT", 413, "uncompressed save is too large"],
     ["UPLOAD_TIMEOUT", 408, "upload took too long"],
     ["ANALYSIS_TIMEOUT", 504, "Analysis took too long and was stopped"],
@@ -437,6 +436,64 @@ describe("analysis request lifecycle", () => {
       expect(date()).toBe("1944.6.1");
     },
   );
+
+  test("unsupported binary save renders guided recovery and reuses the upload picker", async () => {
+    await render();
+    await act(async () => chooseFile());
+    await respond(
+      0,
+      {
+        code: "UNSUPPORTED_BINARY_SAVE",
+        message: "STACK C:/private/server/upload.hoi4",
+      },
+      422,
+    );
+
+    const recovery = container.querySelector(".binary-save-recovery")!;
+    expect(recovery.textContent).toContain(
+      "This save needs conversion before analysis",
+    );
+    expect(recovery.textContent).toContain(
+      "recognized a valid Hearts of Iron IV binary save",
+    );
+    expect(recovery.textContent).toContain(
+      "do not need to restart this campaign",
+    );
+    expect(recovery.textContent).toContain("save_as_binary=yes");
+    expect(recovery.textContent).toContain("save_as_binary=no");
+    expect(recovery.textContent).toContain(
+      "Load the same existing campaign save",
+    );
+    expect(recovery.textContent).toContain(
+      "Save the campaign again under a new name",
+    );
+    expect(recovery.textContent).toContain(
+      "setting change does not convert the old file",
+    );
+    expect(recovery.textContent).toContain(
+      "one-time compatibility setup",
+    );
+    expect(recovery.textContent).toContain("Documents → Paradox Interactive");
+    expect(recovery.textContent).toContain("OneDrive");
+    expect(recovery.textContent).not.toMatch(/STACK|private|server\/upload/);
+
+    const clickPicker = vi.spyOn(picker(), "click");
+    await act(async () => button("Choose converted save").click());
+    expect(clickPicker).toHaveBeenCalledOnce();
+  });
+
+  test("invalid save retains the generic error without binary recovery instructions", async () => {
+    await render();
+    await act(async () => chooseFile());
+    await respond(0, { code: "INVALID_SAVE" }, 400);
+
+    expect(status().textContent).toContain(
+      "not a valid Hearts of Iron IV save",
+    );
+    expect(container.querySelector(".binary-save-recovery")).toBeNull();
+    expect(status().textContent).not.toContain("save_as_binary");
+    expect(button("Choose another file")).toBeDefined();
+  });
 
   test("untrusted limit values never become UI text", async () => {
     await render();

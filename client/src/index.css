@@ -5219,6 +5219,107 @@ button {
   color: var(--ink);
 }
 
+.analyzer-status.binary-save-recovery-status {
+  display: block;
+  padding: 20px 22px !important;
+  border-left-color: var(--intel-warning) !important;
+  color: var(--ink);
+}
+
+.binary-save-recovery {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px 24px;
+}
+
+.binary-save-recovery-intro {
+  min-width: 0;
+}
+
+.binary-save-recovery-intro h2 {
+  margin: 4px 0 7px;
+  color: var(--ink);
+  font-size: clamp(20px, 2vw, 25px);
+  line-height: 1.18;
+}
+
+.binary-save-recovery-intro p,
+.binary-save-recovery-body p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.binary-save-recovery-steps {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--intel-line);
+  padding-top: 13px;
+}
+
+.binary-save-recovery-steps summary {
+  width: fit-content;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.binary-save-recovery-steps summary:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.binary-save-recovery-body {
+  max-width: 780px;
+  padding-top: 14px;
+}
+
+.binary-save-recovery-body ol {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--ink);
+}
+
+.binary-save-recovery-body li {
+  margin: 0 0 8px;
+  padding-left: 4px;
+  line-height: 1.45;
+}
+
+.binary-save-recovery code {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 0.9em;
+}
+
+.binary-save-recovery-location {
+  margin: 16px 0;
+  padding: 13px 15px;
+  background: var(--intel-surface);
+  border: 1px solid var(--intel-line);
+  border-radius: 10px;
+}
+
+.binary-save-recovery-location h3 {
+  margin: 0 0 7px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.binary-save-recovery-location > code {
+  display: block;
+  margin: 7px 0;
+}
+
+.binary-save-recovery-note + .binary-save-recovery-note {
+  margin-top: 9px;
+}
+
+.binary-save-recovery-note strong {
+  color: var(--ink);
+}
+
 /* Analyzer navigation and context */
 .analyzer-view-tabs {
   position: sticky;
@@ -6244,6 +6345,22 @@ button {
   .recovery-notice .button,
   .analyzer-status-action {
     width: 100%;
+  }
+
+  .analyzer-status.binary-save-recovery-status {
+    padding: 17px !important;
+  }
+
+  .binary-save-recovery {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .binary-save-recovery .analyzer-status-action {
+    grid-row: 2;
+  }
+
+  .binary-save-recovery-steps {
+    grid-row: 3;
   }
 
   .batch-analysis-head .button,

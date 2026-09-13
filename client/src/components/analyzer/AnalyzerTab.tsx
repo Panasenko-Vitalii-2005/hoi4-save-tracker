@@ -47,6 +47,7 @@ import {
   SingleSaveReport,
   type SingleSaveReportContext,
 } from "@/components/reports/SingleSaveReport";
+import { BinarySaveRecovery } from "./BinarySaveRecovery";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -414,6 +415,7 @@ export function AnalyzerTab({
     type: "idle" | "loading" | "ok" | "error" | "busy";
     msg: string;
     recovery?: AnalysisFailure["recovery"];
+    reason?: AnalysisFailure["reason"];
   }>({ type: "idle", msg: "" });
   const analysisInFlight = useRef(false);
   const lastAnalysis = useRef<{
@@ -942,38 +944,52 @@ export function AnalyzerTab({
           <div role="status" aria-live="polite" aria-atomic="true">
             {status.type !== "idle" && (
               <div
-                className={`panel analyzer-status ${status.type}`}
+                className={`panel analyzer-status ${status.type}${status.reason === "unsupported-binary-save" ? " binary-save-recovery-status" : ""}`}
                 style={{ padding: "14px 20px" }}
               >
-                {status.type === "loading" && (
-                  <span className="spinner" aria-hidden="true" />
-                )}
-                <span>{status.msg}</span>
-                {status.recovery && status.type !== "loading" && (
-                  <button
-                    className="button button-secondary analyzer-status-action"
-                    onClick={() => {
-                      if (status.recovery === "choose-file") {
-                        document
-                          .querySelector<HTMLButtonElement>(
-                            "#analyze-one-save .button-primary",
-                          )
-                          ?.click();
-                        return;
-                      }
-                      const attempt = lastAnalysis.current;
-                      if (attempt)
-                        void analyze(
-                          attempt.filePath,
-                          attempt.fileName,
-                          attempt.uploadedFile,
-                        );
-                    }}
-                  >
-                    {status.recovery === "choose-file"
-                      ? "Choose another file"
-                      : "Retry analysis"}
-                  </button>
+                {status.reason === "unsupported-binary-save" ? (
+                  <BinarySaveRecovery
+                    onChooseFile={() =>
+                      document
+                        .querySelector<HTMLButtonElement>(
+                          "#analyze-one-save .button-primary",
+                        )
+                        ?.click()
+                    }
+                  />
+                ) : (
+                  <>
+                    {status.type === "loading" && (
+                      <span className="spinner" aria-hidden="true" />
+                    )}
+                    <span>{status.msg}</span>
+                    {status.recovery && status.type !== "loading" && (
+                      <button
+                        className="button button-secondary analyzer-status-action"
+                        onClick={() => {
+                          if (status.recovery === "choose-file") {
+                            document
+                              .querySelector<HTMLButtonElement>(
+                                "#analyze-one-save .button-primary",
+                              )
+                              ?.click();
+                            return;
+                          }
+                          const attempt = lastAnalysis.current;
+                          if (attempt)
+                            void analyze(
+                              attempt.filePath,
+                              attempt.fileName,
+                              attempt.uploadedFile,
+                            );
+                        }}
+                      >
+                        {status.recovery === "choose-file"
+                          ? "Choose another file"
+                          : "Retry analysis"}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             )}
