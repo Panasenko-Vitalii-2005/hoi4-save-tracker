@@ -1182,6 +1182,7 @@ export function AnalyzerTab({
                       tickformat: "~s",
                     },
                     yaxis: {
+                      automargin: true,
                       tickfont: {
                         family: '"IBM Plex Mono",monospace',
                         size: 12,
@@ -1237,6 +1238,7 @@ export function AnalyzerTab({
                       tickformat: "~s",
                     },
                     yaxis: {
+                      automargin: true,
                       tickfont: {
                         family: '"IBM Plex Mono",monospace',
                         size: 12,

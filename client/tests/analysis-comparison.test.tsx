@@ -887,22 +887,58 @@ describe("Save comparison UI", () => {
             hasChanges: true,
             stockpile: {
               presence: "both",
-              balance: { before: -10.5, after: 2.25, delta: 12.75 },
+              balance: {
+                before: 62104.3008,
+                after: 61595.3008,
+                delta: -509,
+              },
             },
             production: {
               presence: "both",
-              activeFactories: { before: 4, after: 6, delta: 2 },
+              activeFactories: { before: 5, after: 1, delta: -4 },
               currentItemsPerDay: {
-                before: 1.5,
-                after: 2.25,
-                delta: 0.75,
+                before: 27.12139655172414,
+                after: 9.145724137931035,
+                delta: -17.975672413793106,
                 baseComplete: true,
                 targetComplete: true,
-                baseKnown: 1.5,
-                targetKnown: 2.25,
+                baseKnown: 27.12139655172414,
+                targetKnown: 9.145724137931035,
               },
             },
           },
+          {
+            equipmentDefinition: "artillery_equipment_2",
+            hasChanges: true,
+            stockpile: null,
+            production: {
+              presence: "both",
+              activeFactories: { before: 1, after: 3, delta: 2 },
+              currentItemsPerDay: {
+                before: 0.5458425,
+                after: 30.020773195876288,
+                delta: 29.47493069587629,
+                baseComplete: true,
+                targetComplete: true,
+                baseKnown: 0.5458425,
+                targetKnown: 30.020773195876288,
+              },
+            },
+          },
+          ...[
+            "motorized_equipment_1",
+            "train_equipment_3",
+            "small_plane_airframe_0",
+            "transport_plane_equipment_1",
+          ].map((equipmentDefinition, index) => ({
+            equipmentDefinition,
+            hasChanges: true,
+            stockpile: {
+              presence: "both" as const,
+              balance: { before: index, after: index + 1, delta: 1 },
+            },
+            production: null,
+          })),
           {
             equipmentDefinition: "base_only_modded_equipment",
             hasChanges: true,
@@ -939,6 +975,24 @@ describe("Save comparison UI", () => {
               },
             },
           },
+          {
+            equipmentDefinition: "small_plane_airframe_2",
+            hasChanges: true,
+            stockpile: null,
+            production: {
+              presence: "both",
+              activeFactories: { before: 2, after: 2, delta: 0 },
+              currentItemsPerDay: {
+                before: 2.369530927835052,
+                after: 0.273492268041237,
+                delta: -2.096038659793814,
+                baseComplete: true,
+                targetComplete: true,
+                baseKnown: 2.369530927835052,
+                targetKnown: 0.273492268041237,
+              },
+            },
+          },
         ],
       },
     ];
@@ -952,9 +1006,64 @@ describe("Save comparison UI", () => {
     const panel = results().querySelector(
       '[aria-label="Equipment and production comparison"]',
     )!;
-    expect(panel.textContent).toContain("Infantry equipment 2");
-    expect(panel.textContent).toMatch(/-10[.,]5/);
-    expect(panel.textContent).toMatch(/12[.,]75/);
+    expect(panel.textContent).toContain("Infantry Equipment II");
+    expect(panel.textContent).toContain("infantry_equipment_2");
+    const infantryCells = [
+      ...[...panel.querySelectorAll("tr")]
+        .find((row) => row.textContent?.includes("infantry_equipment_2"))!
+        .querySelectorAll("td"),
+    ].map((cell) => cell.textContent);
+    expect(infantryCells).toEqual([
+      (62104.3008).toLocaleString(undefined, { maximumFractionDigits: 15 }),
+      (61595.3008).toLocaleString(undefined, { maximumFractionDigits: 15 }),
+      "-509",
+      "5",
+      "1",
+      "-4",
+      "27.12",
+      "9.15",
+      "-17.98",
+    ]);
+    expect(
+      [...panel.querySelectorAll("tr")]
+        .find((row) => row.textContent?.includes("infantry_equipment_2"))!
+        .querySelectorAll("td.comparison-equipment-group-start"),
+    ).toHaveLength(3);
+    expect(panel.textContent).toContain("Improved Artillery");
+    expect(panel.textContent).toContain("artillery_equipment_2");
+    const expectResolvedEquipmentRow = (rawId: string, displayName: string) => {
+      const row = [...panel.querySelectorAll("tr")].find(
+        (candidate) =>
+          candidate.querySelector(".production-code")?.textContent === rawId,
+      );
+      expect(row?.querySelector(".equipment-cell strong")?.textContent).toBe(
+        displayName,
+      );
+      expect(row?.querySelector(".production-code")?.textContent).toBe(rawId);
+    };
+    expectResolvedEquipmentRow("motorized_equipment_1", "Truck");
+    expectResolvedEquipmentRow("train_equipment_3", "Armored Train");
+    expectResolvedEquipmentRow(
+      "small_plane_airframe_0",
+      "Inter-War Small Airframe",
+    );
+    expectResolvedEquipmentRow(
+      "artillery_equipment_2",
+      "Improved Artillery",
+    );
+    expectResolvedEquipmentRow(
+      "transport_plane_equipment_1",
+      "Inter-War Transport Plane",
+    );
+    expect(panel.textContent).toMatch(/0[.,]55/);
+    expect(panel.textContent).toMatch(/30[.,]02/);
+    expect(panel.textContent).toMatch(/\+29[.,]47/);
+    expect(panel.textContent).not.toContain("29.47493069587629");
+    expect(panel.textContent).toContain("Improved Small Airframe");
+    expect(panel.textContent).toContain("small_plane_airframe_2");
+    expect(panel.textContent).toMatch(/2[.,]37/);
+    expect(panel.textContent).toMatch(/0[.,]27/);
+    expect(panel.textContent).toMatch(/-2[.,]10/);
     expect(panel.textContent).toContain("Stockpile: Base only");
     expect(panel.textContent).toContain("Stockpile: Target only");
     expect(panel.textContent).toContain("My mod super weapon");

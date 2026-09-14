@@ -6,7 +6,10 @@ import type {
   ProductionRateComparison,
   SnapshotPresence,
 } from "@/types/analysis-comparison";
-import { formatEquipmentDefinition } from "@/lib/utils";
+import {
+  formatEquipmentDefinition,
+  formatProductionRate,
+} from "@/lib/utils";
 import { CountryDisplay } from "./CountryDisplay";
 
 const formatNumber = (value: number | null) =>
@@ -14,7 +17,13 @@ const formatNumber = (value: number | null) =>
     ? "—"
     : value.toLocaleString(undefined, { maximumFractionDigits: 15 });
 
-function Delta({ value }: { value: NumericDiff }) {
+function Delta({
+  value,
+  formatter = formatNumber,
+}: {
+  value: NumericDiff;
+  formatter?: (value: number | null) => string;
+}) {
   if (value.delta === null)
     return <span className="comparison-delta-value unavailable">N/A</span>;
   if (value.delta === 0)
@@ -26,7 +35,7 @@ function Delta({ value }: { value: NumericDiff }) {
       }`}
     >
       {value.delta > 0 ? "+" : ""}
-      {formatNumber(value.delta)}
+      {formatter(value.delta)}
     </span>
   );
 }
@@ -64,10 +73,10 @@ function RateValue({
   const value = side === "base" ? rate.before : rate.after;
   const known = side === "base" ? rate.baseKnown : rate.targetKnown;
   if (complete === null) return <span className="muted">—</span>;
-  if (complete) return <>{formatNumber(value)}</>;
+  if (complete) return <>{formatProductionRate(value)}</>;
   return (
     <span className="comparison-equipment-incomplete">
-      {known === null ? "Unavailable" : `Known ${formatNumber(known)}`}
+      {known === null ? "Unavailable" : `Known ${formatProductionRate(known)}`}
       <small>Incomplete</small>
     </span>
   );
@@ -202,7 +211,7 @@ export const EquipmentProductionComparisonPanel = memo(
                         )}
                       </span>
                     </th>
-                    <td className="numeric-cell">
+                    <td className="numeric-cell comparison-equipment-group-start">
                       {formatNumber(definition.stockpile?.balance.before ?? null)}
                     </td>
                     <td className="numeric-cell">
@@ -215,7 +224,7 @@ export const EquipmentProductionComparisonPanel = memo(
                         <span className="muted">N/A</span>
                       )}
                     </td>
-                    <td className="numeric-cell">
+                    <td className="numeric-cell comparison-equipment-group-start">
                       {formatNumber(
                         definition.production?.activeFactories.before ?? null,
                       )}
@@ -232,7 +241,7 @@ export const EquipmentProductionComparisonPanel = memo(
                         <span className="muted">N/A</span>
                       )}
                     </td>
-                    <td className="numeric-cell">
+                    <td className="numeric-cell comparison-equipment-group-start">
                       {definition.production ? (
                         <RateValue
                           rate={definition.production.currentItemsPerDay}
@@ -256,6 +265,7 @@ export const EquipmentProductionComparisonPanel = memo(
                       {definition.production ? (
                         <Delta
                           value={definition.production.currentItemsPerDay}
+                          formatter={formatProductionRate}
                         />
                       ) : (
                         <span className="muted">N/A</span>
@@ -280,7 +290,7 @@ export const EquipmentProductionComparisonPanel = memo(
 function FragmentHeaders() {
   return (
     <>
-      <th className="numeric-cell">Base</th>
+      <th className="numeric-cell comparison-equipment-group-start">Base</th>
       <th className="numeric-cell">Target</th>
       <th className="numeric-cell">Change</th>
     </>
