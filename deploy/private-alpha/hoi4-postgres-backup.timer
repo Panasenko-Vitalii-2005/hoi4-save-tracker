@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily HoI4 Save Tracker Private Alpha PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+Unit=hoi4-postgres-backup.service
+
+[Install]
+WantedBy=timers.target

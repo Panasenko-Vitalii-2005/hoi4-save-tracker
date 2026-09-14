@@ -114,7 +114,110 @@ docker compose --env-file .env.private-alpha \
 
 Sign in again if necessary and confirm the account and persisted analysis still exist.
 
-## Manual backup
+## Automated PostgreSQL backup
+
+The repository provides a small logical-backup script and a systemd timer for the Private Alpha PostgreSQL 17 service. The script uses the credentials already supplied through `.env.private-alpha`; it does not copy the PostgreSQL data volume or print credentials. Each run:
+
+1. writes a custom-format `pg_dump` to a private temporary file;
+2. rejects an empty dump and validates it with `pg_restore --list`;
+3. atomically renames the validated dump to `hoi4_YYYY-MM-DD_HHMMSS.dump`;
+4. writes a matching SHA-256 file;
+5. retains the seven newest complete backup pairs by default.
+
+The default destination is `/var/backups/hoi4-save-tracker/postgres`. The directory is mode `0700`; dumps and checksums are mode `0600`. Retention runs only after a new dump and checksum have been finalized, considers only files matching the backup naming convention, and leaves unrelated or incomplete files alone. A lock prevents overlapping runs. Any dump, validation, checksum or finalization failure exits non-zero and removes the incomplete generation.
+
+Install the script, its non-secret configuration, and the systemd units from the repository checkout. Replace `/opt/hoi4-save-tracker` in the configuration if the checkout lives elsewhere:
+
+```bash
+sudo install -m 0750 deploy/private-alpha/backup-postgres.sh \
+  /usr/local/sbin/hoi4-save-tracker-postgres-backup
+sudo install -d -m 0755 /etc/hoi4-save-tracker
+sudo install -m 0600 deploy/private-alpha/postgres-backup.env.example \
+  /etc/hoi4-save-tracker/postgres-backup.env
+sudo editor /etc/hoi4-save-tracker/postgres-backup.env
+sudo install -m 0644 deploy/private-alpha/hoi4-postgres-backup.service \
+  /etc/systemd/system/hoi4-postgres-backup.service
+sudo install -m 0644 deploy/private-alpha/hoi4-postgres-backup.timer \
+  /etc/systemd/system/hoi4-postgres-backup.timer
+sudo systemctl daemon-reload
+```
+
+Run and inspect one backup before enabling the schedule:
+
+```bash
+sudo systemctl start hoi4-postgres-backup.service
+sudo systemctl status hoi4-postgres-backup.service
+sudo journalctl -u hoi4-postgres-backup.service
+sudo ls -la /var/backups/hoi4-save-tracker/postgres
+```
+
+Only after that succeeds, enable the daily 02:30 server-local timer. `Persistent=true` causes a missed run to execute after the VPS next starts:
+
+```bash
+sudo systemctl enable --now hoi4-postgres-backup.timer
+systemctl list-timers hoi4-postgres-backup.timer
+```
+
+The repository does not install or enable these units automatically. Check failures through the service status and journal. Systemd retains the command output according to the VPS journal policy:
+
+```bash
+sudo journalctl -u hoi4-postgres-backup.service --since today
+```
+
+### Verify and rehearse a restore
+
+Locate the newest complete generation and verify it without touching production:
+
+```bash
+BACKUP_DIR=/var/backups/hoi4-save-tracker/postgres
+LATEST_DUMP=
+while IFS= read -r candidate; do
+  if [ -f "$BACKUP_DIR/$candidate.sha256" ]; then
+    LATEST_DUMP=$candidate
+    break
+  fi
+done < <(find "$BACKUP_DIR" -maxdepth 1 -type f \
+  -name 'hoi4_????-??-??_??????.dump' -printf '%f\n' | sort -r)
+test -n "$LATEST_DUMP"
+cd "$BACKUP_DIR"
+sha256sum --check "$LATEST_DUMP.sha256"
+docker run --rm -i postgres:17-alpine pg_restore --list < "$LATEST_DUMP" > /dev/null
+```
+
+Restore rehearsals must use a disposable PostgreSQL 17 container and database. **Do not restore over the live production database during verification.** This example creates an isolated container with test-only credentials and no production network or volume:
+
+```bash
+RESTORE_PASSWORD=$(openssl rand -hex 32)
+docker run -d --name hoi4-postgres-restore-test \
+  -e POSTGRES_DB=hoi4_restore_test \
+  -e POSTGRES_USER=hoi4_restore_test \
+  -e POSTGRES_PASSWORD="$RESTORE_PASSWORD" \
+  postgres:17-alpine
+
+until docker exec hoi4-postgres-restore-test \
+  pg_isready -U hoi4_restore_test -d hoi4_restore_test; do sleep 1; done
+
+docker exec -i hoi4-postgres-restore-test \
+  pg_restore --exit-on-error --no-owner --no-privileges \
+  -U hoi4_restore_test -d hoi4_restore_test < "$BACKUP_DIR/$LATEST_DUMP"
+
+for table in users sessions analysis_ownership hoi4_schema_migrations; do
+  docker exec hoi4-postgres-restore-test psql \
+    -U hoi4_restore_test -d hoi4_restore_test -Atc \
+    "SELECT '$table', count(*) FROM $table;"
+done
+```
+
+Compare those four row counts with read-only production counts taken at the same backup checkpoint. Inspect login/ownership behavior only in an isolated application environment if further validation is needed. When the rehearsal is complete, remove only the explicitly named disposable container:
+
+```bash
+docker rm -f hoi4-postgres-restore-test
+unset RESTORE_PASSWORD
+```
+
+The PostgreSQL dump covers users, sessions, analysis ownership and schema-migration state. The separate `analysis-history` volume contains compressed AnalyzeResult artifacts, Recent metadata and share metadata; it requires a separate coordinated backup. **A PostgreSQL backup alone is not complete application disaster recovery.**
+
+## Manual full-data backup
 
 A usable backup requires **both** PostgreSQL and `analysis-history`: the database contains identity/ownership while the filesystem volume contains the deduplicated results and related metadata. Back them up during a short private-alpha maintenance window so the two snapshots correspond.
 
@@ -139,8 +242,8 @@ docker compose --env-file .env.private-alpha -f docker-compose.yml -f docker-com
 
 Record checksums and copy the backup off the VPS. The ignored `.env.private-alpha` is also required to operate the deployment and should be stored separately in an appropriately protected secret backup.
 
-For restore, use a maintenance window and fresh or explicitly emptied target volumes: start PostgreSQL only, restore `postgres.dump` with `pg_restore`, restore `analysis-history.tar.gz` into the empty `analysis-history` volume, run the migration service, then start the full profile. Preserve the original backup until account login, ownership, share links and reopened results have all been checked. Rehearse this sequence on a disposable VPS before relying on it.
+For a full-data restore, use a maintenance window and fresh or explicitly emptied target volumes: start PostgreSQL only, restore `postgres.dump` with `pg_restore`, restore `analysis-history.tar.gz` into the empty `analysis-history` volume, run the migration service, then start the full profile. Preserve the original backup until account login, ownership, share links and reopened results have all been checked. Rehearse this sequence on a disposable VPS before relying on it.
 
 ## Private-alpha boundaries
 
-This profile does not provide per-user quotas, abuse/rate controls, an application registration allowlist, automated backups, restore orchestration, multi-instance coordination, distributed locking, readiness alerts or public-beta operations. Basic Auth is a temporary outer gate for trusted testers; public share URLs are also gated. Keep registration details and the outer credential within the invited group.
+This profile does not provide per-user quotas, abuse/rate controls, an application registration allowlist, automated `analysis-history` backups, off-server backup replication, restore orchestration, multi-instance coordination, distributed locking, readiness alerts or public-beta operations. Basic Auth is a temporary outer gate for trusted testers; public share URLs are also gated. Keep registration details and the outer credential within the invited group.
