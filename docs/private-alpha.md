@@ -215,7 +215,121 @@ docker rm -f hoi4-postgres-restore-test
 unset RESTORE_PASSWORD
 ```
 
-The PostgreSQL dump covers users, sessions, analysis ownership and schema-migration state. The separate `analysis-history` volume contains compressed AnalyzeResult artifacts, Recent metadata and share metadata; it requires a separate coordinated backup. **A PostgreSQL backup alone is not complete application disaster recovery.**
+The PostgreSQL dump covers users, sessions, analysis ownership and schema-migration state. The separate `analysis-history` volume contains compressed AnalyzeResult artifacts, Recent metadata and share metadata; it requires the separate backup described below. **A PostgreSQL backup alone is not complete application disaster recovery.**
+
+## Automated analysis-history backup
+
+The `analysis-history` backup is deliberately separate from PostgreSQL. It archives only the Compose-mounted `/app/data` contents: `recent-analyses.json`, `shared-analyses.json`, and `analysis-results/*.json.gz`. It does not inspect Docker's host-internal volume path and does not include PostgreSQL, Caddy data, the repository, save uploads, or `.env.private-alpha`.
+
+For a consistent filesystem snapshot, the script detects whether the single Private Alpha backend is running. If it is, the script stops that service, creates the small archive through a one-off container using the same Compose volume, and immediately restarts the backend before performing full validation. The EXIT/signal cleanup path also attempts the restart if archive creation fails. A backend that was already stopped is never started by the backup. PostgreSQL, frontend, and edge remain running.
+
+Each successful run writes a private temporary archive, validates its tar/gzip structure, extracts it into an isolated temporary directory, parses both metadata JSON files, decompresses and parses every result JSON, then atomically finalizes `analysis-history_YYYY-MM-DD_HHMMSS.tar.gz` and its SHA-256 file. The default destination is `/var/backups/hoi4-save-tracker/analysis-history`; the directory is mode `0700`, and archives/checksums are mode `0600`. A separate lock prevents overlapping history backups. Retention runs only after a complete new pair exists and keeps the seven newest complete pairs by default.
+
+Install the script, configuration, and units. Replace `/opt/hoi4-save-tracker` if the checkout lives elsewhere:
+
+```bash
+sudo install -m 0750 deploy/private-alpha/backup-analysis-history.sh \
+  /usr/local/sbin/hoi4-save-tracker-analysis-history-backup
+sudo install -d -m 0755 /etc/hoi4-save-tracker
+sudo install -m 0600 deploy/private-alpha/analysis-history-backup.env.example \
+  /etc/hoi4-save-tracker/analysis-history-backup.env
+sudo editor /etc/hoi4-save-tracker/analysis-history-backup.env
+sudo install -m 0644 deploy/private-alpha/hoi4-analysis-history-backup.service \
+  /etc/systemd/system/hoi4-analysis-history-backup.service
+sudo install -m 0644 deploy/private-alpha/hoi4-analysis-history-backup.timer \
+  /etc/systemd/system/hoi4-analysis-history-backup.timer
+sudo systemctl daemon-reload
+```
+
+Run and inspect one backup before enabling its timer:
+
+```bash
+sudo systemctl start hoi4-analysis-history-backup.service
+sudo systemctl status hoi4-analysis-history-backup.service
+sudo journalctl -u hoi4-analysis-history-backup.service
+sudo ls -la /var/backups/hoi4-save-tracker/analysis-history
+```
+
+Only after the manual run succeeds, enable the daily 02:40 server-local schedule:
+
+```bash
+sudo systemctl enable --now hoi4-analysis-history-backup.timer
+systemctl list-timers hoi4-postgres-backup.timer hoi4-analysis-history-backup.timer
+```
+
+`Persistent=true` catches a missed run after reboot. The ten-minute offset from the 02:30 PostgreSQL timer keeps the recovery points close without normally overlapping their disk work. The backups remain independently valid; no cross-service lock or false exact pairing requirement is introduced. The repository does not install or enable either timer automatically.
+
+### Verify and rehearse an analysis-history restore
+
+Locate the newest complete archive/checksum pair and verify checksum plus archive listing:
+
+```bash
+BACKUP_DIR=/var/backups/hoi4-save-tracker/analysis-history
+LATEST_ARCHIVE=
+while IFS= read -r candidate; do
+  if [ -f "$BACKUP_DIR/$candidate.sha256" ]; then
+    LATEST_ARCHIVE=$candidate
+    break
+  fi
+done < <(find "$BACKUP_DIR" -maxdepth 1 -type f \
+  -name 'analysis-history_????-??-??_??????.tar.gz' -printf '%f\n' | sort -r)
+test -n "$LATEST_ARCHIVE"
+cd "$BACKUP_DIR"
+sha256sum --check "$LATEST_ARCHIVE.sha256"
+tar -tzf "$LATEST_ARCHIVE" > /dev/null
+```
+
+Routine verification must extract into an isolated directory, **never over the live production volume**:
+
+```bash
+VALIDATION_DIR=$(mktemp -d /var/tmp/hoi4-analysis-history-validation.XXXXXX)
+tar -xzf "$BACKUP_DIR/$LATEST_ARCHIVE" -C "$VALIDATION_DIR"
+test -f "$VALIDATION_DIR/recent-analyses.json"
+test -f "$VALIDATION_DIR/shared-analyses.json"
+test -d "$VALIDATION_DIR/analysis-results"
+
+docker compose --env-file .env.private-alpha \
+  -f docker-compose.yml \
+  -f docker-compose.private-alpha.yml \
+  run --rm --no-deps -T \
+  -v "$VALIDATION_DIR:/validation:ro" \
+  --entrypoint node backend -e '
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const zlib = require("node:zlib");
+    for (const name of ["recent-analyses.json", "shared-analyses.json"]) {
+      JSON.parse(fs.readFileSync(path.join("/validation", name), "utf8"));
+    }
+    const directory = "/validation/analysis-results";
+    const files = fs.readdirSync(directory).filter((name) => name.endsWith(".json.gz"));
+    for (const name of files) {
+      JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(directory, name))).toString("utf8"));
+    }
+    console.log(`${files.length} analysis result files validated`);
+  '
+
+case "$VALIDATION_DIR" in
+  /var/tmp/hoi4-analysis-history-validation.*) rm -rf -- "$VALIDATION_DIR" ;;
+  *) echo "Refusing to remove an unexpected validation path" >&2; exit 1 ;;
+esac
+```
+
+For an actual disaster recovery, select PostgreSQL and history generations from compatible, nearby timestamps. Restore history only into an empty/new volume while the recovered backend is stopped. This example uses a clearly isolated replacement volume; inspect it before connecting it to any recovered deployment:
+
+```bash
+RESTORE_VOLUME=hoi4-save-tracker-alpha_analysis-history-restore
+docker volume create "$RESTORE_VOLUME"
+docker compose --env-file .env.private-alpha \
+  -f docker-compose.yml \
+  -f docker-compose.private-alpha.yml \
+  run --rm --no-deps -T \
+  -v "$RESTORE_VOLUME:/restore" \
+  -v "$BACKUP_DIR:/backup:ro" \
+  --entrypoint sh backend -eu -c \
+  'test -z "$(ls -A /restore)"; tar -xzf "/backup/'"$LATEST_ARCHIVE"'" -C /restore'
+```
+
+Do not attach or substitute the restored volume until its JSON/gzip validation passes and the compatible PostgreSQL recovery point is ready. Never extract a routine verification archive over `/app/data` or a live named volume.
 
 ## Manual full-data backup
 
@@ -246,4 +360,4 @@ For a full-data restore, use a maintenance window and fresh or explicitly emptie
 
 ## Private-alpha boundaries
 
-This profile does not provide per-user quotas, abuse/rate controls, an application registration allowlist, automated `analysis-history` backups, off-server backup replication, restore orchestration, multi-instance coordination, distributed locking, readiness alerts or public-beta operations. Basic Auth is a temporary outer gate for trusted testers; public share URLs are also gated. Keep registration details and the outer credential within the invited group.
+This profile does not provide per-user quotas, abuse/rate controls, an application registration allowlist, atomic cross-store snapshots, off-server backup replication, restore orchestration, multi-instance coordination, distributed locking, readiness alerts or public-beta operations. Basic Auth is a temporary outer gate for trusted testers; public share URLs are also gated. Keep registration details and the outer credential within the invited group.

@@ -190,7 +190,7 @@ For trusted local browsing/path analysis, opt in explicitly with `HOI4_LOCAL_SAV
 
 For 2–5 trusted users on one Internet-facing VPS, use the dedicated [Private Alpha deployment profile](docs/private-alpha.md). It adds Caddy-managed HTTPS and a deployment-level Basic Auth gate while keeping the normal application authentication active. The profile requires operator-supplied secrets, removes the host `./saves` mount, keeps PostgreSQL/backend private, and preserves the PostgreSQL and analysis-history volumes.
 
-This profile is **not** a public closed-beta configuration. It includes an operator-installed PostgreSQL backup timer, but coordinated `analysis-history` backup, off-server replication, per-user quotas, abuse controls, application registration gating, and stronger readiness/alerting remain outstanding.
+This profile is **not** a public closed-beta configuration. It includes separate operator-installed PostgreSQL and `analysis-history` backup timers, but atomic cross-store snapshots, off-server replication, per-user quotas, abuse controls, application registration gating, and stronger readiness/alerting remain outstanding.
 
 ### Native development
 

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily HoI4 Save Tracker Private Alpha analysis-history backup
+
+[Timer]
+OnCalendar=*-*-* 02:40:00
+Persistent=true
+Unit=hoi4-analysis-history-backup.service
+
+[Install]
+WantedBy=timers.target
