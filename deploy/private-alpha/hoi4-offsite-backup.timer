@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily HoI4 Save Tracker Private Alpha off-site backup replication
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+Unit=hoi4-offsite-backup.service
+
+[Install]
+WantedBy=timers.target

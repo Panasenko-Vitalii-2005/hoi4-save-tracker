@@ -1,0 +1,16 @@
+[Unit]
+Description=HoI4 Save Tracker Private Alpha off-site backup replication
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/etc/hoi4-save-tracker/offsite-backup.env
+ExecStart=/usr/local/sbin/hoi4-save-tracker-offsite-backup
+UMask=0077
+NoNewPrivileges=true
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

@@ -331,6 +331,110 @@ docker compose --env-file .env.private-alpha \
 
 Do not attach or substitute the restored volume until its JSON/gzip validation passes and the compatible PostgreSQL recovery point is ready. Never extract a routine verification archive over `/app/data` or a live named volume.
 
+## Automated off-site replication
+
+The third backup layer copies completed local PostgreSQL and `analysis-history` generations to bucket-scoped Cloudflare R2 storage through the operator's existing rclone remote. It does not create backups itself and never reads PostgreSQL, `/app/data`, Docker volumes, application secrets, or `.env.private-alpha`. Its trust boundary is the finalized local pair: strict filename, data file, matching checksum file, and a successful local SHA-256 verification.
+
+Every run scans all locally retained generations rather than only the newest one. This repairs missed timers, network outages, VPS downtime, or a prior partial upload while local retention still contains the generation. The deterministic object layout is:
+
+```text
+hoi4-save-tracker-backups/
+└── private-alpha/
+    ├── postgres/
+    │   ├── hoi4_YYYY-MM-DD_HHMMSS.dump
+    │   └── hoi4_YYYY-MM-DD_HHMMSS.dump.sha256
+    └── analysis-history/
+        ├── analysis-history_YYYY-MM-DD_HHMMSS.tar.gz
+        └── analysis-history_YYYY-MM-DD_HHMMSS.tar.gz.sha256
+```
+
+For each pair, the data object is uploaded first. The script downloads it to a private temporary directory and verifies SHA-256 against the locally validated checksum. Only then is the checksum object uploaded and downloaded for an exact comparison. Therefore the checksum object is the completion marker for a remote generation. A failed checksum upload leaves at most an orphan data object; the next run repairs it safely. Existing identical objects are verified and skipped rather than duplicated.
+
+The script deliberately does not use `sync`, `move`, remote delete flags, or purge. Local backups are never deleted by replication. R2 storage is append-only in this initial version and will grow until a separately reviewed off-site retention policy is implemented.
+
+The production rclone config remains outside the repository. The root systemd service receives its absolute path explicitly and does not rely on root's `HOME`. The currently verified production path is `/home/vitalii/.config/rclone/rclone.conf`; retain its existing bucket-scoped R2 permissions and do not copy its credentials into the environment file.
+
+Install the script, root-readable configuration, and units. Confirm the actual rclone binary path with `command -v rclone`; rclone 1.75.0 or newer is required:
+
+```bash
+sudo install -m 0750 deploy/private-alpha/replicate-backups-offsite.sh \
+  /usr/local/sbin/hoi4-save-tracker-offsite-backup
+sudo install -d -m 0755 /etc/hoi4-save-tracker
+sudo install -m 0600 deploy/private-alpha/offsite-backup.env.example \
+  /etc/hoi4-save-tracker/offsite-backup.env
+sudo editor /etc/hoi4-save-tracker/offsite-backup.env
+sudo install -m 0644 deploy/private-alpha/hoi4-offsite-backup.service \
+  /etc/systemd/system/hoi4-offsite-backup.service
+sudo install -m 0644 deploy/private-alpha/hoi4-offsite-backup.timer \
+  /etc/systemd/system/hoi4-offsite-backup.timer
+sudo systemctl daemon-reload
+```
+
+Set the production configuration to the existing remote, bucket, prefix, and explicit config path; these values identify storage but contain no R2 key material:
+
+```text
+HOI4_OFFSITE_RCLONE_BIN=/usr/local/bin/rclone
+HOI4_OFFSITE_RCLONE_CONFIG=/home/vitalii/.config/rclone/rclone.conf
+HOI4_OFFSITE_RCLONE_REMOTE=hoi4-r2
+HOI4_OFFSITE_BUCKET=hoi4-save-tracker-backups
+HOI4_OFFSITE_PREFIX=private-alpha
+```
+
+Run and inspect one replication before scheduling it. Do not use `rclone config show` in operational checks:
+
+```bash
+sudo systemctl start hoi4-offsite-backup.service
+sudo systemctl status hoi4-offsite-backup.service
+sudo journalctl -u hoi4-offsite-backup.service
+sudo -u root /usr/local/bin/rclone lsf \
+  --config /home/vitalii/.config/rclone/rclone.conf \
+  hoi4-r2:hoi4-save-tracker-backups/private-alpha/postgres
+sudo -u root /usr/local/bin/rclone lsf \
+  --config /home/vitalii/.config/rclone/rclone.conf \
+  hoi4-r2:hoi4-save-tracker-backups/private-alpha/analysis-history
+```
+
+Only after that manual run passes, enable the daily 03:00 server-local timer. Its failures affect only replication; they do not stop or restart the application:
+
+```bash
+sudo systemctl enable --now hoi4-offsite-backup.timer
+systemctl list-timers \
+  hoi4-postgres-backup.timer \
+  hoi4-analysis-history-backup.timer \
+  hoi4-offsite-backup.timer
+```
+
+### Recover from R2 after loss of the VPS
+
+On isolated/new infrastructure, list the two remote prefixes and choose compatible PostgreSQL and history generations from nearby timestamps. The 02:30 and 02:40 artifacts are not an atomic cross-storage snapshot:
+
+```bash
+RECOVERY_DIR=$(mktemp -d /var/tmp/hoi4-r2-recovery.XXXXXX)
+RCLONE_CONFIG=/path/to/recovery-rclone.conf
+
+rclone copyto --config "$RCLONE_CONFIG" \
+  hoi4-r2:hoi4-save-tracker-backups/private-alpha/postgres/hoi4_TIMESTAMP.dump \
+  "$RECOVERY_DIR/hoi4_TIMESTAMP.dump"
+rclone copyto --config "$RCLONE_CONFIG" \
+  hoi4-r2:hoi4-save-tracker-backups/private-alpha/postgres/hoi4_TIMESTAMP.dump.sha256 \
+  "$RECOVERY_DIR/hoi4_TIMESTAMP.dump.sha256"
+rclone copyto --config "$RCLONE_CONFIG" \
+  hoi4-r2:hoi4-save-tracker-backups/private-alpha/analysis-history/analysis-history_TIMESTAMP.tar.gz \
+  "$RECOVERY_DIR/analysis-history_TIMESTAMP.tar.gz"
+rclone copyto --config "$RCLONE_CONFIG" \
+  hoi4-r2:hoi4-save-tracker-backups/private-alpha/analysis-history/analysis-history_TIMESTAMP.tar.gz.sha256 \
+  "$RECOVERY_DIR/analysis-history_TIMESTAMP.tar.gz.sha256"
+
+cd "$RECOVERY_DIR"
+sha256sum --check hoi4_TIMESTAMP.dump.sha256
+sha256sum --check analysis-history_TIMESTAMP.tar.gz.sha256
+docker run --rm -i postgres:17-alpine pg_restore --list \
+  < hoi4_TIMESTAMP.dump > /dev/null
+tar -tzf analysis-history_TIMESTAMP.tar.gz > /dev/null
+```
+
+Continue with the existing isolated PostgreSQL and analysis-history restore-verification procedures above. Validate both artifacts on new infrastructure before an intentional production recovery. **Never use the first R2 download as a reason to overwrite live production data.** A complete application recovery requires both a compatible PostgreSQL backup and an `analysis-history` backup.
+
 ## Manual full-data backup
 
 A usable backup requires **both** PostgreSQL and `analysis-history`: the database contains identity/ownership while the filesystem volume contains the deduplicated results and related metadata. Back them up during a short private-alpha maintenance window so the two snapshots correspond.
@@ -360,4 +464,4 @@ For a full-data restore, use a maintenance window and fresh or explicitly emptie
 
 ## Private-alpha boundaries
 
-This profile does not provide per-user quotas, abuse/rate controls, an application registration allowlist, atomic cross-store snapshots, off-server backup replication, restore orchestration, multi-instance coordination, distributed locking, readiness alerts or public-beta operations. Basic Auth is a temporary outer gate for trusted testers; public share URLs are also gated. Keep registration details and the outer credential within the invited group.
+This profile does not provide per-user quotas, abuse/rate controls, an application registration allowlist, atomic cross-store snapshots, an off-site retention policy, restore orchestration, multi-instance coordination, distributed locking, readiness alerts or public-beta operations. Basic Auth is a temporary outer gate for trusted testers; public share URLs are also gated. Keep registration details and the outer credential within the invited group.
