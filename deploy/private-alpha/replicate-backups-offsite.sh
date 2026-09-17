@@ -157,6 +157,11 @@ remote_data_matches() {
     return 1
   fi
 
+  if [[ ! -f "$temporary_path" || -L "$temporary_path" ]]; then
+    rm -f -- "$temporary_path"
+    return 1
+  fi
+
   remote_hash="$(sha256sum -- "$temporary_path" | cut -d ' ' -f 1)"
   rm -f -- "$temporary_path"
   [[ "${remote_hash,,}" == "${declared_hash,,}" ]]
@@ -168,6 +173,11 @@ remote_checksum_matches() {
   local temporary_path="$verification_dir/remote-checksum"
 
   if ! download_remote_object "$remote_object" "$temporary_path"; then
+    rm -f -- "$temporary_path"
+    return 1
+  fi
+
+  if [[ ! -f "$temporary_path" || -L "$temporary_path" ]]; then
     rm -f -- "$temporary_path"
     return 1
   fi
