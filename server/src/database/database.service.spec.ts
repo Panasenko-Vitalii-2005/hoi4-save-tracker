@@ -64,6 +64,77 @@ describe('DatabaseService', () => {
     await expect(service.health()).resolves.toBe('unavailable');
   });
 
+  test('coalesces and briefly caches repeated health queries', async () => {
+    const pool = poolDouble();
+    const service = new DatabaseService(
+      {
+        enabled: true,
+        connectionString: 'postgresql://app:secret@db/hoi4',
+      },
+      () => pool as DatabasePool,
+    );
+    await service.onModuleInit();
+    pool.query.mockClear();
+
+    await expect(
+      Promise.all([service.health(), service.health(), service.health()]),
+    ).resolves.toEqual(['ok', 'ok', 'ok']);
+    await expect(service.health()).resolves.toBe('ok');
+    expect(pool.query).toHaveBeenCalledTimes(1);
+    expect(pool.query).toHaveBeenCalledWith('SELECT 1');
+    await service.onModuleDestroy();
+  });
+
+  test('bounds a stalled health query without starting duplicate queries', async () => {
+    jest.useFakeTimers();
+    const pool = poolDouble();
+    const service = new DatabaseService(
+      {
+        enabled: true,
+        connectionString: 'postgresql://app:secret@db/hoi4',
+      },
+      () => pool as DatabasePool,
+    );
+    await service.onModuleInit();
+    pool.query.mockClear();
+    pool.query.mockImplementation(() => new Promise(() => undefined));
+
+    try {
+      const first = service.health();
+      const second = service.health();
+      await jest.advanceTimersByTimeAsync(2_000);
+
+      await expect(first).resolves.toBe('unavailable');
+      await expect(second).resolves.toBe('unavailable');
+      expect(pool.query).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(5_001);
+      const third = service.health();
+      await jest.advanceTimersByTimeAsync(2_000);
+      await expect(third).resolves.toBe('unavailable');
+      expect(pool.query).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+      await service.onModuleDestroy();
+    }
+  });
+
+  test('translates a database query failure into unavailable health', async () => {
+    const pool = poolDouble();
+    const service = new DatabaseService(
+      {
+        enabled: true,
+        connectionString: 'postgresql://app:secret@db/hoi4',
+      },
+      () => pool as DatabasePool,
+    );
+    await service.onModuleInit();
+    pool.query.mockRejectedValueOnce(new Error('secret raw driver error'));
+
+    await expect(service.health()).resolves.toBe('unavailable');
+    await service.onModuleDestroy();
+  });
+
   test('fails explicitly and closes a failed startup pool', async () => {
     const pool = poolDouble();
     pool.query.mockRejectedValueOnce(new Error('secret raw driver error'));

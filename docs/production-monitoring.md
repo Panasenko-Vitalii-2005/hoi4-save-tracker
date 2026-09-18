@@ -27,8 +27,10 @@ notification integrations. Two providers give some vendor diversity but add a
 second account and incident surface. Self-hosting either tool on the monitored
 VPS would not detect loss of that VPS and is not recommended.
 
-This document is Phase 0 architecture only. Nothing described as proposed is
-currently installed, enabled, or configured in production.
+This document began as the Phase 0 architecture. Phase 1A's application and
+Caddy readiness boundary is now implemented in the repository; it is not a
+claim that the deployment was updated or that a Better Stack monitor was
+created. Later backup-heartbeat and host-monitoring sections remain proposed.
 
 ## 1. Current observability
 
@@ -41,7 +43,7 @@ The production profile is `docker-compose.yml` plus
 | --- | --- | --- |
 | PostgreSQL 17 | `pg_isready` every 5 seconds, 5-second timeout, 12 retries, 5-second start period | `unless-stopped`; Docker `json-file`, 10 MiB × 3 files |
 | Migration | Starts only after PostgreSQL is healthy; must complete before backend starts | one-shot, no restart; same bounded Docker logging |
-| NestJS backend | Container check calls `http://127.0.0.1:3001/api/health` every 10 seconds; endpoint executes `SELECT 1` and returns 503 when PostgreSQL is unavailable | `unless-stopped`; same bounded Docker logging |
+| NestJS backend | Container check calls `http://127.0.0.1:3001/api/health` every 10 seconds; endpoint executes a bounded, coalesced `SELECT 1` and returns 503 when PostgreSQL is unavailable | `unless-stopped`; same bounded Docker logging |
 | nginx frontend | `wget` against its local `/` every 10 seconds | `unless-stopped`; same bounded Docker logging |
 | Caddy edge | Starts after frontend is healthy; no Docker healthcheck | `unless-stopped`; same bounded Docker logging |
 
@@ -58,9 +60,11 @@ process memory are not bounded by that Worker limit.
 
 Caddy is the sole public listener on ports 80/443. It terminates TLS, applies
 the Private Alpha HTTP Basic Auth gate, sends `/api/*` to the backend and other
-requests to the frontend. Backend and PostgreSQL have no host ports. The Nest
-health route is application-public (`@Public`) but is currently still behind
-Caddy's site-wide Basic Auth. It returns only `status` and `database` state.
+requests to the frontend. Backend and PostgreSQL have no host ports. The exact
+`/api/readiness` path is the sole Caddy Basic Auth exception and returns only a
+generic status. `/api/readiness/`, `/api/health`, every other API, and the SPA
+remain behind the existing edge gate. Nest's session guard also explicitly
+marks the readiness handler public; no backend port is published.
 
 Application logs go to stdout/stderr and the bounded Docker JSON driver.
 NestJS uses its normal logger where services explicitly log; Caddy has no
@@ -303,52 +307,122 @@ tuned after observing actual runtimes and server timezone behavior.
 
 ### 7.1 External probe
 
-The external monitor should request the exact public HTTPS path that reaches
-Caddy, the backend, and PostgreSQL, require HTTP 200, and optionally require the
-small expected health body. The current `GET /api/health` already performs a
-real `SELECT 1`, returns 503 on database failure, and exposes no user/save data.
+Phase 1A adds this exact external contract:
 
-Today Caddy's site-wide Basic Auth also protects that route. Phase 1 should
-choose one explicit policy:
+```text
+GET https://<HOI4_HTTPS_ORIGIN>/api/readiness
 
-- preferred: carve out only the exact health path at Caddy and keep the minimal
-  health response unauthenticated; or
-- keep it gated and store a dedicated probe credential at the hosted provider.
+200 {"status":"ok"}
+503 {"status":"unavailable"}
+```
 
-Do not give the provider the shared tester credential. A Caddy credential that
-can unlock the entire application is broader than a health probe, so a narrowly
-exposed endpoint is preferable. The route must remain read-only, constant-size,
-fast, rate-bounded at the edge if needed, and free of version, host, path,
-memory, user, or secret details.
+The path reaches Caddy, NestJS, the existing PostgreSQL pool, and a read-only
+`SELECT 1`. The query is bounded to two seconds. Concurrent probes are
+coalesced, results are cached for five seconds, and a timed-out underlying
+query is reused until it settles instead of allowing repeated requests to
+queue more database work. There is no application or edge rate limiter in the
+current stack; this small cache/coalescing boundary is the deliberately narrow
+abuse control for a constant-size endpoint. It does not add another pool or
+write to PostgreSQL.
 
-Probe every 1–2 minutes and alert only after two or three consecutive failures
-to avoid one transient TLS/network error. Enable recovery notification. TLS
-certificate-expiry monitoring from the provider is useful and costs no new
-server component.
+Caddy exempts only the exact `/api/readiness` path from Private Alpha Basic
+Auth. The trailing-slash path and all existing application routes remain
+gated. The endpoint is also explicitly public at Nest's session boundary, so
+Better Stack needs no application session, CSRF token, or shared tester Basic
+Auth credential. Its body does not identify PostgreSQL or expose versions,
+hostnames, paths, users, saves, errors, or credentials. `Cache-Control:
+no-store` prevents intermediary reuse of an old readiness response.
+
+This path does not traverse the frontend container. The later local host check
+must therefore also require frontend `running` + `healthy` and edge `running`.
+A second public frontend synthetic check can be added later only if real
+incidents show this split misses failures; do not store a broad Basic Auth
+credential at the provider merely for cosmetic SPA probing.
+
+### 7.2 Better Stack manual configuration
+
+Create the monitor manually in the Better Stack dashboard; do not commit or
+script provider tokens for Phase 1A:
+
+| Setting | Phase 1A value |
+| --- | --- |
+| Monitor type | HTTP status monitor |
+| URL | `https://<HOI4_HTTPS_ORIGIN>/api/readiness` |
+| Method | `GET` |
+| Expected status | exactly `200` |
+| Body check | contains `"status":"ok"` |
+| Check frequency | 60 seconds |
+| Request timeout | 5 seconds |
+| Failure confirmation | alert after 3 consecutive failed checks (or the nearest provider confirmation window of about 2 minutes) |
+| Recovery | enabled after the first successful check following an incident |
+| TLS expiry | enabled |
+| Authentication/headers | none |
+
+Use email as the durable primary notification and Better Stack mobile push as
+the fast secondary notification. Start with one reminder after 30–60 minutes
+for an unacknowledged critical incident. Send a provider test alert and verify
+both notification and recovery before treating the monitor as operational.
 
 The 02:40 analysis-history snapshot intentionally stops the backend briefly.
-Choose the consecutive-failure window only after measuring that interruption;
-it should ignore the normal short stop but still alert promptly if the cleanup
-path cannot restore backend health. Do not schedule a daily monitoring mute
-that would also hide a failed restart.
+The three-failure window should ignore the normal short stop but alert within
+roughly three minutes if the cleanup path cannot restore service. During an
+explicit maintenance window, pause the monitor with a recorded end time; do
+not create a daily mute that could hide a failed restart.
 
-This path does not traverse the frontend container. The local checker must
-therefore also require frontend `running` + `healthy` and edge `running`. A
-second public frontend synthetic check can be added later only if real incidents
-show this split misses failures; do not store a broad Basic Auth credential at
-the provider merely for cosmetic SPA probing.
+Repository validation is not a production smoke test. After deploying through
+the normal operator process, verify from an external network that the exact
+readiness URL returns the one-field contract above, while `/api/health`,
+`/api/readiness/`, `/api/auth/me`, and `/` still require the existing Basic Auth
+gate. Never paste a production Basic Auth value into Better Stack.
 
-### 7.2 Liveness versus readiness
+### 7.3 Readiness incident runbook
 
-The current endpoint is readiness: it answers whether the backend can serve
-database-dependent product requests. That is the correct external signal.
-Docker's backend healthcheck also uses it, so a database outage marks backend
-unhealthy even if Node is alive.
+When Better Stack opens an incident:
+
+1. Confirm the failure from a second external network with a bounded `GET` to
+   the exact readiness URL. Do not add Basic Auth or an application session.
+2. Check the VPS/provider status and public DNS/TLS reachability.
+3. On the VPS, inspect `docker compose ps` for edge, frontend, backend,
+   migration, and PostgreSQL state. An unhealthy backend is a symptom, not an
+   instruction to restart it repeatedly.
+4. Inspect bounded recent logs for Caddy, backend, PostgreSQL, and the migration
+   service. Do not copy secrets, environment dumps, user/save data, or raw SQL
+   errors into Better Stack incident notes.
+5. Verify PostgreSQL locally with the existing container health state and
+   `pg_isready`; do not run migrations or writes as a health test.
+6. If the public route fails while containers are healthy, inspect Caddy TLS,
+   routing, DNS, firewall, and VPS networking. If it returns 503, focus on the
+   backend/database path. If it returns the Basic Auth challenge, the deployed
+   Caddy configuration is stale or the requested path is not exact.
+7. After repair, require a direct 200 response and Better Stack recovery. Record
+   the incident duration and root cause; recovery only proves readiness has
+   returned.
+
+Do not automatically restart services, run migrations, prune data, restore a
+backup, or rotate credentials solely because this monitor fires. Those actions
+require diagnosis and the relevant recovery runbook.
+
+### 7.4 Liveness versus readiness
+
+`GET /api/readiness` is the external product-readiness signal: it is ready only
+when the backend and critical PostgreSQL dependency can serve normal requests.
+The pre-existing `GET /api/health` compatibility route remains unchanged. It
+includes the compact database state, treats intentionally disabled database
+mode as healthy for local compatibility, and remains behind Caddy Basic Auth.
+
+Docker's backend healthcheck deliberately remains on `/api/health`. With the
+Private Alpha database enabled, a PostgreSQL outage marks the container
+unhealthy. Docker Compose does **not** restart a running container merely
+because its health state changed, and `restart: unless-stopped` only applies
+after process exit, so this does not create a transient-database restart loop.
+Keeping the existing check also avoids changing established startup/dependency
+behavior in this monitoring-only phase.
 
 A separate process-only liveness endpoint is not required for Phase 1. It would
 only help distinguish Node alive/database down and must never replace readiness
 for public uptime. Add it later only if restart automation needs that
-distinction; monitoring already gets the root dependency from the current JSON.
+distinction. There is therefore no existing liveness contract to change in
+Phase 1A.
 
 ## 8. Host monitoring
 
@@ -552,16 +626,18 @@ external five-minute dead-man remains authoritative after host downtime.
 Each step should be independently testable and leave existing backup behavior
 working.
 
-### PR 1 — External readiness boundary and runbook
+### PR 1 — External readiness boundary and runbook (repository work complete)
 
-- Define the exact Caddy exposure policy for `/api/health` without weakening any
-  other Basic Auth/session/CSRF route.
-- Configure one external HTTPS status/keyword monitor with two/three-failure
-  confirmation and recovery notifications.
-- Add focused Caddy/config tests and document how to test without production
-  credentials.
-- Roll back by restoring the prior exact Caddy route; application code and data
-  remain unchanged.
+- The exact unauthenticated Caddy exception is `/api/readiness`; all other Basic
+  Auth/session/CSRF boundaries remain unchanged.
+- The compact endpoint uses the existing pool, a bounded/coalesced `SELECT 1`,
+  deterministic 200/503 status, and no dependency detail.
+- Focused backend tests and local Caddy/Compose validation require no production
+  credentials. Better Stack dashboard configuration and external post-deploy
+  smoke testing remain explicit operator actions.
+- Roll back by restoring the prior Caddyfile and removing the readiness handler;
+  application data, schemas, and the compatibility `/api/health` route are
+  unchanged.
 
 ### PR 2 — Backup completion and immediate failure signals
 

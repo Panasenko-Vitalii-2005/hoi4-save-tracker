@@ -227,6 +227,10 @@ describe('Phase 2B application boundary', () => {
       .get('/api/health')
       .expect(200)
       .expect({ status: 'ok', database: 'disabled' });
+    await request(app.getHttpServer())
+      .get('/api/readiness')
+      .expect(503)
+      .expect({ status: 'unavailable' });
   });
 
   test('all local-disabled APIs stay hidden before authentication', async () => {

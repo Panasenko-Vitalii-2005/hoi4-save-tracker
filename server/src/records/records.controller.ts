@@ -1,4 +1,4 @@
-import { Controller, Get, Res } from '@nestjs/common';
+import { Controller, Get, Header, Res } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Response } from 'express';
@@ -108,12 +108,12 @@ export class SoldiersController {
 
 // ── /api/health ─────────────────────────────────────────────
 
-@Controller('api/health')
+@Controller('api')
 export class HealthController {
   constructor(private readonly database: DatabaseService) {}
 
   @Public()
-  @Get()
+  @Get('health')
   async health(@Res({ passthrough: true }) response: Response) {
     const database = await this.database.health();
     if (database === 'unavailable') response.status(503);
@@ -121,5 +121,14 @@ export class HealthController {
       status: database === 'unavailable' ? 'unavailable' : 'ok',
       database,
     };
+  }
+
+  @Public()
+  @Get('readiness')
+  @Header('Cache-Control', 'no-store')
+  async readiness(@Res({ passthrough: true }) response: Response) {
+    const ready = (await this.database.health()) === 'ok';
+    if (!ready) response.status(503);
+    return { status: ready ? 'ok' : 'unavailable' };
   }
 }

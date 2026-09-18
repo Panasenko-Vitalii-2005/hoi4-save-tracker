@@ -21,4 +21,27 @@ describe('HealthController', () => {
       if (database === 'unavailable') expect(status).toHaveBeenCalledWith(503);
     },
   );
+
+  test.each([
+    ['ok', 'ok', 0],
+    ['disabled', 'unavailable', 1],
+    ['unavailable', 'unavailable', 1],
+  ] as const)(
+    'maps database state %s to generic readiness state %s',
+    async (database, readiness, statusCalls) => {
+      const service = {
+        health: jest.fn().mockResolvedValue(database),
+      } as unknown as DatabaseService;
+      const controller = new HealthController(service);
+      const status = jest.fn();
+
+      await expect(
+        controller.readiness({
+          status,
+        } as unknown as import('express').Response),
+      ).resolves.toEqual({ status: readiness });
+      expect(status).toHaveBeenCalledTimes(statusCalls);
+      if (statusCalls > 0) expect(status).toHaveBeenCalledWith(503);
+    },
+  );
 });

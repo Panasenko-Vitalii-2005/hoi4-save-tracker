@@ -70,6 +70,7 @@ class SecurityTestController {
 
 describe('HTTP session security boundary', () => {
   let app: INestApplication<App>;
+  let database: { health: jest.Mock };
   let auth: {
     authenticateSession: jest.Mock;
     register: jest.Mock;
@@ -88,6 +89,7 @@ describe('HTTP session security boundary', () => {
       login: jest.fn(),
       logout: jest.fn(),
     };
+    database = { health: jest.fn().mockResolvedValue('ok') };
     const moduleRef = await Test.createTestingModule({
       imports: [AuthModule],
       controllers: [
@@ -98,7 +100,7 @@ describe('HTTP session security boundary', () => {
       providers: [
         {
           provide: DatabaseService,
-          useValue: { health: jest.fn().mockResolvedValue('ok') },
+          useValue: database,
         },
         {
           provide: SharedAnalysesService,
@@ -130,6 +132,7 @@ describe('HTTP session security boundary', () => {
   beforeEach(() => {
     process.env.HOI4_LOCAL_SAVES_ENABLED = 'false';
     jest.clearAllMocks();
+    database.health.mockResolvedValue('ok');
     auth.authenticateSession.mockImplementation((token: string) => {
       if (token === SESSION_TOKEN) return Promise.resolve(USER);
       return Promise.reject(new InvalidSessionError());
@@ -202,16 +205,33 @@ describe('HTTP session security boundary', () => {
     },
   );
 
-  test('explicit public, health, and public-share read routes work anonymously', async () => {
+  test('explicit public, readiness, health, and public-share read routes work anonymously', async () => {
     await request(app.getHttpServer())
       .get('/security-test/public')
       .expect(200)
       .expect({ public: true });
     await request(app.getHttpServer()).get('/api/health').expect(200);
+    const readiness = await request(app.getHttpServer())
+      .get('/api/readiness')
+      .expect(200)
+      .expect({ status: 'ok' });
+    expect(readiness.headers['cache-control']).toBe('no-store');
     await request(app.getHttpServer())
       .get(`/api/share/${SHARE_ID}`)
       .expect(200)
       .expect({ game_date: '1944.5.1' });
+  });
+
+  test('readiness returns a generic 503 without leaking database failures', async () => {
+    database.health.mockResolvedValueOnce('unavailable');
+    const response = await request(app.getHttpServer())
+      .get('/api/readiness')
+      .expect(503);
+
+    expect(response.body).toEqual({ status: 'unavailable' });
+    expect(JSON.stringify(response.body)).not.toMatch(
+      /postgres|database|sql|host|port|credential|secret/i,
+    );
   });
 
   test('CSRF bootstrap creates a readable, independent hardened cookie', async () => {

@@ -4,7 +4,11 @@
 }
 
 {$HOI4_HTTPS_ORIGIN} {
-	basic_auth {
+	@private {
+		not path /api/readiness
+	}
+
+	basic_auth @private {
 		{$PRIVATE_ALPHA_USERNAME} {$PRIVATE_ALPHA_PASSWORD_HASH}
 	}
 

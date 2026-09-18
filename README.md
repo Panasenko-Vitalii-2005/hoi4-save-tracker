@@ -256,7 +256,8 @@ Limits are per backend process. The result byte ceiling is authoritative: unpinn
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/health` | Liveness check |
+| `GET` | `/api/health` | Internal compatibility health/database status |
+| `GET` | `/api/readiness` | Minimal external application readiness check |
 | `GET` | `/api/auth/csrf` | Establish the readable double-submit CSRF cookie |
 | `POST` | `/api/auth/register` | Create an account and opaque server session; requires PostgreSQL |
 | `POST` | `/api/auth/login` | Authenticate credentials and create a session; requires PostgreSQL |
@@ -278,7 +279,7 @@ Limits are per backend process. The result byte ceiling is authoritative: unpinn
 | `DELETE` | `/api/analyze/recent/:hash/share` | Revoke a public link |
 | `GET` | `/api/share/:id` | Open a shared read-only analysis |
 
-Application APIs are private by default through a global session guard. Health, CSRF bootstrap, registration, login, idempotent logout, and `GET /api/share/:id` are the explicit public exceptions. Public unsafe auth operations still require the double-submit CSRF token. Private analysis listing, reads, comparisons, trends, storage views, mutations, share management, and batch preflight enforce the authenticated user's PostgreSQL ownership relation.
+Application APIs are private by default through a global session guard. Health/readiness, CSRF bootstrap, registration, login, idempotent logout, and `GET /api/share/:id` are the explicit public exceptions. Public unsafe auth operations still require the double-submit CSRF token. Private analysis listing, reads, comparisons, trends, storage views, mutations, share management, and batch preflight enforce the authenticated user's PostgreSQL ownership relation.
 
 Local filesystem APIs are safe-by-default: when `HOI4_LOCAL_SAVES_ENABLED` is unset or anything other than `true`, `/api/saves`, `/api/saves/default-dir`, `/saves/analyze`, and JSON `path` requests to `/api/analyze` return 404. Keep this disabled for public/SaaS deployments. Enabling it deliberately exposes server-side save discovery/path analysis and is intended only for a trusted local environment. Multipart upload analysis is unaffected.
 
@@ -292,7 +293,7 @@ When database mode is disabled, credential operations and a well-formed session 
 
 The global guard authenticates product APIs through the `hoi4_session` HttpOnly cookie, and unsafe methods require the independent readable `hoi4_csrf` cookie to match `X-CSRF-Token`. A successful analysis inserts the authenticated user/SHA-256 pair into `analysis_ownership`; repeated uploads by one user are idempotent and different users may own the same globally deduplicated artifact. Per-user pin, safe filename, and analysis time live on that relation. Legacy artifacts without a row remain unowned and invisible to private APIs—there is no automatic backfill. Public capability-link reads are the explicit ownership exception.
 
-Native startup leaves database mode disabled unless `HOI4_DATABASE_ENABLED=true`. Disabled mode creates no connection. Enabled mode requires a valid `DATABASE_URL` and fails startup if connectivity validation fails; credentials and connection URLs are never returned by health diagnostics. `/api/health` reports `database: disabled`, `ok`, or `unavailable`.
+Native startup leaves database mode disabled unless `HOI4_DATABASE_ENABLED=true`. Disabled mode creates no connection. Enabled mode requires a valid `DATABASE_URL` and fails startup if connectivity validation fails; credentials and connection URLs are never returned by health diagnostics. `/api/health` preserves the compatibility response `database: disabled`, `ok`, or `unavailable`. `/api/readiness` is ready only when PostgreSQL answers the bounded read-only probe and returns only `status: ok` or `status: unavailable`.
 
 Migrations are explicit and are not run by ordinary backend startup. From `server/`:
 

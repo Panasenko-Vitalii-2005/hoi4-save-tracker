@@ -29,6 +29,9 @@ export interface DatabasePool extends DatabaseExecutor {
 export type DatabasePoolFactory = (connectionString: string) => DatabasePool;
 export type DatabaseHealth = 'disabled' | 'ok' | 'unavailable';
 
+const DATABASE_HEALTH_TIMEOUT_MS = 2_000;
+const DATABASE_HEALTH_CACHE_MS = 5_000;
+
 export class DatabaseUnavailableError extends Error {
   constructor() {
     super('PostgreSQL is not available');
@@ -42,6 +45,10 @@ export function createDatabasePool(connectionString: string): DatabasePool {
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private pool: DatabasePool | null = null;
+  private healthQuery: Promise<DatabaseHealth> | null = null;
+  private healthProbe: Promise<DatabaseHealth> | null = null;
+  private healthCache: { status: DatabaseHealth; expiresAt: number } | null =
+    null;
 
   constructor(
     @Inject(DATABASE_CONFIG) private readonly config: DatabaseConfig,
@@ -65,18 +72,62 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     const pool = this.pool;
     this.pool = null;
+    this.healthQuery = null;
+    this.healthProbe = null;
+    this.healthCache = null;
     await pool?.end();
   }
 
   async health(): Promise<DatabaseHealth> {
     if (!this.config.enabled) return 'disabled';
     if (!this.pool) return 'unavailable';
-    try {
-      await this.pool.query('SELECT 1');
-      return 'ok';
-    } catch {
-      return 'unavailable';
+
+    if (this.healthCache && this.healthCache.expiresAt > Date.now()) {
+      return this.healthCache.status;
     }
+    if (this.healthProbe) return this.healthProbe;
+
+    const query = this.healthQuery ?? this.startHealthQuery(this.pool);
+    const probe = this.withHealthTimeout(query).then((status) => {
+      this.healthCache = {
+        status,
+        expiresAt: Date.now() + DATABASE_HEALTH_CACHE_MS,
+      };
+      return status;
+    });
+    this.healthProbe = probe;
+    void probe.finally(() => {
+      if (this.healthProbe === probe) this.healthProbe = null;
+    });
+    return probe;
+  }
+
+  private startHealthQuery(pool: DatabasePool): Promise<DatabaseHealth> {
+    const query = Promise.resolve()
+      .then(() => pool.query('SELECT 1'))
+      .then<DatabaseHealth>(() => 'ok')
+      .catch<DatabaseHealth>(() => 'unavailable');
+    this.healthQuery = query;
+    void query.finally(() => {
+      if (this.healthQuery === query) this.healthQuery = null;
+    });
+    return query;
+  }
+
+  private withHealthTimeout(
+    query: Promise<DatabaseHealth>,
+  ): Promise<DatabaseHealth> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(
+        () => resolve('unavailable'),
+        DATABASE_HEALTH_TIMEOUT_MS,
+      );
+      timeout.unref();
+      void query.then((status) => {
+        clearTimeout(timeout);
+        resolve(status);
+      });
+    });
   }
 
   available(): boolean {
