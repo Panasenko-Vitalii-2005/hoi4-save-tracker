@@ -42,6 +42,10 @@ if [[ "$command_name" == "version" ]]; then
   exit 0
 fi
 
+if [[ "${FAKE_RCLONE_FAIL:-false}" == true ]]; then
+  exit 69
+fi
+
 if [[ "$command_name" != "copyto" || $# -lt 2 ]]; then
   exit 64
 fi
@@ -58,12 +62,14 @@ if [[ "$destination_path" == *:* ]]; then
   mkdir -p -- "$(dirname -- "$resolved_destination")"
   cp -- "$source_path" "$resolved_destination"
   printf 'upload %s\n' "$destination_path" >> "$FAKE_RCLONE_LOG"
+  printf 'rclone upload\n' >> "$FAKE_EVENT_LOG"
   exit 0
 fi
 
 resolved_source="$(remote_path "$source_path")"
 if [[ ! -f "$resolved_source" ]]; then
   printf 'missing-download-success %s\n' "$source_path" >> "$FAKE_RCLONE_LOG"
+  printf 'rclone missing-download\n' >> "$FAKE_EVENT_LOG"
   rm -f -- "$destination_path"
   exit 0
 fi
@@ -71,7 +77,20 @@ fi
 mkdir -p -- "$(dirname -- "$destination_path")"
 cp -- "$resolved_source" "$destination_path"
 printf 'download %s\n' "$source_path" >> "$FAKE_RCLONE_LOG"
+printf 'rclone download\n' >> "$FAKE_EVENT_LOG"
 FAKE_RCLONE
+
+cat > "$TEST_ROOT/bin/heartbeat" <<'FAKE_HEARTBEAT'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf '%s %s\n' "$1" "$2" >> "$FAKE_HEARTBEAT_LOG"
+printf 'heartbeat %s %s\n' "$1" "$2" >> "$FAKE_EVENT_LOG"
+if [[ "${FAKE_HEARTBEAT_FAIL:-false}" == true ]]; then
+  exit 1
+fi
+FAKE_HEARTBEAT
 
 cat > "$TEST_ROOT/bin/sha256sum" <<'TRACKED_SHA256'
 #!/usr/bin/env bash
@@ -126,13 +145,20 @@ create_pair \
   "$TEST_ROOT/analysis-history" \
   "analysis-history_2026-09-17_024000.tar.gz" \
   "analysis-history fixture"
-touch "$TEST_ROOT/rclone.conf" "$TEST_ROOT/rclone.log" "$TEST_ROOT/sha256-missing.log"
+touch \
+  "$TEST_ROOT/rclone.conf" \
+  "$TEST_ROOT/rclone.log" \
+  "$TEST_ROOT/sha256-missing.log" \
+  "$TEST_ROOT/heartbeat.log" \
+  "$TEST_ROOT/event.log"
 
-export PATH="$TEST_ROOT/bin:$PATH"
+export PATH="$TEST_ROOT/bin:/usr/bin:$PATH"
 export REAL_SHA256SUM
 export SHA256_MISSING_FILE_LOG="$TEST_ROOT/sha256-missing.log"
 export FAKE_RCLONE_ROOT="$TEST_ROOT/remote"
 export FAKE_RCLONE_LOG="$TEST_ROOT/rclone.log"
+export FAKE_EVENT_LOG="$TEST_ROOT/event.log"
+export FAKE_HEARTBEAT_LOG="$TEST_ROOT/heartbeat.log"
 export HOI4_OFFSITE_POSTGRES_BACKUP_DIR="$TEST_ROOT/postgres"
 export HOI4_OFFSITE_ANALYSIS_HISTORY_BACKUP_DIR="$TEST_ROOT/analysis-history"
 export HOI4_OFFSITE_WORK_DIR="$TEST_ROOT/work"
@@ -141,6 +167,7 @@ export HOI4_OFFSITE_RCLONE_CONFIG="$TEST_ROOT/rclone.conf"
 export HOI4_OFFSITE_RCLONE_REMOTE="fake"
 export HOI4_OFFSITE_BUCKET="hoi4-save-tracker-backups"
 export HOI4_OFFSITE_PREFIX="private-alpha"
+export HOI4_MONITOR_HEARTBEAT_BIN="$TEST_ROOT/bin/heartbeat"
 
 stdout_log="$TEST_ROOT/stdout.log"
 stderr_log="$TEST_ROOT/stderr.log"
@@ -179,5 +206,34 @@ if [[ "$(find "$TEST_ROOT/work" -maxdepth 1 -name '.verify.*' | wc -l)" -ne 0 ]]
 fi
 
 grep -Fq "All retained local backup generations are verified off-site." "$stdout_log"
+
+if [[ "$(grep -c '^success offsite$' "$FAKE_HEARTBEAT_LOG")" -ne 1 ]]; then
+  echo "Successful off-site replication did not emit exactly one heartbeat." >&2
+  exit 1
+fi
+if [[ "$(tail -n 1 "$FAKE_EVENT_LOG")" != 'heartbeat success offsite' ]]; then
+  echo "Off-site heartbeat was emitted before remote verification completed." >&2
+  exit 1
+fi
+
+export FAKE_RCLONE_FAIL=true
+if "$REPLICATION_SCRIPT" > /dev/null 2> "$TEST_ROOT/replication-failure.err"; then
+  echo "Forced off-site replication failure unexpectedly succeeded." >&2
+  exit 1
+fi
+unset FAKE_RCLONE_FAIL
+if [[ "$(grep -c '^success offsite$' "$FAKE_HEARTBEAT_LOG")" -ne 1 ]]; then
+  echo "Failed off-site replication emitted a success heartbeat." >&2
+  exit 1
+fi
+
+export FAKE_HEARTBEAT_FAIL=true
+"$REPLICATION_SCRIPT" > /dev/null 2> "$TEST_ROOT/heartbeat-failure.err"
+unset FAKE_HEARTBEAT_FAIL
+grep -Fq 'replication succeeded, but its monitoring heartbeat failed' "$TEST_ROOT/heartbeat-failure.err"
+if [[ "$(grep -c '^success offsite$' "$FAKE_HEARTBEAT_LOG")" -ne 2 ]]; then
+  echo "Heartbeat transport failure was not attempted exactly once." >&2
+  exit 1
+fi
 
 echo "replicate-backups-offsite missing destination regression: PASS"

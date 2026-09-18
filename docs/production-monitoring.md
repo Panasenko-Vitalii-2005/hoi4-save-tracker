@@ -27,10 +27,10 @@ notification integrations. Two providers give some vendor diversity but add a
 second account and incident surface. Self-hosting either tool on the monitored
 VPS would not detect loss of that VPS and is not recommended.
 
-This document began as the Phase 0 architecture. Phase 1A's application and
-Caddy readiness boundary is now implemented in the repository; it is not a
-claim that the deployment was updated or that a Better Stack monitor was
-created. Later backup-heartbeat and host-monitoring sections remain proposed.
+This document began as the Phase 0 architecture. Phase 1A readiness is now
+production-accepted, and Phase 1B backup heartbeat/failure signaling is
+implemented in the repository for manual deployment. The host-monitoring work
+in Phase 1C remains proposed.
 
 ## 1. Current observability
 
@@ -88,17 +88,11 @@ and history retention keep seven complete local generations by default.
 Off-site storage is intentionally append-only.
 
 The backup services use `User=root`, `UMask=0077`, `NoNewPrivileges=true`, low
-I/O priority, and root-readable environment files. They do not currently have:
-
-- `OnFailure=` handlers;
-- success/dead-man heartbeats;
-- persistent last-success state for a health checker;
-- explicit `TimeoutStartSec=` limits;
-- an active alert destination.
-
-`systemctl status` and journald therefore expose failures only to an operator
-who looks. `Persistent=true` improves recovery after reboot, but does not notify
-when a timer is disabled, a unit never starts, or the VPS disappears.
+I/O priority, and root-readable environment files. Phase 1B adds an independent
+success heartbeat for each job, atomic local last-success state, allowlisted
+`OnFailure=` signaling, and conservative systemd execution ceilings. The
+external dead-man remains authoritative for a disabled timer or dead VPS,
+because neither systemd nor a local notifier can report when it never runs.
 
 ### 1.3 Disk-failure behavior
 
@@ -215,44 +209,87 @@ application dependency on the provider.
 
 ### 6.1 Success definition
 
-Send a success heartbeat only after the existing script exits zero. For each
-job that means:
+Each script invokes the shared helper only after its ordinary work has reached
+the truthful success boundary. For each job that means:
 
-- PostgreSQL: dump is non-empty, `pg_restore --list` passed, and the finalized
-  data/checksum pair exists;
+- PostgreSQL: dump is non-empty, `pg_restore --list` passed, the finalized
+  data/checksum pair exists, and retention completed;
 - analysis history: archive structure and every JSON/gzip result passed the
   isolated validation, the finalized pair exists, and the backend restart path
   did not fail;
-- off-site: all eligible retained local generations passed local checksum and
+- off-site: every eligible retained local generation passed local checksum and
   download-after-upload remote verification, including checksum sidecars.
 
 Do not ping after merely starting a service, creating a file, or seeing a unit
 become `inactive`. A successful oneshot unit is normally inactive after it
 finishes, so “inactive” is not failure evidence.
 
-Add a tiny, provider-specific ping helper rather than inserting raw URLs into
-the backup scripts. The success path should:
+`monitoring-heartbeat.sh` is the only component that handles provider URLs. A
+success invocation:
 
 1. atomically update a root-owned timestamp/state file under
    `/var/lib/hoi4-save-tracker-monitor/`;
-2. send the corresponding bounded success ping with short connect/total
-   timeouts and limited retries;
-3. log ping failure without changing the already established backup result.
+2. selects the job's independent URL from an allowlisted mapping and accepts
+   only the official Better Stack HTTPS heartbeat origin/path;
+3. sends one request with a two-second connect timeout and five-second total
+   timeout, no redirects, no request/output body, and no URL in logs;
+4. returns a delivery failure to the calling script, which logs a sanitized
+   warning while preserving the already established backup success.
 
-Add `OnFailure=hoi4-monitor-failure@%n.service` to each backup unit. The
-template must accept only an allowlisted unit name, select a preconfigured
-failure URL, and send no journal content. This provides immediate notification
-when a unit runs and fails. The external deadline remains the fallback if the
-failure notifier, timer, network, or entire VPS is unavailable.
+Missing heartbeat configuration is an explicit safe no-op: local success state
+is still recorded and the backup stays successful. An invalid URL, unavailable
+curl, state-write failure, timeout, or provider error is monitoring failure,
+not backup failure. `curl` output is discarded so a capability URL cannot enter
+the journal.
 
-Explicit `TimeoutStartSec=` values should bound hung work and turn it into a
-real failed unit. Measure normal production durations first. Conservative
-initial ceilings for review are 30 minutes for PostgreSQL, 60 minutes for
-analysis history, and 120 minutes for R2 replication. These are not performance
-targets; they prevent an indefinitely “activating” job from escaping both
-success and failure handling.
+Each backup unit has `OnFailure=hoi4-monitor-failure@%n.service`. The hardened
+template passes only the failed unit name to the same helper. The helper accepts
+the three exact allowlisted unit names and appends Better Stack's documented
+`/fail` suffix; it never sends journal output or an exit-code payload. This
+provides immediate notification when a unit actually starts and fails. The
+dead-man deadline remains the fallback if that request, the timer, network, or
+entire VPS is unavailable.
 
-### 6.2 External schedules and grace
+`TimeoutStartSec=` is 30 minutes for PostgreSQL, 60 minutes for analysis
+history, and 120 minutes for R2 replication. These are conservative safety
+ceilings, not performance targets. A timeout becomes a failed unit and invokes
+the immediate failure handler.
+
+The resulting semantics are deliberate:
+
+- backup failure: no success heartbeat; `/fail` is attempted; the dead-man
+  monitor eventually alerts even if immediate delivery fails;
+- backup and heartbeat success: local state and the external deadline advance;
+- backup success but provider/network failure: backup remains successful, a
+  sanitized warning is journaled, and the external monitor may become late;
+- disabled/missed timer: nothing locally can ping, so the dead-man alerts;
+- unavailable VPS: all three heartbeats go late while external application
+  readiness also fails, separating host-wide loss from one failed job.
+
+### 6.2 Better Stack heartbeat setup
+
+Create three independent heartbeat monitors manually. Do not use one shared
+URL and do not commit the generated capability URLs:
+
+| Better Stack heartbeat | Environment variable | Period | Grace | Approximate missed-success alert |
+| --- | --- | ---: | ---: | --- |
+| Private Alpha PostgreSQL backup | `HOI4_MONITOR_POSTGRES_HEARTBEAT_URL` | 24 hours | 90 minutes | around 04:00 after the expected 02:30 run |
+| Private Alpha analysis-history backup | `HOI4_MONITOR_ANALYSIS_HISTORY_HEARTBEAT_URL` | 24 hours | 120 minutes | around 04:40 after the expected 02:40 run |
+| Private Alpha off-site replication | `HOI4_MONITOR_OFFSITE_HEARTBEAT_URL` | 24 hours | 180 minutes | around 06:00 after the expected 03:00 run |
+
+Better Stack starts the interval after the first success request. Create all
+three monitors, copy each generated base URL to its exact variable in
+`/etc/hoi4-save-tracker/monitoring.env`, keep that file `root:root` mode `0600`,
+then run each real service once successfully to initialize its monitor. Enable
+email and mobile push/recovery notifications consistently with readiness. Do
+not configure a generic timer that pings independently of backup success.
+
+The helper uses the documented base URL for success and the same URL plus
+`/fail` for an immediate execution failure. Do not add command output or exit
+codes to failure requests: backup output can contain operational data, and the
+unit name already identifies the failed stage.
+
+### 6.3 External schedules and grace
 
 Configure provider schedules in the VPS's actual timezone, not an assumed UTC
 translation:
@@ -280,7 +317,7 @@ do not lengthen grace permanently to hide planned work.
 was down past the external grace, an alert is correct. The eventual successful
 catch-up ping should generate recovery, not erase incident history.
 
-### 6.3 Freshness and artifact age
+### 6.4 Freshness and artifact age
 
 The local health checker must validate all of the following:
 
@@ -349,13 +386,13 @@ script provider tokens for Phase 1A:
 | Monitor type | HTTP status monitor |
 | URL | `https://<HOI4_HTTPS_ORIGIN>/api/readiness` |
 | Method | `GET` |
-| Expected status | exactly `200` |
-| Body check | contains `"status":"ok"` |
-| Check frequency | 60 seconds |
+| Expected status | HTTP 2xx (`200` in the healthy contract) |
+| Check frequency | 3 minutes (current free-plan setting) |
 | Request timeout | 5 seconds |
-| Failure confirmation | alert after 3 consecutive failed checks (or the nearest provider confirmation window of about 2 minutes) |
-| Recovery | enabled after the first successful check following an incident |
-| TLS expiry | enabled |
+| Failure confirmation | 3 minutes |
+| Recovery period | 1 minute |
+| IP version | IPv4 only |
+| SSL/TLS verification | enabled |
 | Authentication/headers | none |
 
 Use email as the durable primary notification and Better Stack mobile push as
@@ -363,11 +400,19 @@ the fast secondary notification. Start with one reminder after 30–60 minutes
 for an unacknowledged critical incident. Send a provider test alert and verify
 both notification and recovery before treating the monitor as operational.
 
+Production acceptance was completed on September 18, 2026 without storing any
+provider token in the repository. A controlled backend stop made public
+readiness return HTTP 502, Better Stack opened a real incident and delivered
+email, restoring the backend returned HTTP 200, and Better Stack automatically
+resolved the incident and delivered recovery email. The observed incident ran
+approximately four minutes. This verifies the complete edge/provider alert and
+recovery path, not only the controller response.
+
 The 02:40 analysis-history snapshot intentionally stops the backend briefly.
-The three-failure window should ignore the normal short stop but alert within
-roughly three minutes if the cleanup path cannot restore service. During an
-explicit maintenance window, pause the monitor with a recorded end time; do
-not create a daily mute that could hide a failed restart.
+The current confirmation window ignored the normal short stop in production
+testing while still detecting a failed restoration. During an explicit
+maintenance window, pause the monitor with a recorded end time; do not create
+a daily mute that could hide a failed restart.
 
 Repository validation is not a production smoke test. After deploying through
 the normal operator process, verify from an external network that the exact
@@ -435,7 +480,7 @@ read-only checks and then pings its own dead-man URL:
    remain running.
 3. Backup timers loaded, enabled, active, and with plausible next/last trigger
    values.
-4. Last-success/artifact ages satisfy section 6.3.
+4. Last-success/artifact ages satisfy section 6.4.
 5. Every distinct filesystem containing Docker data, local backups, monitoring
    state, and `/` has safe byte and inode headroom.
 6. `/proc/meminfo` `MemAvailable` is not persistently low; any configured swap
@@ -607,10 +652,11 @@ Recommended secret/config locations:
 ```text
 /etc/hoi4-save-tracker/monitoring.env       mode 0600 root:root
 /var/lib/hoi4-save-tracker-monitor/         mode 0700 root:root
-/usr/local/sbin/hoi4-save-tracker-monitor   mode 0750 root:root
+/usr/local/sbin/hoi4-save-tracker-heartbeat mode 0750 root:root
+/usr/local/sbin/hoi4-save-tracker-monitor   mode 0750 root:root (Phase 1C)
 ```
 
-The repository should contain example configuration with blank URLs only.
+The repository contains example heartbeat configuration with blank URLs only.
 Provider monitor IDs, ping URLs, webhook URLs, API keys, email addresses, phone
 numbers, and Basic Auth values must not be committed. Installation remains an
 explicit operator action followed by `systemd-analyze verify`, daemon reload,
@@ -626,28 +672,30 @@ external five-minute dead-man remains authoritative after host downtime.
 Each step should be independently testable and leave existing backup behavior
 working.
 
-### PR 1 — External readiness boundary and runbook (repository work complete)
+### PR 1 — External readiness boundary and runbook (production-accepted)
 
 - The exact unauthenticated Caddy exception is `/api/readiness`; all other Basic
   Auth/session/CSRF boundaries remain unchanged.
 - The compact endpoint uses the existing pool, a bounded/coalesced `SELECT 1`,
   deterministic 200/503 status, and no dependency detail.
 - Focused backend tests and local Caddy/Compose validation require no production
-  credentials. Better Stack dashboard configuration and external post-deploy
-  smoke testing remain explicit operator actions.
+  credentials. The deployed endpoint, real incident, email notification, and
+  recovery path were accepted on September 18, 2026.
 - Roll back by restoring the prior Caddyfile and removing the readiness handler;
   application data, schemas, and the compatibility `/api/health` route are
   unchanged.
 
-### PR 2 — Backup completion and immediate failure signals
+### PR 2 — Backup completion and immediate failure signals (repository complete)
 
-- Add a fixed ping helper, blank example secret configuration, atomic
+- Includes a fixed ping helper, blank example secret configuration, atomic
   last-success state, and an allowlisted `OnFailure` template.
-- Extend the three service units with non-blocking success reporting,
-  `OnFailure=`, and measured `TimeoutStartSec=` limits.
-- Test success, script failure, alert-network failure, timeout, secret masking,
+- Extends the three service units with non-blocking success reporting,
+  `OnFailure=`, and conservative `TimeoutStartSec=` limits.
+- Tests success, script failure, alert-network failure, timeout, secret masking,
   exit-code preservation, and no heartbeat before validation completes.
-- Configure three hosted heartbeat schedules only after manual successful runs.
+- Manual VPS installation and three Better Stack heartbeat monitors remain
+  operator actions after review; repository validation is not production
+  acceptance.
 
 ### PR 3 — Local host/disk/timer health checker
 

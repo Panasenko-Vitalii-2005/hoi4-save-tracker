@@ -2,13 +2,16 @@
 Description=HoI4 Save Tracker Private Alpha analysis-history backup
 Requires=docker.service
 After=docker.service
+OnFailure=hoi4-monitor-failure@%n.service
 
 [Service]
 Type=oneshot
 User=root
 Group=root
 EnvironmentFile=/etc/hoi4-save-tracker/analysis-history-backup.env
+EnvironmentFile=-/etc/hoi4-save-tracker/monitoring.env
 ExecStart=/usr/local/sbin/hoi4-save-tracker-analysis-history-backup
+TimeoutStartSec=60min
 UMask=0077
 NoNewPrivileges=true
 Nice=10

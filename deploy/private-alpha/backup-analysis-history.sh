@@ -9,6 +9,7 @@ PROJECT_DIR="${HOI4_PROJECT_DIR:-$(cd -- "$SCRIPT_DIR/../.." && pwd)}"
 ENV_FILE="${HOI4_PRIVATE_ALPHA_ENV_FILE:-$PROJECT_DIR/.env.private-alpha}"
 BACKUP_DIR="${HOI4_ANALYSIS_HISTORY_BACKUP_DIR:-/var/backups/hoi4-save-tracker/analysis-history}"
 RETENTION="${HOI4_ANALYSIS_HISTORY_BACKUP_RETENTION:-7}"
+HEARTBEAT_BIN="${HOI4_MONITOR_HEARTBEAT_BIN:-/usr/local/sbin/hoi4-save-tracker-heartbeat}"
 
 if [[ ! "$RETENTION" =~ ^[1-9][0-9]*$ ]]; then
   echo "HOI4_ANALYSIS_HISTORY_BACKUP_RETENTION must be a positive integer." >&2
@@ -64,6 +65,17 @@ temporary_listing=""
 pair_complete=false
 backend_stopped_by_script=false
 
+send_success_heartbeat() {
+  if [[ "$HEARTBEAT_BIN" == /* && -x "$HEARTBEAT_BIN" ]]; then
+    if ! "$HEARTBEAT_BIN" success analysis-history; then
+      echo "Analysis-history backup succeeded, but its monitoring heartbeat failed." >&2
+    fi
+  else
+    echo "Analysis-history backup succeeded, but its monitoring heartbeat helper is unavailable." >&2
+  fi
+  return 0
+}
+
 restart_backend_if_needed() {
   if [[ "$backend_stopped_by_script" != true ]]; then
     return 0
@@ -98,6 +110,10 @@ cleanup() {
   if [[ "$pair_complete" != true ]]; then
     [[ -e "$final_checksum" ]] && rm -f -- "$final_checksum"
     [[ -e "$final_archive" ]] && rm -f -- "$final_archive"
+  fi
+
+  if (( status == 0 )); then
+    send_success_heartbeat
   fi
 
   exit "$status"

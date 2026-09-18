@@ -404,6 +404,126 @@ systemctl list-timers \
   hoi4-offsite-backup.timer
 ```
 
+## Backup success/failure heartbeat monitoring
+
+Phase 1B adds three independent Better Stack heartbeat monitors around the
+existing jobs. It does not change backup formats, retention, R2 permissions, or
+restore behavior. Each script sends success only after its complete validation
+and retention/remote-verification path finishes. A failed job sends no success
+and its systemd unit attempts the provider's explicit `/fail` signal.
+
+Create these three heartbeat monitors manually in Better Stack before filling
+the configuration:
+
+| Monitor | Expected interval | Grace | Configuration variable |
+| --- | ---: | ---: | --- |
+| PostgreSQL backup | 24 hours | 90 minutes | `HOI4_MONITOR_POSTGRES_HEARTBEAT_URL` |
+| Analysis-history backup | 24 hours | 120 minutes | `HOI4_MONITOR_ANALYSIS_HISTORY_HEARTBEAT_URL` |
+| Off-site replication | 24 hours | 180 minutes | `HOI4_MONITOR_OFFSITE_HEARTBEAT_URL` |
+
+Install curl, the shared helper, blank root-only configuration, failure unit,
+and the updated backup services. The helper accepts only HTTPS heartbeat URLs
+on Better Stack's official heartbeat endpoint and never logs their values:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y curl
+test "$(command -v curl)" = /usr/bin/curl
+
+sudo systemctl stop \
+  hoi4-postgres-backup.timer \
+  hoi4-analysis-history-backup.timer \
+  hoi4-offsite-backup.timer
+systemctl is-active \
+  hoi4-postgres-backup.service \
+  hoi4-analysis-history-backup.service \
+  hoi4-offsite-backup.service
+# All three services must be inactive before replacing their scripts.
+
+sudo install -m 0750 deploy/private-alpha/backup-postgres.sh \
+  /usr/local/sbin/hoi4-save-tracker-postgres-backup
+sudo install -m 0750 deploy/private-alpha/backup-analysis-history.sh \
+  /usr/local/sbin/hoi4-save-tracker-analysis-history-backup
+sudo install -m 0750 deploy/private-alpha/replicate-backups-offsite.sh \
+  /usr/local/sbin/hoi4-save-tracker-offsite-backup
+
+sudo install -m 0750 deploy/private-alpha/monitoring-heartbeat.sh \
+  /usr/local/sbin/hoi4-save-tracker-heartbeat
+sudo install -d -m 0755 /etc/hoi4-save-tracker
+sudo install -m 0600 deploy/private-alpha/monitoring.env.example \
+  /etc/hoi4-save-tracker/monitoring.env
+sudo chown root:root /etc/hoi4-save-tracker/monitoring.env
+sudo editor /etc/hoi4-save-tracker/monitoring.env
+
+sudo install -m 0644 deploy/private-alpha/hoi4-monitor-failure@.service \
+  /etc/systemd/system/hoi4-monitor-failure@.service
+sudo install -m 0644 deploy/private-alpha/hoi4-postgres-backup.service \
+  /etc/systemd/system/hoi4-postgres-backup.service
+sudo install -m 0644 deploy/private-alpha/hoi4-analysis-history-backup.service \
+  /etc/systemd/system/hoi4-analysis-history-backup.service
+sudo install -m 0644 deploy/private-alpha/hoi4-offsite-backup.service \
+  /etc/systemd/system/hoi4-offsite-backup.service
+
+sudo systemd-analyze verify \
+  /etc/systemd/system/hoi4-monitor-failure@.service \
+  /etc/systemd/system/hoi4-postgres-backup.service \
+  /etc/systemd/system/hoi4-analysis-history-backup.service \
+  /etc/systemd/system/hoi4-offsite-backup.service
+sudo systemctl daemon-reload
+```
+
+Do not paste heartbeat URLs into unit files, command lines, shell history, or
+journal messages. The environment file must stay `root:root` mode `0600`.
+Leaving one URL empty is a safe temporary state: that job still records local
+success and remains successful, but no external dead-man exists for it.
+
+Initialize each Better Stack monitor only with a real, fully successful job:
+
+```bash
+sudo systemctl start hoi4-postgres-backup.service
+sudo systemctl start hoi4-analysis-history-backup.service
+sudo systemctl start hoi4-offsite-backup.service
+
+sudo systemctl --no-pager --full status \
+  hoi4-postgres-backup.service \
+  hoi4-analysis-history-backup.service \
+  hoi4-offsite-backup.service
+sudo journalctl --since today \
+  -u hoi4-postgres-backup.service \
+  -u hoi4-analysis-history-backup.service \
+  -u hoi4-offsite-backup.service \
+  -u 'hoi4-monitor-failure@*'
+sudo ls -la /var/lib/hoi4-save-tracker-monitor
+
+sudo systemctl enable --now \
+  hoi4-postgres-backup.timer \
+  hoi4-analysis-history-backup.timer \
+  hoi4-offsite-backup.timer
+```
+
+Expect exactly `postgres.last-success`, `analysis-history.last-success`, and
+`offsite.last-success`, each mode `0600`, after the three successful runs. The
+helper uses a two-second connect timeout and five-second total timeout. Provider
+or network failure is only a sanitized warning; it never deletes a valid
+generation, retries the backup, leaves the backend stopped, or converts a
+successful backup service into failure.
+
+To verify immediate failure delivery, schedule a deliberate provider alert
+during a maintenance/test window rather than corrupting a production backup:
+
+```bash
+sudo systemctl start \
+  hoi4-monitor-failure@hoi4-postgres-backup.service
+sudo journalctl -u \
+  hoi4-monitor-failure@hoi4-postgres-backup.service --since today
+```
+
+That command intentionally reports failure for the PostgreSQL heartbeat. Verify
+the incident/email, then run the real PostgreSQL backup service successfully to
+send recovery. Never include backup output in the provider event. A disabled
+timer, failed notifier, lost network, or dead VPS is still detected by the
+independent missed-heartbeat deadline.
+
 ### Recover from R2 after loss of the VPS
 
 On isolated/new infrastructure, list the two remote prefixes and choose compatible PostgreSQL and history generations from nearby timestamps. The 02:30 and 02:40 artifacts are not an atomic cross-storage snapshot:

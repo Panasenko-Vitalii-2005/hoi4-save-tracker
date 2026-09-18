@@ -1,0 +1,17 @@
+[Unit]
+Description=Report failure of HoI4 Save Tracker backup unit %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=-/etc/hoi4-save-tracker/monitoring.env
+ExecStart=-/usr/local/sbin/hoi4-save-tracker-heartbeat failure %i
+TimeoutStartSec=15s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict

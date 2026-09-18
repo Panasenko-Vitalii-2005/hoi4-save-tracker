@@ -12,6 +12,7 @@ RCLONE_CONFIG="${HOI4_OFFSITE_RCLONE_CONFIG:-}"
 RCLONE_REMOTE="${HOI4_OFFSITE_RCLONE_REMOTE:-}"
 RCLONE_BUCKET="${HOI4_OFFSITE_BUCKET:-}"
 RCLONE_PREFIX="${HOI4_OFFSITE_PREFIX:-}"
+HEARTBEAT_BIN="${HOI4_MONITOR_HEARTBEAT_BIN:-/usr/local/sbin/hoi4-save-tracker-heartbeat}"
 
 fail() {
   echo "$1" >&2
@@ -80,6 +81,17 @@ fi
 
 verification_dir="$(mktemp -d --tmpdir="$WORK_DIR" ".verify.XXXXXX")"
 
+send_success_heartbeat() {
+  if [[ "$HEARTBEAT_BIN" == /* && -x "$HEARTBEAT_BIN" ]]; then
+    if ! "$HEARTBEAT_BIN" success offsite; then
+      echo "Off-site replication succeeded, but its monitoring heartbeat failed." >&2
+    fi
+  else
+    echo "Off-site replication succeeded, but its monitoring heartbeat helper is unavailable." >&2
+  fi
+  return 0
+}
+
 cleanup() {
   status=$?
   trap - EXIT INT TERM HUP
@@ -95,6 +107,10 @@ cleanup() {
       status=1
       ;;
   esac
+
+  if (( status == 0 )); then
+    send_success_heartbeat
+  fi
 
   exit "$status"
 }

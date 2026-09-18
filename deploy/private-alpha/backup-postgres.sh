@@ -9,6 +9,7 @@ PROJECT_DIR="${HOI4_PROJECT_DIR:-$(cd -- "$SCRIPT_DIR/../.." && pwd)}"
 ENV_FILE="${HOI4_PRIVATE_ALPHA_ENV_FILE:-$PROJECT_DIR/.env.private-alpha}"
 BACKUP_DIR="${HOI4_POSTGRES_BACKUP_DIR:-/var/backups/hoi4-save-tracker/postgres}"
 RETENTION="${HOI4_POSTGRES_BACKUP_RETENTION:-7}"
+HEARTBEAT_BIN="${HOI4_MONITOR_HEARTBEAT_BIN:-/usr/local/sbin/hoi4-save-tracker-heartbeat}"
 
 if [[ ! "$RETENTION" =~ ^[1-9][0-9]*$ ]]; then
   echo "HOI4_POSTGRES_BACKUP_RETENTION must be a positive integer." >&2
@@ -61,8 +62,20 @@ temporary_dump="$(mktemp --tmpdir="$BACKUP_DIR" ".${filename}.tmp.XXXXXX")"
 temporary_checksum=""
 pair_complete=false
 
+send_success_heartbeat() {
+  if [[ "$HEARTBEAT_BIN" == /* && -x "$HEARTBEAT_BIN" ]]; then
+    if ! "$HEARTBEAT_BIN" success postgres; then
+      echo "PostgreSQL backup succeeded, but its monitoring heartbeat failed." >&2
+    fi
+  else
+    echo "PostgreSQL backup succeeded, but its monitoring heartbeat helper is unavailable." >&2
+  fi
+  return 0
+}
+
 cleanup() {
   status=$?
+  trap - EXIT
 
   if [[ -n "$temporary_dump" && -e "$temporary_dump" ]]; then
     rm -f -- "$temporary_dump"
@@ -73,6 +86,10 @@ cleanup() {
   if [[ "$pair_complete" != true ]]; then
     [[ -e "$final_checksum" ]] && rm -f -- "$final_checksum"
     [[ -e "$final_dump" ]] && rm -f -- "$final_dump"
+  fi
+
+  if (( status == 0 )); then
+    send_success_heartbeat
   fi
 
   exit "$status"
