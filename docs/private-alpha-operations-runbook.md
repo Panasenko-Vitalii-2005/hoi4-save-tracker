@@ -226,11 +226,11 @@ These commands list object names only. Do not run `rclone config show`, add
 verbose HTTP logging, or paste the rclone configuration:
 
 ```bash
-sudo /usr/local/bin/rclone lsf \
+sudo /usr/bin/rclone lsf \
   --config /home/vitalii/.config/rclone/rclone.conf \
   --files-only \
   hoi4-r2:hoi4-save-tracker-backups/private-alpha/postgres
-sudo /usr/local/bin/rclone lsf \
+sudo /usr/bin/rclone lsf \
   --config /home/vitalii/.config/rclone/rclone.conf \
   --files-only \
   hoi4-r2:hoi4-save-tracker-backups/private-alpha/analysis-history
@@ -472,13 +472,13 @@ HISTORY_OBJECT=analysis-history_YYYY-MM-DD_HHMMSS.tar.gz
 [[ "$HISTORY_OBJECT" =~ ^analysis-history_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6}\.tar\.gz$ ]]
 
 for object in "$PG_OBJECT" "$PG_OBJECT.sha256"; do
-  sudo /usr/local/bin/rclone copyto \
+  sudo /usr/bin/rclone copyto \
     --config /home/vitalii/.config/rclone/rclone.conf \
     "hoi4-r2:hoi4-save-tracker-backups/private-alpha/postgres/$object" \
     "$RECOVERY_DIR/$object"
 done
 for object in "$HISTORY_OBJECT" "$HISTORY_OBJECT.sha256"; do
-  sudo /usr/local/bin/rclone copyto \
+  sudo /usr/bin/rclone copyto \
     --config /home/vitalii/.config/rclone/rclone.conf \
     "hoi4-r2:hoi4-save-tracker-backups/private-alpha/analysis-history/$object" \
     "$RECOVERY_DIR/$object"
@@ -609,26 +609,66 @@ sudo bash -eu -c 'cd -- "$1"; sha256sum --check "$2.sha256"' \
 sudo bash -eu -c 'cd -- "$1"; sha256sum --check "$2.sha256"' \
   bash "$HISTORY_BACKUP_DIR" "$LATEST_ARCHIVE"
 
-sudo /usr/local/bin/rclone lsf \
+R2_POSTGRES=hoi4-r2:hoi4-save-tracker-backups/private-alpha/postgres
+R2_HISTORY=hoi4-r2:hoi4-save-tracker-backups/private-alpha/analysis-history
+R2_POSTGRES_LIST="$(sudo /usr/bin/rclone lsf \
   --config /home/vitalii/.config/rclone/rclone.conf --files-only \
-  hoi4-r2:hoi4-save-tracker-backups/private-alpha/postgres \
-  | grep -Fx "$LATEST_DUMP"
-sudo /usr/local/bin/rclone lsf \
+  "$R2_POSTGRES")"
+R2_HISTORY_LIST="$(sudo /usr/bin/rclone lsf \
   --config /home/vitalii/.config/rclone/rclone.conf --files-only \
-  hoi4-r2:hoi4-save-tracker-backups/private-alpha/postgres \
-  | grep -Fx "$LATEST_DUMP.sha256"
-sudo /usr/local/bin/rclone lsf \
-  --config /home/vitalii/.config/rclone/rclone.conf --files-only \
-  hoi4-r2:hoi4-save-tracker-backups/private-alpha/analysis-history \
-  | grep -Fx "$LATEST_ARCHIVE"
-sudo /usr/local/bin/rclone lsf \
-  --config /home/vitalii/.config/rclone/rclone.conf --files-only \
-  hoi4-r2:hoi4-save-tracker-backups/private-alpha/analysis-history \
-  | grep -Fx "$LATEST_ARCHIVE.sha256"
+  "$R2_HISTORY")"
+
+latest_remote_complete() {
+  local listing="$1"
+  local data_pattern="$2"
+  local candidate
+
+  while IFS= read -r candidate; do
+    if grep -Fxq "$candidate.sha256" <<< "$listing"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(grep -E "$data_pattern" <<< "$listing" | sort -r)
+  return 1
+}
+
+LATEST_REMOTE_DUMP="$(latest_remote_complete "$R2_POSTGRES_LIST" \
+  '^hoi4_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6}\.dump$')"
+LATEST_REMOTE_ARCHIVE="$(latest_remote_complete "$R2_HISTORY_LIST" \
+  '^analysis-history_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6}\.tar\.gz$')"
+printf 'Latest complete remote PostgreSQL: %s\n' "$LATEST_REMOTE_DUMP"
+printf 'Latest complete remote history: %s\n' "$LATEST_REMOTE_ARCHIVE"
+grep -Fxq "$LATEST_REMOTE_DUMP" <<< "$R2_POSTGRES_LIST"
+grep -Fxq "$LATEST_REMOTE_DUMP.sha256" <<< "$R2_POSTGRES_LIST"
+grep -Fxq "$LATEST_REMOTE_ARCHIVE" <<< "$R2_HISTORY_LIST"
+grep -Fxq "$LATEST_REMOTE_ARCHIVE.sha256" <<< "$R2_HISTORY_LIST"
+
+sudo systemctl show hoi4-offsite-backup.service \
+  --property=Result \
+  --property=ExecMainStatus \
+  --property=ExecMainExitTimestamp
+sudo journalctl -u hoi4-offsite-backup.service \
+  --since '-2 days' --no-pager \
+  | grep -E 'Uploading (data|checksum) object|verified off-site|Finished'
+sudo stat -c '%n  modified=%y' \
+  /var/lib/hoi4-save-tracker-monitor/offsite.last-success \
+  "$POSTGRES_BACKUP_DIR/$LATEST_DUMP" \
+  "$HISTORY_BACKUP_DIR/$LATEST_ARCHIVE"
 ```
 
-Expected: both local checksum checks report `OK`; each latest data object and
-its sidecar is present remotely. These commands perform no remote writes.
+Expected: both newest local checksum checks report `OK`; R2 has at least one
+complete PostgreSQL pair and one complete analysis-history pair; and the latest
+off-site service journal ends in successful verification. `Uploading ...`
+lines appear only when that run repaired or added objects, so their absence on
+an idempotent run is not a failure.
+
+The newest local generation and newest replicated generation do not have to be
+equal. Backup creation and off-site replication run asynchronously. A newer
+local generation is expected when its file timestamp is later than
+`offsite.last-success`; it will be considered by the next scheduled replication
+run. Record that lag, but do not classify it as replication failure and do not
+start an extra off-site run merely to force equality. These commands perform no
+remote writes.
 
 ### 3. Prove isolated analysis-history recovery
 
@@ -665,6 +705,32 @@ Expected: host-health passes, readiness is HTTP 200, all four timers remain
 active with future triggers, and Git still shows only the intentional production
 override. Record the selected generation, validated result count, start/end
 time, and outcome without recording credentials or heartbeat URLs.
+
+## Phase 1D production acceptance record
+
+The production recovery drill completed successfully on September 18, 2026:
+
+- `/api/readiness` was healthy and the production Compose services remained
+  healthy/running;
+- all four monitoring/backup timers retained future triggers;
+- host-health completed with `status=0/SUCCESS` and delivered its success
+  heartbeat;
+- isolated restore verification used
+  `analysis-history_2026-09-18_151039.tar.gz`;
+- `recent-analyses.json` and `shared-analyses.json` parsed successfully;
+- all 21 analysis result `.json.gz` files decompressed and parsed as JSON;
+- the validation container had no network and a read-only root filesystem;
+- live `/app/data` was never mounted or modified;
+- guarded cleanup removed the temporary validation directory;
+- the deliberate production Caddyfile override remained intact;
+- no production data or R2 object was changed.
+
+The drill also confirmed the asynchronous replication rule. The complete
+PostgreSQL generation `hoi4_2026-09-18_150831.dump` had been uploaded and
+verified by the successful off-site run around 15:12. The newer complete local
+generation `hoi4_2026-09-18_155855.dump` was created afterward and therefore
+was not yet expected in R2. This was normal replication scheduling, not an
+off-site failure.
 
 ## Remaining Private Alpha limitations
 
