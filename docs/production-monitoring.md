@@ -27,10 +27,11 @@ notification integrations. Two providers give some vendor diversity but add a
 second account and incident surface. Self-hosting either tool on the monitored
 VPS would not detect loss of that VPS and is not recommended.
 
-This document began as the Phase 0 architecture. Phase 1A readiness and Phase
-1B backup heartbeat/failure signaling are production-accepted. Phase 1C host
-monitoring is implemented in the repository for manual deployment and
-production acceptance.
+This document began as the Phase 0 architecture. Phase 1A readiness, Phase 1B
+backup heartbeat/failure signaling, and Phase 1C host monitoring have passed
+production acceptance. Phase 1D operational procedures and the non-destructive
+recovery drill are maintained in the
+[Private Alpha operations runbook](private-alpha-operations-runbook.md).
 
 ## 1. Current observability
 
@@ -58,13 +59,15 @@ deployment guide recommends at least 2 vCPU, 4 GiB RAM, and 20–40 GiB SSD; one
 analysis Worker has a roughly 1 GiB V8 old-generation limit. Host and native
 process memory are not bounded by that Worker limit.
 
-Caddy is the sole public listener on ports 80/443. It terminates TLS, applies
-the Private Alpha HTTP Basic Auth gate, sends `/api/*` to the backend and other
-requests to the frontend. Backend and PostgreSQL have no host ports. The exact
-`/api/readiness` path is the sole Caddy Basic Auth exception and returns only a
-generic status. `/api/readiness/`, `/api/health`, every other API, and the SPA
-remain behind the existing edge gate. Nest's session guard also explicitly
-marks the readiness handler public; no backend port is published.
+Caddy is the sole public listener on ports 80/443. It terminates TLS, sends
+`/api/*` to the backend and other requests to the frontend. Backend and
+PostgreSQL have no host ports. The repository Caddy profile supports a Private
+Alpha HTTP Basic Auth gate with exact `/api/readiness` exception. The current
+production VPS deliberately carries a local Caddyfile override with that outer
+gate removed; application authentication/session/ownership controls remain.
+Nest's session guard explicitly marks readiness public, and no backend port is
+published. Preserve and manually review the production Caddyfile override as
+documented in the operator runbook.
 
 Application logs go to stdout/stderr and the bounded Docker JSON driver.
 NestJS uses its normal logger where services explicitly log; Caddy has no
@@ -359,13 +362,14 @@ current stack; this small cache/coalescing boundary is the deliberately narrow
 abuse control for a constant-size endpoint. It does not add another pool or
 write to PostgreSQL.
 
-Caddy exempts only the exact `/api/readiness` path from Private Alpha Basic
-Auth. The trailing-slash path and all existing application routes remain
-gated. The endpoint is also explicitly public at Nest's session boundary, so
-Better Stack needs no application session, CSRF token, or shared tester Basic
-Auth credential. Its body does not identify PostgreSQL or expose versions,
-hostnames, paths, users, saves, errors, or credentials. `Cache-Control:
-no-store` prevents intermediary reuse of an old readiness response.
+In the repository Caddy profile, only the exact `/api/readiness` path bypasses
+the optional Private Alpha Basic Auth gate. The current production VPS uses the
+documented local Caddyfile override without that outer gate. In both cases the
+endpoint is explicitly public at Nest's session boundary, so Better Stack needs
+no application session, CSRF token, or shared credential. Its body does not
+identify PostgreSQL or expose versions, hostnames, paths, users, saves, errors,
+or credentials. `Cache-Control: no-store` prevents intermediary reuse of an old
+readiness response.
 
 This path does not traverse the frontend container. The later local host check
 must therefore also require frontend `running` + `healthy` and edge `running`.
@@ -413,9 +417,10 @@ a daily mute that could hide a failed restart.
 
 Repository validation is not a production smoke test. After deploying through
 the normal operator process, verify from an external network that the exact
-readiness URL returns the one-field contract above, while `/api/health`,
-`/api/readiness/`, `/api/auth/me`, and `/` still require the existing Basic Auth
-gate. Never paste a production Basic Auth value into Better Stack.
+readiness URL returns the one-field contract above. On the current VPS, also
+verify that the intentional local Caddyfile override remains present and that
+application session/ownership behavior is unchanged. Never place application
+credentials or a future Basic Auth value into Better Stack.
 
 ### 7.3 Readiness incident runbook
 
@@ -434,8 +439,8 @@ When Better Stack opens an incident:
    `pg_isready`; do not run migrations or writes as a health test.
 6. If the public route fails while containers are healthy, inspect Caddy TLS,
    routing, DNS, firewall, and VPS networking. If it returns 503, focus on the
-   backend/database path. If it returns the Basic Auth challenge, the deployed
-   Caddy configuration is stale or the requested path is not exact.
+   backend/database path. An unexpected Basic Auth challenge on the current VPS
+   means the intentional production Caddyfile override was lost or bypassed.
 7. After repair, require a direct 200 response and Better Stack recovery. Record
    the incident duration and root cause; recovery only proves readiness has
    returned.
@@ -449,8 +454,9 @@ require diagnosis and the relevant recovery runbook.
 `GET /api/readiness` is the external product-readiness signal: it is ready only
 when the backend and critical PostgreSQL dependency can serve normal requests.
 The pre-existing `GET /api/health` compatibility route remains unchanged. It
-includes the compact database state, treats intentionally disabled database
-mode as healthy for local compatibility, and remains behind Caddy Basic Auth.
+includes the compact database state and treats intentionally disabled database
+mode as healthy for local compatibility. The repository Caddy profile can put
+it behind Basic Auth; the current production override does not.
 
 Docker's backend healthcheck deliberately remains on `/api/health`. With the
 Private Alpha database enabled, a PostgreSQL outage marks the container
@@ -695,7 +701,7 @@ working.
   application data, schemas, and the compatibility `/api/health` route are
   unchanged.
 
-### PR 2 — Backup completion and immediate failure signals (repository complete)
+### PR 2 — Backup completion and immediate failure signals (production-accepted)
 
 - Includes a fixed ping helper, blank example secret configuration, atomic
   last-success state, and an allowlisted `OnFailure` template.
@@ -703,29 +709,27 @@ working.
   `OnFailure=`, and conservative `TimeoutStartSec=` limits.
 - Tests success, script failure, alert-network failure, timeout, secret masking,
   exit-code preservation, and no heartbeat before validation completes.
-- Manual VPS installation and three Better Stack heartbeat monitors remain
-  operator actions after review; repository validation is not production
-  acceptance.
+- Real success/failure/recovery signaling has been accepted for all three jobs.
 
-### PR 3 — Local host/disk/timer health checker (repository complete)
+### PR 3 — Local host/disk/timer health checker (production-accepted)
 
 - Implements the fixed checks, thresholds, rolling restart/memory state, and
   independent host-health heartbeat from section 8.
 - Uses fixture/fake commands and temporary directories for destructive tests;
   production acceptance must never fill a filesystem or induce memory/OOM
   pressure.
-- Manual VPS installation, one controlled timer failure/recovery, and Better
-  Stack host-heartbeat acceptance remain operator actions after review.
+- A controlled stopped-timer failure, fixed reporter routing, and successful
+  Better Stack recovery have passed production acceptance.
 
-### PR 4 — Operator documentation and recovery drill
+### PR 4 — Operator documentation and recovery drill (repository complete)
 
-- Add an incident runbook for app/DB/Docker, each backup, R2 auth, disk, memory,
-  monitoring provider outage, and planned maintenance.
-- Record provider ownership/MFA, monitor schedules/timezone, secret rotation,
-  test-alert procedure, and journal commands without secrets.
-- Run a non-destructive tabletop drill and a temporary-environment failure test.
-- Review normal durations/usage after two weeks and adjust grace/thresholds with
-  evidence.
+- The operator runbook covers application/DB/Docker, every backup, R2, disk,
+  memory, provider incidents, Git/deploy safety, isolated restores, and closure.
+- The documented Phase 1D acceptance drill validates an existing
+  analysis-history generation in an isolated read-only/no-network container and
+  performs no production-data or R2 mutation.
+- Execute and record the VPS drill after review. Review normal durations/usage
+  after two weeks and adjust grace/thresholds only with evidence.
 
 Do not combine implementation with parser, auth, ownership, backup format,
 retention, R2 lifecycle, or deployment-architecture changes.

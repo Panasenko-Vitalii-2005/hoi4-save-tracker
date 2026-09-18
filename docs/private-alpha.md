@@ -2,9 +2,18 @@
 
 This profile is intentionally limited to **2–5 trusted users**, **one Linux VPS**, and **one backend instance**. It is suitable for private alpha testing, not for a public closed beta.
 
+The production operator runbook, bounded recovery procedures, incident closure
+checklist, and non-destructive Phase 1D drill are in
+[Private Alpha operations runbook](private-alpha-operations-runbook.md).
+
+> **Production exception:** the current VPS intentionally carries a local
+> `deploy/private-alpha/Caddyfile` override with Basic Auth removed. Inspect and
+> preserve that local diff during updates. Never use `git reset --hard`,
+> `git clean`, or a blind Caddyfile replacement to make the checkout clean.
+
 ## Architecture and exposure
 
-`docker-compose.private-alpha.yml` is an override for the normal development Compose file. Caddy is the only public application entry point. It terminates TLS, redirects HTTP to HTTPS, and applies HTTP Basic Auth before routing either the SPA or `/api/*`. Existing application registration, login, opaque sessions, CSRF, and ownership checks remain active behind that deployment gate.
+`docker-compose.private-alpha.yml` is an override for the normal development Compose file. Caddy is the only public application entry point. The repository profile terminates TLS, redirects HTTP to HTTPS, and supports an HTTP Basic Auth gate before routing either the SPA or `/api/*`. The current VPS uses the intentional local exception documented above. Existing application registration, login, opaque sessions, CSRF, and ownership checks remain active.
 
 Expected VPS ingress:
 
@@ -754,4 +763,4 @@ For a full-data restore, use a maintenance window and fresh or explicitly emptie
 
 ## Private-alpha boundaries
 
-This profile does not provide per-user quotas, abuse/rate controls, an application registration allowlist, atomic cross-store snapshots, an off-site retention policy, restore orchestration, multi-instance coordination, distributed locking, readiness alerts or public-beta operations. Basic Auth is a temporary outer gate for trusted testers; public share URLs are also gated. Keep registration details and the outer credential within the invited group.
+This profile does not provide per-user quotas, abuse/rate controls, an application registration allowlist, atomic cross-store snapshots, an off-site retention policy, restore orchestration, multi-instance coordination, distributed locking, or public-beta operations. The repository Caddy profile supports a temporary Basic Auth outer gate, but the current production VPS deliberately removes it through the documented local override. Application authentication, sessions, ownership, CSRF, and public-share boundaries remain the product security boundary.
