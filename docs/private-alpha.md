@@ -382,7 +382,7 @@ sudo systemctl daemon-reload
 Set the production configuration to the existing remote, bucket, prefix, and explicit config path; these values identify storage but contain no R2 key material:
 
 ```text
-HOI4_OFFSITE_RCLONE_BIN=/usr/local/bin/rclone
+HOI4_OFFSITE_RCLONE_BIN=/usr/bin/rclone
 HOI4_OFFSITE_RCLONE_CONFIG=/home/vitalii/.config/rclone/rclone.conf
 HOI4_OFFSITE_RCLONE_REMOTE=hoi4-r2
 HOI4_OFFSITE_BUCKET=hoi4-save-tracker-backups
@@ -395,10 +395,10 @@ Run and inspect one replication before scheduling it. Do not use `rclone config 
 sudo systemctl start hoi4-offsite-backup.service
 sudo systemctl status hoi4-offsite-backup.service
 sudo journalctl -u hoi4-offsite-backup.service
-sudo -u root /usr/local/bin/rclone lsf \
+sudo -u root /usr/bin/rclone lsf \
   --config /home/vitalii/.config/rclone/rclone.conf \
   hoi4-r2:hoi4-save-tracker-backups/private-alpha/postgres
-sudo -u root /usr/local/bin/rclone lsf \
+sudo -u root /usr/bin/rclone lsf \
   --config /home/vitalii/.config/rclone/rclone.conf \
   hoi4-r2:hoi4-save-tracker-backups/private-alpha/analysis-history
 ```
