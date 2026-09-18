@@ -246,7 +246,14 @@ version and reject versions above the highest fixture-verified version until a
 fixture proves compatibility. This is conservative but prevents a structurally
 plausible, semantically wrong analysis after a game update.
 
-## 3. Token resolver findings
+## 3. Token Resolver Feasibility
+
+Phase 0B investigated whether the otherwise viable decoder architecture has a
+complete, maintainable, and defensibly usable resolver source for a public
+SaaS. It did not download, inspect, or copy any resolver dataset. Findings
+below come from public source, public build workflows, upstream documentation,
+and published platform terms. Legal conclusions remain outside this technical
+spike.
 
 ### 3.1 A resolver is mandatory
 
@@ -273,6 +280,19 @@ Its CI workflow clones the private `pdx-tools/tokens` repository with a secret
 PAT for trusted builds and refuses a trusted build when that secret is absent.
 The public PDX Tools README similarly says binary support is available only
 "if you are in possession of a binary token file."
+
+The 2026 Jomini consolidation did not change this boundary. Current Jomini
+contains the resolver interface, text-file loader, binary reader, and the HOI4
+format/melter, but not the HOI4 token-to-string dataset. Its
+[`BasicTokenResolver`](https://github.com/rakaly/jomini/blob/master/crates/jomini/src/binary/resolver.rs)
+still consumes an external mapping. Current PDX Tools likewise documents an
+operator-supplied `assets/tokens/hoi4.txt`; no public generation task or token
+artifact was found.
+
+The latest public librakaly documentation still instructs source builders to
+provide `HOI4_IRONMAN_TOKENS`. Its current token module, like the CLI, compiles
+`assets/tokens/hoi4.txt` into the library. That is a packaging mechanism, not a
+source for the mapping.
 
 Therefore:
 
@@ -327,6 +347,185 @@ Every deployed decoder should identify:
 Unknown tokens or a higher save version should trigger a controlled upgrade,
 not fallback analysis. Resolver upgrades need regression fixtures and the same
 release review as decoder upgrades.
+
+### 3.5 Exact resolver contract
+
+Jomini's public `BasicTokenResolver` documents the transport format, not the
+authoritative contents. Each non-empty line is a four-digit hexadecimal token,
+one space, and its text value, for example `0xffff key_name`. The resolver
+returns a string for a 16-bit token. The public loader accepts duplicate token
+IDs by keeping the last value; a production validator should instead reject
+duplicates so that file order cannot silently change semantics.
+
+This mapping is required for values as well as keys. Struct annotations for a
+few known keys cannot replace it: binary tokens can occur where the parser is
+reading a string value, and this analyzer first melts the whole binary document
+before its existing text parser selects relevant subtrees. A complete resolver
+for an accepted save therefore means **every token encountered in that save has
+one unambiguous text mapping**. It does not mean every token ever allocated by
+HOI4 must already be present, but an incomplete per-save mapping must fail the
+request rather than produce a partial result.
+
+The binary payload itself is not a dictionary. It can reveal which numeric IDs
+occur and can contain literal strings, but it does not generally carry the
+missing ID-to-name association. Repeated saves can improve coverage statistics;
+they cannot prove that numeric token `0x1234` means a particular field.
+
+### 3.6 Why a Rakaly CLI release can melt HOI4 saves
+
+The working release path is visible in the public v0.8.19
+[`tokens.rs`](https://github.com/rakaly/cli/blob/v0.8.19/src/tokens.rs),
+[`build.rs`](https://github.com/rakaly/cli/blob/v0.8.19/build.rs), and
+[`ci.yml`](https://github.com/rakaly/cli/blob/v0.8.19/.github/workflows/ci.yml):
+
+1. the CLI token module uses `include_bytes!` for
+   `assets/tokens/hoi4.txt`;
+2. trusted CI checks out the separate private `pdx-tools/tokens` repository into
+   that assets directory using a secret PAT;
+3. Rust embeds those bytes in the release executable at compile time;
+4. the `melt` command passes the embedded resolver to the HOI4 melter.
+
+A normal public-source checkout does not reproduce that artifact. Its build
+script creates empty token files when the private assets are absent, allowing
+compilation but not meaningful HOI4 binary decoding. This explains the observed
+difference between a downloadable Rakaly executable and a locally built public
+checkout.
+
+That evidence establishes how bytes reach the executable. It does **not**
+establish how the private mapping was originally generated, whether it is
+official or reverse engineered, what versions it covers, or whether another
+project may extract, host, redistribute, or use it in a public service. A
+working executable is therefore a useful compatibility oracle, but not an
+acceptable resolver provenance record.
+
+### 3.7 Resolver-source investigation
+
+| Candidate source | What the public evidence establishes | Completeness/versioning | Headless server viability | Feasibility conclusion |
+| --- | --- | --- | --- | --- |
+| Official HOI4 installation | No documented token export file, command, API, debug switch, or stable asset was found. No installed copy was available in the standard local Steam locations for a bounded verification. | Unknown; game assets change with patches. | A SaaS host cannot assume a licensed user installation. | **Not an established source.** |
+| Steam-distributed HOI4 files | No documented distributed resolver file or stable asset containing the numeric-to-string table was found. Local extraction remains an unproven mechanism, distinct from permission to reuse extracted data. | Unknown and patch-coupled. | Requires a licensed installation and an extraction process that does not currently exist. | **Not an established source.** |
+| Game-generated debug/log output | No documented launch option, console command, log, or dump that exports the HOI4 binary token table was found. Ordinary saves expose numeric usage, not the dictionary. | At best session/save-specific unless the engine exports its full registry. | Could be automated only after a supported export mechanism is identified. | **Not an established source.** |
+| Paradox-provided API/tool/file | No public Paradox API, SDK, tool, or documentation for obtaining the HOI4 token resolver was found. | Unknown. | Would be the preferred authoritative source if Paradox supplies one. | **Not currently available.** |
+| Public Jomini/hoi4save source | Supplies the resolver interface and loader only. The archived hoi4save README explicitly says the resolver cannot be distributed with the library per PDS counsel. | No mapping included. | Library is headless; data is absent. | **Necessary decoder, not a resolver source.** |
+| Public Rakaly CLI/librakaly source build | Embeds an external file; public builds create an empty placeholder unless the operator supplies tokens. | Determined entirely by the supplied private file. | Technically headless. | **Packaging mechanism, not provenance.** |
+| Rakaly release executable | Contains enough embedded data for supported saves because trusted CI injects a private repository. | Release-coupled and opaque; coverage metadata is not published. | Technically usable as a subprocess. | **Reject for deployment until data provenance and rights are documented.** |
+| PDX Tools | Public documentation requires the operator to possess `assets/tokens/hoi4.txt`; its public repository does not provide a HOI4 generation method or artifact. | External/unknown. | Technically headless once supplied. | **Consumer, not source.** |
+| Binary save corpus | Reveals used numeric IDs and literals, not the authoritative names of unresolved IDs. | Save-specific and semantically incomplete. | Automatable but cannot reconstruct names. | **Insufficient by construction.** |
+| Community token tables or compiled mappings | At least one public third-party project contains a compiled token resolver, but no authoritative provenance or reusable token-data permission was found. | Project-specific and potentially stale. | Technically usable. | **Do not download, copy, or ship without provenance and rights.** |
+| User-supplied resolver | The user could provide a mapping they are authorized to use. | User-dependent; must be validated and versioned. | Can be transiently mounted or uploaded, but creates a new untrusted-input and support surface. | **Technically possible, poor transparent-SaaS UX, requires policy/legal review.** |
+| Written Paradox permission plus a versioned artifact/process | Would provide the missing authority and an auditable update source if the grant covers server-side use and distribution model. | Can be explicit and release-managed. | Yes. | **Only clear route to transparent server-side support found.** |
+
+These modes have distinct rights questions. Reading an artifact from a user's
+own installation, copying or embedding it in distributed software, and using a
+user-supplied mapping transiently on a hosted server are not interchangeable.
+Technical feasibility for one does not authorize the others.
+
+### 3.8 Can a minimal resolver be safe?
+
+No minimal allowlist was found that preserves the current analyzer's correctness
+boundary. The proposed helper melts the complete save before the TypeScript
+parser ignores unrelated fields. With the required error policy, an unknown
+token anywhere aborts. With stringify or ignore behavior, an unknown token can
+be a relevant key or value and the analyzer can return convincing but wrong
+totals.
+
+A selective binary parser would not solve this cheaply. Before resolving a key,
+it cannot know whether that subtree is relevant, and tokenized values still
+need names. Implementing selection at the binary layer would create a second,
+HOI4-version-sensitive parser and would contradict the approved reuse of the
+existing text pipeline. A curated list of currently referenced parser keys is
+therefore neither complete nor a safe Phase 1 shortcut.
+
+### 3.9 Architectures when redistribution is unavailable
+
+| Architecture | User experience | Security/operations | Update model | Private Alpha | Public SaaS |
+| --- | --- | --- | --- | --- | --- |
+| Server-owned installed game | Transparent after deployment, but requires the service operator to install and maintain HOI4. | Couples production to a consumer game installation and credentials; no documented resolver extraction step exists. | Patch the installation and regenerate by an unknown process. | Not defensible from current evidence. | Reject. |
+| User uploads a resolver with the save | High friction and unintelligible to normal users; most users do not possess one. | Treat as untrusted input, bound size/grammar, never persist by default, and prevent cross-user reuse. Provenance remains the user's responsibility. | Per request or explicit user-managed versions. | Possible only as an expert experiment after policy review. | Poor product fit. |
+| Local companion performs melting | User installs a native tool; normal upload resumes with plaintext output. Tokens and game access can remain on the user's device. | Requires signed/updateable binaries, local file access disclosure, and a secure handoff. It still needs a legitimate local resolver source. | Companion and resolver update independently with compatibility checks. | Best fallback to investigate if an approved local source exists. | Not transparent browser-only SaaS. |
+| Browser/WASM decoder | Avoids server possession but requires the browser to obtain the same resolver and process very large saves. | Browser memory, file APIs, resolver exposure, and update integrity add risk. | Ship decoder/resolver to every client. | Not realistic without redistribution permission. | Reject under current constraints. |
+| Server runs a downloaded Rakaly release | Browser-only and technically straightforward. | Executes a third-party binary containing opaque private data; cannot audit resolver version/provenance and inherits its broad CLI surface. | Replace whole CLI release and rerun fixtures. | Research oracle only. | Reject. |
+| Plaintext-only with guided recovery | Existing secure path; user changes `save_as_binary=no` and re-saves. | No new native/token boundary. | None. | **Recommended now.** | **Recommended now.** |
+| Server helper plus authorized external resolver | Transparent browser upload and matches the Phase 0 architecture. | Resolver is a read-only deployment secret/artifact with digest, strict validation, and fail-closed behavior. | Explicit resolver releases and fixture gates. | Suitable after permission/provenance gate. | Preferred end state after the gate. |
+
+No public third-party decode service was found with a documented HOI4 resolver
+license, privacy contract, version SLA, and bounded API suitable for forwarding
+users' saves. Sending saves to an opaque service would also violate the current
+local-processing and data-boundary expectations.
+
+### 3.10 Licensing evidence and review boundary
+
+The decoder code and token data are separate artifacts. Rakaly CLI, Jomini,
+hoi4save, and librakaly publish permissive code licenses; those licenses do not
+automatically cover a privately injected token table.
+
+The current Paradox User Agreement describes a limited, personal,
+non-transferable, non-exclusive, non-commercial service license unless
+otherwise agreed, and distinguishes original user content from Paradox or
+third-party material. The Steam Subscriber Agreement likewise describes a
+personal, non-commercial content/services license and restricts copying,
+distribution, and reverse engineering except where the agreement or applicable
+law permits. These are relevant published constraints, not a legal conclusion.
+
+Before any resolver is copied, generated from game assets, embedded, mounted on
+a public server, or redistributed with a helper, counsel or an authorized
+rights holder must confirm the exact proposed operation. This spike cannot turn
+technical accessibility into permission.
+
+### 3.11 Resolver version and update strategy if authorized
+
+If an authorized source becomes available, keep resolver lifecycle independent
+from decoder releases:
+
+1. Store it outside Git and container images as a read-only deployment artifact.
+2. Record source/provenance, written permission scope, resolver revision,
+   supported game range, creation date, byte size, and SHA-256 digest.
+3. On startup, validate the digest, strict line grammar, 16-bit range,
+   uniqueness, non-empty mappings, and a small known-token self-test. Fail
+   readiness rather than start binary support with an invalid resolver.
+4. Test old and new binary fixtures, unknown-token failure, malformed input,
+   highest supported `save_version`, and final `AnalyzeResult` equivalence with
+   trusted plaintext controls.
+5. Promote atomically, restart workers, retain one verified rollback artifact,
+   and log only bounded unknown numeric IDs. Never learn mappings from requests
+   or auto-fetch an unauthenticated community file.
+6. Treat a new game patch as unsupported until the resolver and decoder fixture
+   matrix passes. A resolver-only update must not silently raise the verified
+   binary-format/save-version ceiling.
+
+### 3.12 Decision matrix and Phase 1 gate
+
+| Criterion | Required for Phase 1 | Current evidence | Result |
+| --- | --- | --- | --- |
+| Current HOI4 binary decoder | Version-30-capable, pinned, testable implementation | Current Jomini/HOI4 implementation and the verified post-1.17 fix exist | Pass |
+| Complete resolver mechanics | Strict 16-bit mapping loader and fail-closed unknown handling | Public Jomini implementation exists | Pass |
+| Reproducible resolver source | Documented process/artifact that this project can obtain | Rakaly trusted CI uses a private repository; no public official source/generator found | **Fail** |
+| Rights/provenance | Documented authority for the chosen server-side or redistribution mode | Public code licenses do not establish token-data rights | **Fail** |
+| Version/update metadata | Auditable resolver coverage and release process | Not published for the embedded Rakaly dataset | **Fail** |
+| Safe user experience today | No plausible partial analysis | Plaintext recovery exists; binary must remain rejected | Pass with plaintext-only behavior |
+
+**Phase 1 verdict: BLOCKED.**
+
+Transparent server-side binary support is technically viable, but implementation
+must not begin without a reproducible and defensibly usable resolver source.
+There is no exact public resolver artifact or documented official extraction
+mechanism this project can name today. Rakaly releases demonstrate decoder
+functionality; their private CI dependency does not satisfy this project's
+provenance and deployment requirements.
+
+The next phase is a provenance/permission gate, not a coding phase:
+
+1. Request written guidance from Paradox covering the intended token acquisition
+   method, server-side use, container/deployment storage, and any distribution
+   to users.
+2. Ask the Rakaly/PDX Tools maintainers to document the private mapping's source,
+   generation/update process, coverage metadata, and whether its use can be
+   authorized for this service. Do not request or copy the dataset before that
+   authority is established.
+3. If a written grant and versioned source are obtained, resume the existing
+   Phase 1 helper/fixture plan with the controls in section 3.11.
+4. Until then, retain the guided `save_as_binary=no` recovery path. Investigate
+   a local companion only if an approved user-local resolver source is found.
 
 ## 4. Evaluated integration options
 
@@ -604,6 +803,10 @@ resolver/version.
 
 ## 11. Concrete Phase 1 plan
 
+The Phase 0B `BLOCKED` verdict means no implementation step below may start
+until the provenance/permission gate in section 3.12 passes. This is a deferred
+plan, not approval to add the helper or resolver.
+
 Phase 1 should be split into independently reviewable steps:
 
 1. **Fixture and resolver gate (no product behavior):** secure approved resolver
@@ -641,12 +844,20 @@ Phase 1 should be split into independently reviewable steps:
 - [Current consolidated HOI4 stateful format](https://github.com/rakaly/jomini/blob/e27f87b6bd245602a6f324b35838321abe46986a/crates/hoi4save/src/flavor.rs)
 - [Current HOI4 modern-format tests](https://github.com/rakaly/jomini/blob/e27f87b6bd245602a6f324b35838321abe46986a/crates/hoi4save/tests/parse.rs)
 - [Archived hoi4save repository and resolver warning](https://github.com/rakaly/hoi4save)
+- [Current Jomini `BasicTokenResolver` source](https://github.com/rakaly/jomini/blob/master/crates/jomini/src/binary/resolver.rs)
+- [Jomini binary deserialization and token-value notes](https://github.com/rakaly/jomini/blob/master/README.md)
 - [Published hoi4save 0.4.0 legacy flavor source](https://docs.rs/crate/hoi4save/0.4.0/source/src/flavor.rs)
 - [Rakaly CLI v0.8.19 source](https://github.com/rakaly/cli/tree/v0.8.19)
+- [Rakaly CLI v0.8.19 embedded token module](https://github.com/rakaly/cli/blob/v0.8.19/src/tokens.rs)
+- [Rakaly CLI v0.8.19 public-build token placeholders](https://github.com/rakaly/cli/blob/v0.8.19/build.rs)
 - [Rakaly CLI v0.8.19 exact dependency lock](https://github.com/rakaly/cli/blob/v0.8.19/Cargo.lock)
 - [Rakaly CLI unknown-token behavior](https://github.com/rakaly/cli/blob/v0.8.19/src/melt.rs)
 - [Rakaly CLI private-token build workflow](https://github.com/rakaly/cli/blob/v0.8.19/.github/workflows/ci.yml)
 - [Rakaly CLI MIT license](https://github.com/rakaly/cli/blob/v0.8.19/LICENSE.txt)
 - [librakaly v0.12.7](https://github.com/rakaly/librakaly/tree/v0.12.7)
+- [librakaly v0.12.7 embedded token module](https://github.com/rakaly/librakaly/blob/v0.12.7/src/tokens.rs)
 - [librakaly MIT license](https://github.com/rakaly/librakaly/blob/v0.12.7/LICENSE.txt)
 - [PDX Tools binary-token setup note](https://github.com/pdx-tools/pdx-tools#binary--ironman-saves)
+- [Investigated third-party `hoi4-go` resolver](https://github.com/antoniszymanski/hoi4-go)
+- [Paradox User Agreement](https://legal.paradoxplaza.com/eula?locale=en)
+- [Steam Subscriber Agreement](https://store.steampowered.com/subscriber_agreement/)
