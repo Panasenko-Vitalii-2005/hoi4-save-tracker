@@ -243,12 +243,13 @@ not backup failure. `curl` output is discarded so a capability URL cannot enter
 the journal.
 
 Each backup unit has `OnFailure=hoi4-monitor-failure@%n.service`. The hardened
-template passes only the failed unit name to the same helper. The helper accepts
-the three exact allowlisted unit names and appends Better Stack's documented
-`/fail` suffix; it never sends journal output or an exit-code payload. This
-provides immediate notification when a unit actually starts and fails. The
-dead-man deadline remains the fallback if that request, the timer, network, or
-entire VPS is unavailable.
+template uses `%I` to unescape the instance before passing only the original
+failed unit name to the same helper. The helper accepts the three exact
+allowlisted unit names and appends Better Stack's documented `/fail` suffix; it
+never sends journal output or an exit-code payload. This provides immediate
+notification when a unit actually starts and fails. The dead-man deadline
+remains the fallback if that request, the timer, network, or entire VPS is
+unavailable.
 
 `TimeoutStartSec=` is 30 minutes for PostgreSQL, 60 minutes for analysis
 history, and 120 minutes for R2 replication. These are conservative safety

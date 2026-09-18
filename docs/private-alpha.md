@@ -512,10 +512,11 @@ To verify immediate failure delivery, schedule a deliberate provider alert
 during a maintenance/test window rather than corrupting a production backup:
 
 ```bash
-sudo systemctl start \
-  hoi4-monitor-failure@hoi4-postgres-backup.service
-sudo journalctl -u \
-  hoi4-monitor-failure@hoi4-postgres-backup.service --since today
+FAILURE_UNIT="$(systemd-escape \
+  --template=hoi4-monitor-failure@.service \
+  'hoi4-postgres-backup.service')"
+sudo systemctl start "$FAILURE_UNIT"
+sudo journalctl -u "$FAILURE_UNIT" --since today
 ```
 
 That command intentionally reports failure for the PostgreSQL heartbeat. Verify
