@@ -51,6 +51,7 @@ export HOI4_MONITOR_STATE_DIR="$TEST_ROOT/state"
 export HOI4_MONITOR_POSTGRES_HEARTBEAT_URL='https://uptime.betterstack.com/api/v1/heartbeat/postgres-token'
 export HOI4_MONITOR_ANALYSIS_HISTORY_HEARTBEAT_URL='https://uptime.betterstack.com/api/v1/heartbeat/history-token'
 export HOI4_MONITOR_OFFSITE_HEARTBEAT_URL='https://uptime.betterstack.com/api/v1/heartbeat/offsite-token'
+export HOI4_MONITOR_HOST_HEALTH_HEARTBEAT_URL='https://uptime.betterstack.com/api/v1/heartbeat/host-token'
 export FAKE_CURL_LOG="$TEST_ROOT/curl.log"
 touch "$FAKE_CURL_LOG"
 
@@ -70,10 +71,13 @@ fi
 
 "$HEARTBEAT_SCRIPT" success analysis-history > /dev/null
 "$HEARTBEAT_SCRIPT" success offsite > /dev/null
+"$HEARTBEAT_SCRIPT" success host-health > /dev/null
 grep -Fxq 'https://uptime.betterstack.com/api/v1/heartbeat/history-token' "$FAKE_CURL_LOG"
 grep -Fxq 'https://uptime.betterstack.com/api/v1/heartbeat/offsite-token' "$FAKE_CURL_LOG"
+grep -Fxq 'https://uptime.betterstack.com/api/v1/heartbeat/host-token' "$FAKE_CURL_LOG"
 test -s "$TEST_ROOT/state/analysis-history.last-success"
 test -s "$TEST_ROOT/state/offsite.last-success"
+test -s "$TEST_ROOT/state/host-health.last-success"
 
 "$HEARTBEAT_SCRIPT" failure hoi4-postgres-backup.service > /dev/null
 grep -Fxq 'https://uptime.betterstack.com/api/v1/heartbeat/postgres-token/fail' "$FAKE_CURL_LOG"
@@ -108,6 +112,21 @@ fi
 grep -Fq 'delivery failed for offsite' "$TEST_ROOT/failure.err"
 unset FAKE_CURL_FAIL
 
+host_secret_url='https://uptime.betterstack.com/api/v1/heartbeat/do-not-print-host-token'
+export HOI4_MONITOR_HOST_HEALTH_HEARTBEAT_URL="$host_secret_url"
+export FAKE_CURL_FAIL=true
+if "$HEARTBEAT_SCRIPT" failure hoi4-host-health.service > "$TEST_ROOT/host-failure.out" 2> "$TEST_ROOT/host-failure.err"; then
+  echo "A failed host heartbeat transport unexpectedly returned success." >&2
+  exit 1
+fi
+if grep -Fq 'do-not-print-host-token' "$TEST_ROOT/host-failure.out" "$TEST_ROOT/host-failure.err"; then
+  echo "A host heartbeat secret leaked into helper output." >&2
+  exit 1
+fi
+grep -Fq 'delivery failed for host-health' "$TEST_ROOT/host-failure.err"
+unset FAKE_CURL_FAIL
+export HOI4_MONITOR_HOST_HEALTH_HEARTBEAT_URL='https://uptime.betterstack.com/api/v1/heartbeat/host-token'
+
 before_invalid="$(wc -l < "$FAKE_CURL_LOG")"
 export HOI4_MONITOR_OFFSITE_HEARTBEAT_URL='http://uptime.betterstack.com/api/v1/heartbeat/insecure'
 if "$HEARTBEAT_SCRIPT" success offsite > /dev/null 2> "$TEST_ROOT/invalid.err"; then
@@ -128,85 +147,74 @@ grep -Fq 'not allowlisted' "$TEST_ROOT/allowlist.err"
 
 export HOI4_MONITOR_OFFSITE_HEARTBEAT_URL='https://uptime.betterstack.com/api/v1/heartbeat/offsite-token'
 
-build_failure_instance() {
-  local subject="$1"
-
-  if command -v systemd-escape > /dev/null 2>&1; then
-    systemd-escape --template=hoi4-monitor-failure@.service "$subject"
-    return
-  fi
-
-  case "$subject" in
-    hoi4-postgres-backup.service)
-      printf '%s\n' 'hoi4-monitor-failure@hoi4\x2dpostgres\x2dbackup.service.service'
-      ;;
-    hoi4-analysis-history-backup.service)
-      printf '%s\n' 'hoi4-monitor-failure@hoi4\x2danalysis\x2dhistory\x2dbackup.service.service'
-      ;;
-    hoi4-offsite-backup.service)
-      printf '%s\n' 'hoi4-monitor-failure@hoi4\x2doffsite\x2dbackup.service.service'
-      ;;
-    *)
-      return 2
-      ;;
-  esac
-}
-
-unescape_failure_instance() {
-  local instance="$1"
-  local expected_subject="$2"
-
-  if command -v systemd-escape > /dev/null 2>&1; then
-    systemd-escape --unescape --template=hoi4-monitor-failure@.service "$instance"
-    return
-  fi
-
-  printf '%s\n' "$expected_subject"
-}
+escaped_host_instance='hoi4-monitor-failure@hoi4\x2dhost\x2dhealth.service.service'
+escaped_host_subject='hoi4-host-health.service'
+literal_host_subject='hoi4/host/health.service'
+if command -v systemd-escape > /dev/null 2>&1; then
+  escaped_host_instance="$(systemd-escape \
+    --template=hoi4-monitor-failure@.service \
+    'hoi4-host-health.service')"
+  escaped_host_subject="$(systemd-escape \
+    --unescape \
+    --template=hoi4-monitor-failure@.service \
+    "$escaped_host_instance")"
+  literal_host_subject="$(systemd-escape \
+    --unescape \
+    --template=hoi4-monitor-failure@.service \
+    'hoi4-monitor-failure@hoi4-host-health.service.service')"
+fi
+[[ "$escaped_host_instance" == 'hoi4-monitor-failure@hoi4\x2dhost\x2dhealth.service.service' ]]
+[[ "$escaped_host_subject" == 'hoi4-host-health.service' ]]
+[[ "$literal_host_subject" == 'hoi4/host/health.service' ]]
+if "$HEARTBEAT_SCRIPT" failure "$literal_host_subject" > /dev/null 2> "$TEST_ROOT/slash-subject.err"; then
+  echo "The path-unescaped host-health subject unexpectedly passed the allowlist." >&2
+  exit 1
+fi
+grep -Fq 'not allowlisted' "$TEST_ROOT/slash-subject.err"
 
 for failure_case in \
-  'hoi4-postgres-backup.service|hoi4-monitor-failure@hoi4\x2dpostgres\x2dbackup.service.service' \
-  'hoi4-analysis-history-backup.service|hoi4-monitor-failure@hoi4\x2danalysis\x2dhistory\x2dbackup.service.service' \
-  'hoi4-offsite-backup.service|hoi4-monitor-failure@hoi4\x2doffsite\x2dbackup.service.service'; do
-  subject="${failure_case%%|*}"
-  expected_instance="${failure_case#*|}"
-  failure_instance="$(build_failure_instance "$subject")"
-  if [[ "$failure_instance" != "$expected_instance" ]]; then
-    echo "Unexpected OnFailure instance for $subject: $failure_instance" >&2
-    exit 1
-  fi
+  'hoi4-postgres-backup.service|postgres|postgres-token' \
+  'hoi4-analysis-history-backup.service|analysishistory|history-token' \
+  'hoi4-offsite-backup.service|offsite|offsite-token' \
+  'hoi4-host-health.service|hosthealth|host-token'; do
+  IFS='|' read -r unit subject token <<< "$failure_case"
+  unit_file="$SCRIPT_DIR/../$unit"
+  failure_url="https://uptime.betterstack.com/api/v1/heartbeat/$token/fail"
+  before_failure="$(grep -Fxc "$failure_url" "$FAKE_CURL_LOG" || true)"
 
-  final_subject="$(unescape_failure_instance "$failure_instance" "$subject")"
-  if [[ "$final_subject" != "$subject" ]]; then
-    echo "The failure template did not recover the original unit name for $subject." >&2
-    exit 1
-  fi
-  "$HEARTBEAT_SCRIPT" failure "$final_subject" > /dev/null
-done
-
-for unit in \
-  hoi4-postgres-backup.service \
-  hoi4-analysis-history-backup.service \
-  hoi4-offsite-backup.service; do
-  grep -Fxq 'OnFailure=hoi4-monitor-failure@%n.service' "$SCRIPT_DIR/../$unit"
+  grep -Fxq "OnFailure=hoi4-monitor-failure@$subject.service" "$unit_file"
   grep -Fxq 'EnvironmentFile=-/etc/hoi4-save-tracker/monitoring.env' "$SCRIPT_DIR/../$unit"
+  "$HEARTBEAT_SCRIPT" failure "$subject" > /dev/null
+
+  after_failure="$(grep -Fxc "$failure_url" "$FAKE_CURL_LOG" || true)"
+  if [[ "$after_failure" -ne $((before_failure + 1)) ]]; then
+    echo "Failure subject $subject did not reach the heartbeat for $unit." >&2
+    exit 1
+  fi
 done
 grep -Fxq 'TimeoutStartSec=30min' "$SCRIPT_DIR/../hoi4-postgres-backup.service"
 grep -Fxq 'TimeoutStartSec=60min' "$SCRIPT_DIR/../hoi4-analysis-history-backup.service"
 grep -Fxq 'TimeoutStartSec=120min' "$SCRIPT_DIR/../hoi4-offsite-backup.service"
-grep -Fxq 'Description=Report failure of HoI4 Save Tracker backup unit %I' \
+grep -Fxq 'TimeoutStartSec=2min' "$SCRIPT_DIR/../hoi4-host-health.service"
+grep -Fxq 'Description=Report failure of HoI4 Save Tracker monitor %i' \
   "$SCRIPT_DIR/../hoi4-monitor-failure@.service"
-grep -Fxq 'ExecStart=-/usr/local/sbin/hoi4-save-tracker-heartbeat failure %I' \
+grep -Fxq 'ExecStart=-/usr/local/sbin/hoi4-save-tracker-heartbeat failure %i' \
   "$SCRIPT_DIR/../hoi4-monitor-failure@.service"
-if grep -Fq 'failure %i' "$SCRIPT_DIR/../hoi4-monitor-failure@.service"; then
-  echo "The failure template still passes the escaped %i instance." >&2
+if grep -Fq '%I' "$SCRIPT_DIR/../hoi4-monitor-failure@.service"; then
+  echo "The failure template still path-unescapes its instance with %I." >&2
+  exit 1
+fi
+if grep -Eq '^OnFailure=' "$SCRIPT_DIR/../hoi4-monitor-failure@.service"; then
+  echo "The best-effort failure reporter must not recurse through OnFailure." >&2
   exit 1
 fi
 
 PRIVATE_ALPHA_DOC="$SCRIPT_DIR/../../../docs/private-alpha.md"
-grep -Fq 'FAILURE_UNIT="$(systemd-escape \' "$PRIVATE_ALPHA_DOC"
-grep -Fq -- '--template=hoi4-monitor-failure@.service \' "$PRIVATE_ALPHA_DOC"
-grep -Fq "'hoi4-postgres-backup.service')\"" "$PRIVATE_ALPHA_DOC"
+grep -Fxq 'FAILURE_UNIT=hoi4-monitor-failure@postgres.service' "$PRIVATE_ALPHA_DOC"
 grep -Fq 'sudo systemctl start "$FAILURE_UNIT"' "$PRIVATE_ALPHA_DOC"
+if grep -Fq -- '--template=hoi4-monitor-failure@.service' "$PRIVATE_ALPHA_DOC"; then
+  echo "The controlled failure still derives an ambiguous instance from a unit name." >&2
+  exit 1
+fi
 
 echo "monitoring heartbeat helper tests: PASS"

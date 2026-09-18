@@ -2,7 +2,7 @@
 Description=HoI4 Save Tracker Private Alpha PostgreSQL backup
 Requires=docker.service
 After=docker.service
-OnFailure=hoi4-monitor-failure@%n.service
+OnFailure=hoi4-monitor-failure@postgres.service
 
 [Service]
 Type=oneshot

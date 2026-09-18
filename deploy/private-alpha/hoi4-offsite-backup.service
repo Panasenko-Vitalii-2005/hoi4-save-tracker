@@ -2,7 +2,7 @@
 Description=HoI4 Save Tracker Private Alpha off-site backup replication
 After=network-online.target
 Wants=network-online.target
-OnFailure=hoi4-monitor-failure@%n.service
+OnFailure=hoi4-monitor-failure@offsite.service
 
 [Service]
 Type=oneshot

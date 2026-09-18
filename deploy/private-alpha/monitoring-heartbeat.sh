@@ -19,13 +19,17 @@ case "$SUBJECT" in
     job="postgres"
     heartbeat_url="${HOI4_MONITOR_POSTGRES_HEARTBEAT_URL:-}"
     ;;
-  analysis-history|hoi4-analysis-history-backup.service)
+  analysis-history|analysishistory|hoi4-analysis-history-backup.service)
     job="analysis-history"
     heartbeat_url="${HOI4_MONITOR_ANALYSIS_HISTORY_HEARTBEAT_URL:-}"
     ;;
   offsite|hoi4-offsite-backup.service)
     job="offsite"
     heartbeat_url="${HOI4_MONITOR_OFFSITE_HEARTBEAT_URL:-}"
+    ;;
+  host-health|hosthealth|hoi4-host-health.service)
+    job="host-health"
+    heartbeat_url="${HOI4_MONITOR_HOST_HEALTH_HEARTBEAT_URL:-}"
     ;;
   *)
     echo "Monitoring heartbeat subject is not allowlisted." >&2

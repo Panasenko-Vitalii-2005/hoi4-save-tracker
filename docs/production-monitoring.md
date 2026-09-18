@@ -27,10 +27,10 @@ notification integrations. Two providers give some vendor diversity but add a
 second account and incident surface. Self-hosting either tool on the monitored
 VPS would not detect loss of that VPS and is not recommended.
 
-This document began as the Phase 0 architecture. Phase 1A readiness is now
-production-accepted, and Phase 1B backup heartbeat/failure signaling is
-implemented in the repository for manual deployment. The host-monitoring work
-in Phase 1C remains proposed.
+This document began as the Phase 0 architecture. Phase 1A readiness and Phase
+1B backup heartbeat/failure signaling are production-accepted. Phase 1C host
+monitoring is implemented in the repository for manual deployment and
+production acceptance.
 
 ## 1. Current observability
 
@@ -242,14 +242,16 @@ curl, state-write failure, timeout, or provider error is monitoring failure,
 not backup failure. `curl` output is discarded so a capability URL cannot enter
 the journal.
 
-Each backup unit has `OnFailure=hoi4-monitor-failure@%n.service`. The hardened
-template uses `%I` to unescape the instance before passing only the original
-failed unit name to the same helper. The helper accepts the three exact
-allowlisted unit names and appends Better Stack's documented `/fail` suffix; it
-never sends journal output or an exit-code payload. This provides immediate
-notification when a unit actually starts and fails. The dead-man deadline
-remains the fallback if that request, the timer, network, or entire VPS is
-unavailable.
+Each monitored unit selects one fixed alphanumeric notifier instance:
+`postgres`, `analysishistory`, `offsite`, or `hosthealth`. The template passes
+the escaped instance unchanged with `%i`, and the helper maps only those exact
+keys (plus its direct success subjects) to the four allowlisted jobs. This
+avoids ambiguous `%I` path unescaping, where a literal hyphen represents `/`,
+without accepting arbitrary unit names. The helper appends Better Stack's
+documented `/fail` suffix and never sends journal output or an exit-code
+payload. This provides immediate notification when a monitored unit actually
+starts and fails. The dead-man deadline remains the fallback if that request,
+the timer, network, or entire VPS is unavailable.
 
 `TimeoutStartSec=` is 30 minutes for PostgreSQL, 60 minutes for analysis
 history, and 120 minutes for R2 replication. These are conservative safety
@@ -320,26 +322,20 @@ catch-up ping should generate recovery, not erase incident history.
 
 ### 6.4 Freshness and artifact age
 
-The local health checker must validate all of the following:
-
-- each timer is loaded, enabled and active;
-- each last-success state file is a regular root-owned file at the exact path;
-- PostgreSQL/history have a newest complete, recognized data/checksum pair;
-- the pair and last-success ages agree within a reasonable bound;
-- PostgreSQL/history success is no older than 30 hours (warning) or 36 hours
-  (critical);
-- off-site verified-success is no older than 30/36 hours.
+The local health checker validates that every timer is enabled/active with a
+plausible next trigger and that each last-success marker is a regular,
+non-symlink file containing a valid UTC timestamp. Maximum marker ages match
+the external period plus grace: 25.5 hours for PostgreSQL, 26 hours for analysis
+history, and 27 hours for off-site replication.
 
 The five-minute checker should not re-hash every large backup on every run.
 The producing scripts already hash and validate before finalization, and the
 off-site script re-hashes before upload. A separate once-daily integrity check
 may revalidate the newest local pairs if measurements show acceptable cost.
-Existence of an arbitrary old file is never sufficient.
-
-These 30/36-hour defaults allow the normal 24-hour interval plus delay while
-still detecting a missed day. The external per-job schedules provide the
-earlier, precise alert. File-age thresholds are defense in depth and should be
-tuned after observing actual runtimes and server timezone behavior.
+Existence of an arbitrary old file is never sufficient. Artifact-pair validity
+remains the producing job's responsibility; re-reading or re-hashing large
+backups every five minutes would duplicate expensive validation without adding
+a meaningful signal.
 
 ## 7. Application monitoring
 
@@ -472,29 +468,38 @@ Phase 1A.
 
 ## 8. Host monitoring
 
-Run one hardened oneshot service every five minutes. It performs fixed,
-read-only checks and then pings its own dead-man URL:
+`hoi4-host-health.service` runs the fixed, read-only
+`hoi4-save-tracker-host-health` checker. Its timer waits ten minutes after boot,
+then runs five minutes after each prior activation. The delay avoids reporting
+normal Compose startup as an incident; an enabled monotonic timer is recreated
+after every boot without a catch-up burst.
 
-1. Docker daemon reachable.
-2. Expected Compose services present and running; PostgreSQL, backend, and
-   frontend health are `healthy`; edge is running; migration is not expected to
-   remain running.
-3. Backup timers loaded, enabled, active, and with plausible next/last trigger
-   values.
-4. Last-success/artifact ages satisfy section 6.4.
-5. Every distinct filesystem containing Docker data, local backups, monitoring
-   state, and `/` has safe byte and inode headroom.
-6. `/proc/meminfo` `MemAvailable` is not persistently low; any configured swap
-   is not heavily consumed; recent OOM evidence is surfaced without dumping
-   process/user data.
-7. Container restart counters have not increased repeatedly since the prior
-   state sample.
+The implementation checks:
 
-If all checks pass, send success. If any warning/critical check fails, send the
-host heartbeat's failure signal with only a bounded category/severity and exit
-non-zero. If the checker crashes before either signal, its missing external
-heartbeat is the alert. Repeated failure pings must update one incident rather
-than create a new notification each run.
+1. Docker daemon reachability and its reported data root.
+2. Exactly one `postgres`, `backend`, `frontend`, and `edge` container. All must
+   be running; the first three must also be healthy. The `migrate` one-shot is
+   valid while running or after exit code zero and is never required to remain
+   running.
+3. All three backup timers are enabled, active, and expose a next trigger no
+   more than five minutes in the past or 30 hours in the future.
+4. The existing success markers are valid and no older than 25.5 hours for
+   PostgreSQL, 26 hours for analysis history, or 27 hours for off-site
+   replication. The checker never modifies these three markers.
+5. Distinct filesystems containing `/`, Docker data, the project, both local
+   backup directories, and monitor state have safe byte and inode headroom.
+6. `/proc/meminfo` `MemAvailable`, rather than misleading raw free memory.
+7. Per-container restart-count deltas in a rolling 15-minute window. A new
+   container ID establishes a baseline instead of alerting on historical data.
+
+Checks write only compact restart/memory state under the existing root-only
+monitor directory. A lock prevents overlap. All failures from one run are
+logged as sanitized categories and produce one non-zero service result; the
+existing allowlisted `OnFailure=` template sends the host monitor's explicit
+`/fail`. No success is sent on a failed run. A healthy run sends one
+`host-health` success heartbeat; provider/network failure is logged but does
+not turn healthy local state into a false host failure. A crashed checker or a
+disabled checker timer is detected by the external missed heartbeat.
 
 ### 8.1 Initial resource thresholds
 
@@ -505,23 +510,26 @@ on differently sized disks.
 | --- | --- | --- | --- |
 | Filesystem bytes | >=80% used **or** <5 GiB free | >=90% used **or** <2 GiB free | apply to distinct relevant mountpoints; tune after two weeks of backup growth |
 | Inodes | >=80% used | >=90% used | especially relevant to Docker layers/logs even though backups are large files |
-| Memory | `MemAvailable` <15% for two checks | <8%, OOM event, or required service killed | use available memory, not raw “free”; transient analysis peaks are expected |
-| Swap | >70% used for two checks | >90% with memory pressure | absence of swap is informational, not itself an incident |
+| Memory | `MemAvailable` <15% for two checks | <8% immediately | use available memory, not raw “free”; transient analysis peaks are expected |
 | Restarts | any unexpected increment is warning | >=3 increments within 15 minutes or currently failed/unhealthy | persist only numeric counters/timestamps |
 
-Thresholds are starting values, not claims about the actual VPS. Record normal
-disk growth, peak memory, and backup sizes before tightening them. The checker
-does not automatically prune data, restart services, or delete Docker objects.
+Disk/inode warning and critical conditions both withhold success because the
+single host heartbeat is deliberately binary; severity remains visible in the
+local journal. One or two restart increments are retained as window state but
+do not fail a run until the three-restart threshold is reached. Thresholds are
+starting values, not claims about the actual VPS. Record normal disk growth,
+peak memory, and backup sizes before tightening them. Swap pressure, kernel OOM
+history, and per-process attribution remain limitations of this dependency-free
+checker. It never prunes data, restarts services, or deletes Docker objects.
 
 ### 8.2 Privilege
 
 Reading the Docker socket is effectively root-equivalent, and the existing
 backup directories are root-only. For this single-host profile, a root oneshot
-is more honest than placing an unprivileged user in the Docker group. Keep it
-short-lived and harden the unit with fixed paths, `NoNewPrivileges=true`, a
-private temporary directory, restrictive filesystem access, no shell `eval`,
-and no writable path except its small state directory. It must not accept HTTP
-or user input.
+is more honest than placing an unprivileged user in the Docker group. The unit
+uses `NoNewPrivileges`, a private temporary directory, a read-only protected
+filesystem/home, and a single writable monitor-state path. The script accepts
+no HTTP or user input and never uses `eval`.
 
 ## 9. Alert delivery
 
@@ -558,8 +566,9 @@ mask an outage.
 - Validate alert URLs as HTTPS and, where practical, allowlist the chosen
   provider host. Use fixed curl arguments, short timeouts, bounded retries, no
   redirects to arbitrary hosts, and no `eval`/command construction.
-- Allowlist the three backup unit names in the generic failure notifier. `%n`
-  must select configuration, never become a command or URL fragment.
+- Allowlist the three backup unit names and the host-health unit in the generic
+  failure notifier. `%n` must select configuration, never become a command or
+  URL fragment.
 - Alert payloads contain environment label, component, severity, transition,
   UTC timestamp, and a runbook hint only. Do not send filenames, save hashes,
   user/email data, environment variables, full journal output, filesystem
@@ -595,7 +604,7 @@ mask an outage.
 | Backup timer disabled or never fires | scheduled external heartbeat becomes late; local checker sees disabled/inactive timer | CRITICAL missed backup; recovery after timer fixed and successful job | `OnFailure` alone would miss this; dead-man closes it |
 | Disk approaches full | local byte/inode threshold | WARNING at 80%/5 GiB; CRITICAL at 90%/2 GiB; recovery below hysteresis threshold | sudden growth between five-minute checks can still fail work |
 | Disk fills during backup | script exits non-zero and cleans incomplete pair; `OnFailure`; readiness may fail if broader filesystem affected | CRITICAL backup failure plus host/disk incident | cleanup cannot create free space and may itself log errors under severe ENOSPC |
-| Memory pressure/OOM | local sustained `MemAvailable`, OOM evidence, container state/restart count | WARNING then CRITICAL; recovery after sustained normal state | without metrics history, exact per-process attribution is limited |
+| Memory pressure/OOM | local sustained `MemAvailable`, container state/restart count | WARNING then CRITICAL; recovery when available memory returns | kernel OOM history and exact per-process attribution are not collected |
 | Repeated service crash loop | local restart-count deltas and unhealthy/stopped state; external flapping | CRITICAL after threshold, one incident with recovery | very fast restarts between samples may require Docker events later; deferred |
 | Local monitoring script fails | its systemd failure may log/send immediate failure; external host heartbeat expires | CRITICAL “host monitor missed” | same provider outage can delay this alert |
 | Monitoring timer disabled | external host heartbeat expires | CRITICAL dead-man incident | none while external provider functions |
@@ -608,22 +617,22 @@ mask an outage.
 
 - **INFO:** recovery, planned maintenance start/end, optional weekly all-clear
   report. Do not page on ordinary successful runs.
-- **WARNING:** disk/inode warning threshold, sustained but non-critical memory or
-  swap pressure, one unexpected container restart, backup older than 30 hours,
-  or a monitoring-ping delivery error recorded locally.
+- **WARNING:** disk/inode warning threshold, sustained but non-critical memory,
+  stale backup marker, or a monitoring-ping delivery error recorded locally.
 - **CRITICAL:** public readiness down after confirmation, required container or
   Docker unavailable, backup job failure/missed deadline, off-site verification
-  failure, timer disabled, disk critical/full, OOM-required-service loss, or
+  failure, timer disabled, disk critical/full, critically low memory, or
   host-health heartbeat missed.
 
 ### Deduplication and recovery
 
-- Open one incident per component/check and notify on state transition, not on
-  every five-minute sample.
+- Use one aggregate host-health incident plus the existing independent
+  application/backup incidents; repeated `/fail` signals update the same
+  provider monitor rather than creating per-check monitors.
 - Require two or three failed external HTTP probes before opening downtime.
-- Local resource checks use hysteresis: recover disk only below 75% and with
-  more than the warning free-byte threshold; recover memory only after two
-  normal samples.
+- Memory warning requires two consecutive low samples. Disk/inode recover on a
+  later sample below both warning thresholds; no automatic action is attached
+  to recovery.
 - Send one recovery notification with incident duration. Recovery means the
   check passed again, not that root cause was fixed.
 - Let the hosted provider handle reminders/escalation. Start with one reminder
@@ -654,7 +663,7 @@ Recommended secret/config locations:
 /etc/hoi4-save-tracker/monitoring.env       mode 0600 root:root
 /var/lib/hoi4-save-tracker-monitor/         mode 0700 root:root
 /usr/local/sbin/hoi4-save-tracker-heartbeat mode 0750 root:root
-/usr/local/sbin/hoi4-save-tracker-monitor   mode 0750 root:root (Phase 1C)
+/usr/local/sbin/hoi4-save-tracker-host-health mode 0750 root:root
 ```
 
 The repository contains example heartbeat configuration with blank URLs only.
@@ -663,10 +672,10 @@ numbers, and Basic Auth values must not be committed. Installation remains an
 explicit operator action followed by `systemd-analyze verify`, daemon reload,
 manual service runs, synthetic failures, and recovery verification.
 
-The local checker should include its version in journald, not in public health
-output. It should write compact state atomically and cap its own execution with
-a short service timeout. Its timer should use `Persistent=true`, though the
-external five-minute dead-man remains authoritative after host downtime.
+The local checker writes compact state atomically and has a two-minute service
+timeout. Its monotonic timer waits ten minutes after each boot and then five
+minutes after every activation. The external five-minute heartbeat with grace
+remains authoritative during host downtime or a disabled timer.
 
 ## 14. Phase 1 implementation plan
 
@@ -698,14 +707,15 @@ working.
   operator actions after review; repository validation is not production
   acceptance.
 
-### PR 3 — Local host/disk/timer health checker
+### PR 3 — Local host/disk/timer health checker (repository complete)
 
-- Implement fixed checks from section 8, state-transition deduplication,
-  thresholds/hysteresis, and its own heartbeat.
-- Use fixture/fake commands and temporary directories for destructive tests;
-  never fill a real filesystem or stop production Docker during validation.
-- Install the service/timer, send synthetic warning/failure/recovery, then enable
-  the external five-minute dead-man.
+- Implements the fixed checks, thresholds, rolling restart/memory state, and
+  independent host-health heartbeat from section 8.
+- Uses fixture/fake commands and temporary directories for destructive tests;
+  production acceptance must never fill a filesystem or induce memory/OOM
+  pressure.
+- Manual VPS installation, one controlled timer failure/recovery, and Better
+  Stack host-heartbeat acceptance remain operator actions after review.
 
 ### PR 4 — Operator documentation and recovery drill
 

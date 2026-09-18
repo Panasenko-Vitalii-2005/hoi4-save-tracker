@@ -1,0 +1,12 @@
+[Unit]
+Description=Run HoI4 Save Tracker Private Alpha host health checks every five minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=5min
+AccuracySec=30s
+RandomizedDelaySec=15s
+Unit=hoi4-host-health.service
+
+[Install]
+WantedBy=timers.target

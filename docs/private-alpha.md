@@ -477,6 +477,19 @@ journal messages. The environment file must stay `root:root` mode `0600`.
 Leaving one URL empty is a safe temporary state: that job still records local
 success and remains successful, but no external dead-man exists for it.
 
+Failure units use fixed alphanumeric instance keys so systemd never has to
+round-trip a hyphenated unit name through `%I` path unescaping:
+
+| Monitored service | Failure notifier instance | Helper job |
+| --- | --- | --- |
+| `hoi4-postgres-backup.service` | `hoi4-monitor-failure@postgres.service` | `postgres` |
+| `hoi4-analysis-history-backup.service` | `hoi4-monitor-failure@analysishistory.service` | `analysis-history` |
+| `hoi4-offsite-backup.service` | `hoi4-monitor-failure@offsite.service` | `offsite` |
+| `hoi4-host-health.service` | `hoi4-monitor-failure@hosthealth.service` | `host-health` |
+
+Keep these mappings explicit. Do not generate notifier instances from the
+monitored unit names.
+
 Initialize each Better Stack monitor only with a real, fully successful job:
 
 ```bash
@@ -512,18 +525,174 @@ To verify immediate failure delivery, schedule a deliberate provider alert
 during a maintenance/test window rather than corrupting a production backup:
 
 ```bash
-FAILURE_UNIT="$(systemd-escape \
-  --template=hoi4-monitor-failure@.service \
-  'hoi4-postgres-backup.service')"
+FAILURE_UNIT=hoi4-monitor-failure@postgres.service
 sudo systemctl start "$FAILURE_UNIT"
 sudo journalctl -u "$FAILURE_UNIT" --since today
 ```
 
-That command intentionally reports failure for the PostgreSQL heartbeat. Verify
+The fixed `postgres` instance is the same explicit mapping used by the real
+PostgreSQL backup unit; do not derive a notifier instance from the failed unit
+name with `systemd-escape`. That command intentionally reports failure for the
+PostgreSQL heartbeat. Verify
 the incident/email, then run the real PostgreSQL backup service successfully to
 send recovery. Never include backup output in the provider event. A disabled
 timer, failed notifier, lost network, or dead VPS is still detected by the
 independent missed-heartbeat deadline.
+
+## Host-health monitoring
+
+Phase 1C adds one five-minute local observer for failures that public readiness
+and daily backup heartbeats do not cover directly. It checks Docker and the
+Private Alpha Compose containers, backup timer state/next scheduling, backup
+success-marker age, filesystem bytes/inodes, available memory, and rolling
+container restart deltas. It only writes compact state beneath
+`/var/lib/hoi4-save-tracker-monitor`; it never restarts services, deletes files,
+prunes Docker, changes backups, or contacts R2.
+
+Create one additional Better Stack heartbeat monitor:
+
+| Monitor | Expected interval | Grace | Configuration variable |
+| --- | ---: | ---: | --- |
+| Private Alpha host health | 5 minutes | 10 minutes | `HOI4_MONITOR_HOST_HEALTH_HEARTBEAT_URL` |
+
+The ten-minute grace tolerates timer accuracy/random delay and short provider or
+host jitter while detecting a stopped checker in approximately 15 minutes. The
+systemd timer waits ten minutes after boot before its first check, then runs five
+minutes after each activation. A local failure exits non-zero and the existing
+allowlisted `OnFailure=` template sends `/fail`; a fully healthy run sends the
+success heartbeat. Multiple failures are aggregated into one host-health event
+and remain individually visible as sanitized journal categories.
+
+The implemented thresholds are:
+
+| Check | Warning/failure | Critical/failure |
+| --- | --- | --- |
+| Filesystem bytes | at least 80% used or less than 5 GiB free | at least 90% used or less than 2 GiB free |
+| Inodes | at least 80% used | at least 90% used |
+| Memory | less than 15% `MemAvailable` for two checks | less than 8% immediately |
+| Container restarts | retained as rolling state | at least 3 increments in 15 minutes |
+| PostgreSQL marker | — | older than 25.5 hours, missing, or invalid |
+| Analysis-history marker | — | older than 26 hours, missing, or invalid |
+| Off-site marker | — | older than 27 hours, missing, or invalid |
+
+Both disk severities withhold success because the host monitor is binary. A
+new container ID establishes a restart baseline, so old restart counts do not
+create permanent incidents. `migrate` is treated as a one-shot: running or
+successfully exited is valid; it is not required to remain running.
+
+Do not overwrite the existing `/etc/hoi4-save-tracker/monitoring.env`, because
+it already contains the three backup heartbeat secrets. Edit it in place and
+add the host URL and exact absolute production paths. systemd does not expand
+`~`:
+
+```bash
+PROJECT_DIR="$(readlink -f "$HOME/hoi4-save-tracker")"
+printf '%s\n' "$PROJECT_DIR"
+
+sudo editor /etc/hoi4-save-tracker/monitoring.env
+# Add/update, using the printed absolute PROJECT_DIR:
+# HOI4_MONITOR_HOST_HEALTH_HEARTBEAT_URL=<generated Better Stack URL>
+# HOI4_MONITOR_PROJECT_DIR=/home/OPERATOR/hoi4-save-tracker
+# HOI4_MONITOR_PRIVATE_ALPHA_ENV_FILE=/home/OPERATOR/hoi4-save-tracker/.env.private-alpha
+# HOI4_MONITOR_POSTGRES_BACKUP_DIR=/var/backups/hoi4-save-tracker/postgres
+# HOI4_MONITOR_ANALYSIS_HISTORY_BACKUP_DIR=/var/backups/hoi4-save-tracker/analysis-history
+
+sudo chown root:root /etc/hoi4-save-tracker/monitoring.env
+sudo chmod 0600 /etc/hoi4-save-tracker/monitoring.env
+
+sudo install -d -m 0700 /var/lib/hoi4-save-tracker-monitor
+sudo chown root:root /var/lib/hoi4-save-tracker-monitor
+sudo install -m 0750 deploy/private-alpha/monitoring-heartbeat.sh \
+  /usr/local/sbin/hoi4-save-tracker-heartbeat
+sudo install -m 0750 deploy/private-alpha/host-health-check.sh \
+  /usr/local/sbin/hoi4-save-tracker-host-health
+sudo install -m 0644 deploy/private-alpha/hoi4-monitor-failure@.service \
+  /etc/systemd/system/hoi4-monitor-failure@.service
+sudo install -m 0644 deploy/private-alpha/hoi4-host-health.service \
+  /etc/systemd/system/hoi4-host-health.service
+sudo install -m 0644 deploy/private-alpha/hoi4-host-health.timer \
+  /etc/systemd/system/hoi4-host-health.timer
+
+sudo systemd-analyze verify \
+  /etc/systemd/system/hoi4-monitor-failure@.service \
+  /etc/systemd/system/hoi4-host-health.service \
+  /etc/systemd/system/hoi4-host-health.timer
+sudo systemctl daemon-reload
+```
+
+Run one healthy check before enabling the timer and verify the independent
+monitor state without exposing its URL:
+
+```bash
+sudo systemctl start hoi4-host-health.service
+sudo systemctl --no-pager --full status hoi4-host-health.service
+sudo journalctl -u hoi4-host-health.service --since today
+sudo test -s /var/lib/hoi4-save-tracker-monitor/host-health.last-success
+
+sudo systemctl enable --now hoi4-host-health.timer
+systemctl list-timers hoi4-host-health.timer
+```
+
+Production acceptance should include one safe failure/recovery during a
+maintenance window away from the 02:30–03:00 backup schedule. Briefly stop one
+backup timer; do not stop Docker, fill a filesystem, consume memory, or alter a
+backup/marker:
+
+```bash
+sudo systemctl stop hoi4-postgres-backup.timer
+sudo systemctl start hoi4-host-health.service || true
+sudo journalctl \
+  -u hoi4-host-health.service \
+  -u 'hoi4-monitor-failure@*' \
+  --since today
+
+sudo systemctl start hoi4-postgres-backup.timer
+sudo systemctl start hoi4-host-health.service
+systemctl is-enabled hoi4-postgres-backup.timer
+systemctl is-active hoi4-postgres-backup.timer
+```
+
+Confirm one Better Stack host-health incident, sanitized local `timer` failure,
+successful recovery heartbeat, email/push delivery, and the next timer trigger.
+Read-only acceptance should also inspect all four container states and current
+filesystem/memory values; do not induce container, disk, inode, memory, or OOM
+failures on production.
+
+```bash
+PROJECT_DIR="$(readlink -f "$HOME/hoi4-save-tracker")"
+sudo docker compose \
+  --project-directory "$PROJECT_DIR" \
+  --env-file "$PROJECT_DIR/.env.private-alpha" \
+  -f "$PROJECT_DIR/docker-compose.yml" \
+  -f "$PROJECT_DIR/docker-compose.private-alpha.yml" \
+  ps --all
+systemctl list-timers \
+  hoi4-host-health.timer \
+  hoi4-postgres-backup.timer \
+  hoi4-analysis-history-backup.timer \
+  hoi4-offsite-backup.timer
+DOCKER_ROOT="$(sudo docker info --format '{{.DockerRootDir}}')"
+df -h / "$DOCKER_ROOT" /var/backups/hoi4-save-tracker /var/lib/hoi4-save-tracker-monitor
+df -i / "$DOCKER_ROOT" /var/backups/hoi4-save-tracker /var/lib/hoi4-save-tracker-monitor
+grep -E '^(MemTotal|MemAvailable):' /proc/meminfo
+```
+
+Rollback removes only Phase 1C scheduling/code. It must not touch backup timers,
+backup markers, heartbeat URLs for the three backup jobs, or application data:
+
+```bash
+sudo systemctl disable --now hoi4-host-health.timer
+sudo rm -f \
+  /etc/systemd/system/hoi4-host-health.timer \
+  /etc/systemd/system/hoi4-host-health.service \
+  /usr/local/sbin/hoi4-save-tracker-host-health
+sudo systemctl daemon-reload
+sudo systemctl reset-failed hoi4-host-health.service
+```
+
+After rollback, remove the host-health URL from `monitoring.env` only if the
+external monitor is also paused/deleted. The compact host-health state files may
+remain; they do not affect Phase 1B backup markers.
 
 ### Recover from R2 after loss of the VPS
 
