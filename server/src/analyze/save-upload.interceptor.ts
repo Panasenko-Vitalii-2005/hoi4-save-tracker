@@ -30,6 +30,14 @@ import {
   sanitizeSaveFileName,
   saveUploadPolicy,
 } from '../hoi4/save-upload.policy';
+import type { AuthenticatedRequest } from '../auth/current-user.decorator';
+import { ProductEventsService } from '../telemetry/product-events.service';
+import type {
+  AnalysisAttemptContext,
+  AnalysisFailureProperties,
+  AnalysisTelemetryCarrier,
+  ProductAnalysisErrorCode,
+} from '../telemetry/product-events.types';
 
 interface UploadSession {
   path?: string;
@@ -55,6 +63,8 @@ export class SaveUploadInterceptor
   private closing = false;
   private ready = false;
   private warnedCleanup = false;
+
+  constructor(private readonly telemetry: ProductEventsService) {}
 
   async onModuleInit() {
     try {
@@ -166,12 +176,61 @@ export class SaveUploadInterceptor
     );
   }
 
+  private errorCode(error: HttpException): ProductAnalysisErrorCode {
+    const response = error.getResponse();
+    if (response && typeof response === 'object' && 'code' in response) {
+      const code = response.code;
+      if (
+        code === 'SAVE_NOT_FOUND' ||
+        (typeof code === 'string' && Object.hasOwn(SAVE_ERRORS, code))
+      )
+        return code as ProductAnalysisErrorCode;
+    }
+    return 'ANALYSIS_FAILED';
+  }
+
+  private async recordTerminal(
+    attempt: AnalysisAttemptContext,
+    error: HttpException,
+  ): Promise<void> {
+    if (attempt.terminalRecorded) return;
+    attempt.terminalRecorded = true;
+    const properties: AnalysisFailureProperties = {
+      errorCode: this.errorCode(error),
+      failureStage: attempt.stage,
+      ...(attempt.fileSizeBytes === undefined
+        ? {}
+        : { fileSizeBytes: attempt.fileSizeBytes }),
+      ...(attempt.saveFormat === undefined
+        ? {}
+        : { saveFormat: attempt.saveFormat }),
+    };
+    if (
+      ['ANALYSIS_FAILED', 'ANALYSIS_TIMEOUT', 'PERSISTENCE_FAILED'].includes(
+        properties.errorCode,
+      )
+    )
+      await this.telemetry.recordFailed(attempt, properties);
+    else await this.telemetry.recordRejected(attempt, properties);
+  }
+
   async intercept(
     context: ExecutionContext,
     next: CallHandler,
   ): Promise<Observable<unknown>> {
-    const request = context.switchToHttp().getRequest<Request>();
+    const request = context
+      .switchToHttp()
+      .getRequest<AuthenticatedRequest & AnalysisTelemetryCarrier>();
     const response = context.switchToHttp().getResponse<Response>();
+    const attempt: AnalysisAttemptContext = {
+      flowId: randomUUID(),
+      userId: request.user?.id ?? null,
+      startedAtMs: Date.now(),
+      stage: 'admission',
+      terminalRecorded: false,
+    };
+    request.productAnalysisAttempt = attempt;
+    await this.telemetry.recordStarted(attempt);
     const multipart = request.is('multipart/form-data');
     const closeRejectedBody = () => {
       if (!multipart || request.readableEnded || response.headersSent) return;
@@ -184,13 +243,18 @@ export class SaveUploadInterceptor
       this.sessions.size >= this.policy.maxConcurrentRequests
     ) {
       closeRejectedBody();
-      throw this.exception(new SaveInputError('ANALYZER_BUSY'));
+      const error = this.exception(new SaveInputError('ANALYZER_BUSY'));
+      await this.recordTerminal(attempt, error);
+      throw error;
     }
     const maxBody = this.policy.maxUploadBytes + MAX_MULTIPART_OVERHEAD_BYTES;
     if (multipart && Number(request.headers['content-length']) > maxBody) {
       closeRejectedBody();
-      throw this.exception(new SaveInputError('FILE_TOO_LARGE'));
+      const error = this.exception(new SaveInputError('FILE_TOO_LARGE'));
+      await this.recordTerminal(attempt, error);
+      throw error;
     }
+    attempt.stage = 'upload';
     let settle!: () => void;
     let rejectUpload!: (error: Error) => void;
     const failure = new Promise<never>((_resolve, reject) => {
@@ -311,18 +375,26 @@ export class SaveUploadInterceptor
       session.receiving = false;
       clearTimeout(timeout);
       // Await shared analysis even after disconnect: never delete the leader's file early.
-      return of(await lastValueFrom(stream));
+      const value: unknown = await lastValueFrom(stream as Observable<unknown>);
+      attempt.terminalRecorded = true;
+      await this.telemetry.recordCompleted(attempt, {
+        totalDurationMs: Math.max(0, Date.now() - attempt.startedAtMs),
+      });
+      return of(value);
     } catch (error) {
       closeRejectedBody();
       // Busboy syntax failures are expected invalid input; storage errors remain server failures.
+      let failure: HttpException;
       if (
         !uploadComplete &&
         !(error instanceof HttpException) &&
         !(error instanceof SaveInputError) &&
         !(error && typeof error === 'object' && 'code' in error)
       )
-        throw this.exception(new SaveInputError('INVALID_SAVE'));
-      throw this.exception(error);
+        failure = this.exception(new SaveInputError('INVALID_SAVE'));
+      else failure = this.exception(error);
+      await this.recordTerminal(attempt, failure);
+      throw failure;
     } finally {
       clearTimeout(timeout);
       request.off('data', onData);

@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -23,18 +24,23 @@ import {
   PinnedCampaignAnalysesError,
   RecentAnalysesService,
 } from './recent-analyses.service';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { normalizeAnalysisHash } from './persisted-analysis-result.service';
 import { AnalysisComparisonService } from './analysis-comparison.service';
 import type { AnalysisComparisonDto } from './analysis-comparison.types';
 import { SaveUploadInterceptor } from './save-upload.interceptor';
-import { validateSaveFile } from '../hoi4/save-container';
+import { validateSaveFileFormat } from '../hoi4/save-container';
 import { SaveInputError } from '../hoi4/save-input.error';
 import { LocalSaveInput } from '../auth/route-access.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SafeUserDto } from '../auth/auth.types';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
 import { UserAnalysesService } from './user-analyses.service';
+import type {
+  AnalysisMetadataInput,
+  AnalysisSaveFormat,
+  AnalysisTelemetryCarrier,
+} from '../telemetry/product-events.types';
 
 interface AnalyzeRequest {
   path: string;
@@ -303,7 +309,13 @@ export class AnalyzeController {
     @Res({ passthrough: true }) response: Response,
     @UploadedFile() uploadedSave?: UploadedSave,
     @Query('response') responseMode?: unknown,
+    @Req() request?: Request & AnalysisTelemetryCarrier,
   ) {
+    const attempt = request?.productAnalysisAttempt;
+    if (attempt) {
+      attempt.stage = 'validation';
+      if (uploadedSave) attempt.fileSizeBytes = uploadedSave.size;
+    }
     const requestedPath =
       typeof body?.path === 'string' ? body.path.trim() : '';
 
@@ -331,11 +343,23 @@ export class AnalyzeController {
       }
     }
 
-    await validateSaveFile(filePath);
+    const saveFormat = await validateSaveFileFormat(filePath);
     const fileSizeBytes =
       uploadedSave?.size ?? (await fs.promises.stat(filePath)).size;
+    if (attempt) {
+      attempt.fileSizeBytes = fileSizeBytes;
+      attempt.saveFormat = saveFormat;
+      attempt.stage = 'analysis';
+    }
     const { hash, result, comparisonContext } =
       await this.analysis.analyzeWithHash(filePath);
+    if (attempt)
+      attempt.analysis = this.analysisMetadata(
+        hash,
+        fileSizeBytes,
+        saveFormat,
+        result,
+      );
     const record = {
       hash,
       fileName: uploadedSave?.originalname ?? path.basename(filePath),
@@ -343,6 +367,7 @@ export class AnalyzeController {
     };
     // The interceptor owns cleanup, including pre-controller failures and disconnects.
     let persisted = false;
+    if (attempt) attempt.stage = 'persistence';
     if (!response.destroyed) {
       persisted = await this.history.record(
         record,
@@ -360,6 +385,21 @@ export class AnalyzeController {
       };
     }
     return result;
+  }
+
+  private analysisMetadata(
+    contentHash: string,
+    fileSizeBytes: number,
+    saveFormat: AnalysisSaveFormat,
+    result: Awaited<ReturnType<AnalysisResultCacheService['analyze']>>,
+  ): AnalysisMetadataInput {
+    return {
+      contentHash,
+      fileSizeBytes,
+      parseDurationMs: Math.max(0, Math.round(result.parse_seconds * 1000)),
+      divisionCount: result.totals.divisions,
+      saveFormat,
+    };
   }
 
   private async assignOwnership(

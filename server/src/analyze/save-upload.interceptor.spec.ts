@@ -38,6 +38,7 @@ import { AnalysisOwnershipService } from './analysis-ownership.service';
 import { UserAnalysesService } from './user-analyses.service';
 import type { SafeUserDto } from '../auth/auth.types';
 import type { NextFunction, Request, Response } from 'express';
+import { ProductEventsService } from '../telemetry/product-events.service';
 
 const USER: SafeUserDto = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -107,6 +108,15 @@ describe('Public upload boundary and cleanup', () => {
       controllers: [AnalyzeController],
       providers: [
         SaveUploadInterceptor,
+        {
+          provide: ProductEventsService,
+          useValue: {
+            recordStarted: jest.fn().mockResolvedValue(true),
+            recordRejected: jest.fn().mockResolvedValue(true),
+            recordCompleted: jest.fn().mockResolvedValue(true),
+            recordFailed: jest.fn().mockResolvedValue(true),
+          },
+        },
         { provide: Hoi4AnalysisWorkerService, useClass: TestWorker },
         AnalysisResultCacheService,
         RecentAnalysesService,

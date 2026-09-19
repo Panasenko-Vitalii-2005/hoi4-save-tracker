@@ -45,6 +45,13 @@ import type { SafeUserDto } from '../auth/auth.types';
 import type { NextFunction, Request, Response } from 'express';
 import { DatabaseUnavailableError } from '../database/database.service';
 import { UserAnalysesService } from './user-analyses.service';
+import { ProductEventsService } from '../telemetry/product-events.service';
+import { SaveInputError } from '../hoi4/save-input.error';
+import type {
+  AnalysisAttemptContext,
+  AnalysisCompletedProperties,
+  AnalysisFailureProperties,
+} from '../telemetry/product-events.types';
 
 class TrackedWorkerService extends Hoi4AnalysisWorkerService {
   created = 0;
@@ -125,6 +132,50 @@ describe('AnalyzeController uploads', () => {
     ownedHashes: jest.Mock;
     listAllOwnedHashes: jest.Mock;
   };
+  const telemetryCalls = {
+    started: [] as AnalysisAttemptContext[],
+    rejected: [] as Array<[AnalysisAttemptContext, AnalysisFailureProperties]>,
+    completed: [] as Array<
+      [AnalysisAttemptContext, AnalysisCompletedProperties]
+    >,
+    failed: [] as Array<[AnalysisAttemptContext, AnalysisFailureProperties]>,
+  };
+  const telemetry = {
+    recordStarted: jest.fn((attempt: AnalysisAttemptContext) => {
+      telemetryCalls.started.push(attempt);
+      return Promise.resolve(true);
+    }),
+    recordRejected: jest.fn(
+      (
+        attempt: AnalysisAttemptContext,
+        properties: AnalysisFailureProperties,
+      ) => {
+        telemetryCalls.rejected.push([attempt, properties]);
+        return Promise.resolve(true);
+      },
+    ),
+    recordCompleted: jest.fn(
+      (
+        attempt: AnalysisAttemptContext,
+        properties: AnalysisCompletedProperties,
+      ) => {
+        telemetryCalls.completed.push([attempt, properties]);
+        return Promise.resolve(true);
+      },
+    ),
+    recordFailed: jest.fn(
+      (
+        attempt: AnalysisAttemptContext,
+        properties: AnalysisFailureProperties,
+      ) => {
+        telemetryCalls.failed.push([attempt, properties]);
+        return Promise.resolve(true);
+      },
+    ),
+  } satisfies Pick<
+    ProductEventsService,
+    'recordStarted' | 'recordRejected' | 'recordCompleted' | 'recordFailed'
+  >;
   let requestUser = FIRST_USER;
   const originalHistoryFile = process.env.HOI4_RECENT_ANALYSES_FILE;
   const originalResultsDir = process.env.HOI4_ANALYSIS_RESULTS_DIR;
@@ -165,6 +216,7 @@ describe('AnalyzeController uploads', () => {
         CampaignSnapshotProjectionCacheService,
         CampaignTrendsService,
         SaveUploadInterceptor,
+        { provide: ProductEventsService, useValue: telemetry },
         { provide: AnalysisOwnershipService, useValue: ownership },
         {
           provide: UserAnalysesService,
@@ -217,6 +269,11 @@ describe('AnalyzeController uploads', () => {
     requestUser = FIRST_USER;
     ownership.ensureOwnership.mockClear();
     ownership.listAllOwnedHashes.mockClear();
+    Object.values(telemetry).forEach((method) => method.mockClear());
+    telemetryCalls.started.length = 0;
+    telemetryCalls.rejected.length = 0;
+    telemetryCalls.completed.length = 0;
+    telemetryCalls.failed.length = 0;
     await history.clear();
   });
 
@@ -336,6 +393,76 @@ describe('AnalyzeController uploads', () => {
       expect(readdirSync(UPLOAD_DIRECTORY).sort()).toEqual(existingUploads);
     },
   );
+
+  test('records one correlated start/completion pair with canonical metadata', async () => {
+    const payload = Buffer.from(navalSave(MOWE), 'utf8');
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', payload, 'private-name.hoi4')
+      .expect(201);
+
+    expect(telemetry.recordStarted).toHaveBeenCalledTimes(1);
+    expect(telemetry.recordCompleted).toHaveBeenCalledTimes(1);
+    expect(telemetry.recordRejected).not.toHaveBeenCalled();
+    expect(telemetry.recordFailed).not.toHaveBeenCalled();
+    const started = telemetryCalls.started[0];
+    const [completed, completedProperties] = telemetryCalls.completed[0];
+    expect(completed).toBe(started);
+    expect(completed).toMatchObject({
+      userId: FIRST_USER.id,
+      fileSizeBytes: payload.length,
+      saveFormat: 'plain_text',
+      analysis: {
+        contentHash: createHash('sha256').update(payload).digest('hex'),
+        fileSizeBytes: payload.length,
+        divisionCount: 0,
+        saveFormat: 'plain_text',
+      },
+    });
+    expect(completed.flowId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(typeof completedProperties.totalDurationMs).toBe('number');
+  });
+
+  test('records a validation rejection without a duplicate terminal event', async () => {
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from('HOI4bin\0private'), 'binary.hoi4')
+      .expect(422);
+
+    expect(telemetry.recordStarted).toHaveBeenCalledTimes(1);
+    expect(telemetry.recordRejected).toHaveBeenCalledTimes(1);
+    expect(telemetry.recordFailed).not.toHaveBeenCalled();
+    expect(telemetry.recordCompleted).not.toHaveBeenCalled();
+    expect(telemetryCalls.rejected[0][0]).toBe(telemetryCalls.started[0]);
+    expect(telemetryCalls.rejected[0][1]).toEqual({
+      errorCode: 'UNSUPPORTED_BINARY_SAVE',
+      failureStage: 'validation',
+      fileSizeBytes: Buffer.byteLength('HOI4bin\0private'),
+    });
+  });
+
+  test('records a processing failure without changing the safe HTTP error', async () => {
+    jest
+      .spyOn(cache, 'analyzeWithHash')
+      .mockRejectedValueOnce(new SaveInputError('ANALYSIS_TIMEOUT'));
+    const response = await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from(navalSave(MOWE)), 'fixture.hoi4')
+      .expect(504);
+
+    expect(response.body).toMatchObject({ code: 'ANALYSIS_TIMEOUT' });
+    expect(telemetry.recordStarted).toHaveBeenCalledTimes(1);
+    expect(telemetry.recordFailed).toHaveBeenCalledTimes(1);
+    expect(telemetry.recordRejected).not.toHaveBeenCalled();
+    expect(telemetry.recordCompleted).not.toHaveBeenCalled();
+    expect(telemetryCalls.failed[0][1]).toMatchObject({
+      errorCode: 'ANALYSIS_TIMEOUT',
+      failureStage: 'analysis',
+      saveFormat: 'plain_text',
+    });
+  });
 
   test('preserves the existing JSON path request', async () => {
     await request(app.getHttpServer())

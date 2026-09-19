@@ -18,6 +18,7 @@ import { AnalysisOwnershipService } from './analysis-ownership.service';
 import { UserAnalysesService } from './user-analyses.service';
 import type { NextFunction, Request, Response } from 'express';
 import type { SafeUserDto } from '../auth/auth.types';
+import { ProductEventsService } from '../telemetry/product-events.service';
 
 const USER: SafeUserDto = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -44,6 +45,15 @@ describe('Compare persisted analyses API', () => {
       providers: [
         AnalysisComparisonService,
         SaveUploadInterceptor,
+        {
+          provide: ProductEventsService,
+          useValue: {
+            recordStarted: jest.fn().mockResolvedValue(true),
+            recordRejected: jest.fn().mockResolvedValue(true),
+            recordCompleted: jest.fn().mockResolvedValue(true),
+            recordFailed: jest.fn().mockResolvedValue(true),
+          },
+        },
         PersistedAnalysisResultService,
         {
           provide: AnalysisResultCacheService,

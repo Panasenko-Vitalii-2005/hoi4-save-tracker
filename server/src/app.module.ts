@@ -27,6 +27,8 @@ import { AuthModule } from './auth/auth.module';
 import { AnalysisOwnershipRepository } from './analyze/analysis-ownership.repository';
 import { AnalysisOwnershipService } from './analyze/analysis-ownership.service';
 import { UserAnalysesService } from './analyze/user-analyses.service';
+import { ProductEventsRepository } from './telemetry/product-events.repository';
+import { ProductEventsService } from './telemetry/product-events.service';
 
 @Module({
   imports: [
@@ -62,6 +64,8 @@ import { UserAnalysesService } from './analyze/user-analyses.service';
     AnalysisOwnershipRepository,
     AnalysisOwnershipService,
     UserAnalysesService,
+    ProductEventsRepository,
+    ProductEventsService,
   ],
 })
 export class AppModule {}

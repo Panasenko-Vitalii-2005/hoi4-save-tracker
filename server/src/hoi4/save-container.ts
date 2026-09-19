@@ -11,6 +11,8 @@ import {
 } from './save-upload.policy';
 import type { LocatedBlock } from './naval-loss/global-history.parser';
 
+export type SaveContainerFormat = 'plain_text' | 'zip_text';
+
 const ZIP_TAIL_BYTES = 22 + 65535;
 const HOI4_BINARY_HEADER = Buffer.from('HOI4bin', 'ascii');
 const corrupt = () => new SaveInputError('CORRUPT_ARCHIVE');
@@ -170,10 +172,10 @@ function checkDescriptor(descriptor: Buffer, entry: ZipEntry) {
 }
 
 /** Bounded prefix/ZIP metadata reads only. No whole-save read or inflation here. */
-export async function validateSaveFile(
+export async function validateSaveFileFormat(
   filePath: string,
   policy = saveUploadPolicy(),
-): Promise<void> {
+): Promise<SaveContainerFormat> {
   const file = await open(filePath, 'r');
   try {
     const stat = await file.stat();
@@ -201,7 +203,7 @@ export async function validateSaveFile(
       if (stat.size > policy.maxUncompressedBytes)
         throw new SaveInputError('DECOMPRESSED_SIZE_LIMIT');
       checkPlainPrefix(prefix);
-      return;
+      return 'plain_text';
     }
     const tailSize = Math.min(stat.size, ZIP_TAIL_BYTES);
     const index = zipDirectory(
@@ -218,9 +220,18 @@ export async function validateSaveFile(
     const end = offset + entry.compressedSize;
     if (index.offset - end > 16) throw corrupt();
     checkDescriptor(await read(end, index.offset - end), entry);
+    return 'zip_text';
   } finally {
     await file.close();
   }
+}
+
+/** Compatibility wrapper for callers that only need validation. */
+export async function validateSaveFile(
+  filePath: string,
+  policy = saveUploadPolicy(),
+): Promise<void> {
+  await validateSaveFileFormat(filePath, policy);
 }
 
 /** The Worker performs the only full read/decode. No disk extraction. */

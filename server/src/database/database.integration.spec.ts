@@ -14,18 +14,20 @@ describeDatabase('PostgreSQL metadata schema', () => {
     }
     pool = new Pool({ connectionString });
     await pool.query(
-      'DROP TABLE IF EXISTS analysis_ownership, sessions, users, hoi4_schema_migrations CASCADE',
+      'DROP TABLE IF EXISTS product_events, analyses, analysis_ownership, sessions, users, hoi4_schema_migrations CASCADE',
     );
     await applyMigrations(pool);
   });
 
   afterEach(async () => {
-    await pool.query('TRUNCATE sessions, users CASCADE');
+    await pool.query(
+      'TRUNCATE product_events, analyses, sessions, users CASCADE',
+    );
   });
 
   afterAll(async () => {
     await pool.query(
-      'DROP TABLE IF EXISTS analysis_ownership, sessions, users, hoi4_schema_migrations CASCADE',
+      'DROP TABLE IF EXISTS product_events, analyses, analysis_ownership, sessions, users, hoi4_schema_migrations CASCADE',
     );
     await pool.end();
   });
@@ -35,11 +37,13 @@ describeDatabase('PostgreSQL metadata schema', () => {
       expect.objectContaining({ version: '0001', applied: true }),
       expect.objectContaining({ version: '0002', applied: true }),
       expect.objectContaining({ version: '0003', applied: true }),
+      expect.objectContaining({ version: '0004', applied: true }),
     ]);
     await expect(migrationStatus(pool)).resolves.toEqual([
       expect.objectContaining({ version: '0001', applied: true }),
       expect.objectContaining({ version: '0002', applied: true }),
       expect.objectContaining({ version: '0003', applied: true }),
+      expect.objectContaining({ version: '0004', applied: true }),
     ]);
   });
 
@@ -164,5 +168,53 @@ describeDatabase('PostgreSQL metadata schema', () => {
         ['b'.repeat(64)],
       ),
     ).rejects.toMatchObject({ code: '23503' });
+  });
+
+  test('creates constrained canonical analysis metadata and immutable events', async () => {
+    const tables = await pool.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name IN ('analyses', 'product_events')
+       ORDER BY table_name`,
+    );
+    expect(tables.rows.map((row) => row.table_name)).toEqual([
+      'analyses',
+      'product_events',
+    ]);
+    const user = await pool.query<{ id: string }>(
+      'INSERT INTO users (email) VALUES ($1) RETURNING id',
+      ['telemetry@example.com'],
+    );
+    const analysis = await pool.query<{ id: string }>(
+      `INSERT INTO analyses
+         (content_hash, file_size_bytes, parse_duration_ms,
+          division_count, save_format)
+       VALUES ($1, 100, 250, 12, 'plain_text')
+       RETURNING id`,
+      ['a'.repeat(64)],
+    );
+    await pool.query(
+      `INSERT INTO product_events
+         (event_name, user_id, analysis_id, flow_id, properties)
+       VALUES ('analysis_completed', $1, $2, $3, $4::jsonb)`,
+      [
+        user.rows[0].id,
+        analysis.rows[0].id,
+        '22222222-2222-4222-8222-222222222222',
+        JSON.stringify({ totalDurationMs: 300 }),
+      ],
+    );
+    await expect(
+      pool.query(
+        `INSERT INTO product_events (event_name, properties)
+         VALUES ('arbitrary_event', '{}'::jsonb)`,
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+    await expect(
+      pool.query(
+        `INSERT INTO product_events (event_name, properties)
+         VALUES ('analysis_failed', '[]'::jsonb)`,
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
   });
 });

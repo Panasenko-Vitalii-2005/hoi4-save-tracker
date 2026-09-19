@@ -7,7 +7,7 @@ describe('database migrations', () => {
       resolve(process.cwd(), 'migrations'),
     );
 
-    expect(migrations).toHaveLength(3);
+    expect(migrations).toHaveLength(4);
     expect(migrations[0]).toMatchObject({
       version: '0001',
       name: '0001_users_sessions.sql',
@@ -31,5 +31,15 @@ describe('database migrations', () => {
     expect(migrations[2].sql).toContain('ADD COLUMN pinned');
     expect(migrations[2].sql).toContain('ADD COLUMN file_name');
     expect(migrations[2].sql).not.toContain('AnalyzeResult');
+    expect(migrations[3]).toMatchObject({
+      version: '0004',
+      name: '0004_product_telemetry.sql',
+    });
+    expect(migrations[3].sql).toContain('CREATE TABLE analyses');
+    expect(migrations[3].sql).toContain('CREATE TABLE product_events');
+    expect(migrations[3].sql).toContain('analysis_completed');
+    expect(migrations[3].sql).not.toContain('file_name');
+    expect(migrations[3].sql).not.toContain('email');
+    expect(migrations[3].sql).not.toContain('ip_address');
   });
 });

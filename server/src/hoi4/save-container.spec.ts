@@ -5,6 +5,7 @@ import AdmZip from 'adm-zip';
 import {
   readSaveText,
   validateSaveFile,
+  validateSaveFileFormat,
   validateSaveStructure,
 } from './save-container';
 import { saveUploadPolicy, MAX_ZIP_ENTRIES } from './save-upload.policy';
@@ -31,6 +32,13 @@ describe('Bounded HoI4 save containers', () => {
     return file;
   };
   const policy = saveUploadPolicy({});
+
+  test('reports only the validated plain/ZIP container format', async () => {
+    put(smallSave());
+    await expect(validateSaveFileFormat(file)).resolves.toBe('plain_text');
+    put(zipSave(smallSave()));
+    await expect(validateSaveFileFormat(file)).resolves.toBe('zip_text');
+  });
 
   test.each(['plain', 'zip', 'named zip', 'stored zip', 'BOM'])(
     '%s text decodes exactly once with unchanged Unicode',
