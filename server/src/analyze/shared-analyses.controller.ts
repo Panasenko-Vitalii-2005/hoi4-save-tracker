@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Headers,
 } from '@nestjs/common';
 import { normalizeAnalysisHash } from './persisted-analysis-result.service';
 import { RecentAnalysesService } from './recent-analyses.service';
@@ -18,6 +19,10 @@ import { Public } from '../auth/route-access.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SafeUserDto } from '../auth/auth.types';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
+import { ProductEventsService } from '../telemetry/product-events.service';
+
+const CLIENT_SESSION_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 @Controller()
 export class SharedAnalysesController {
@@ -25,6 +30,7 @@ export class SharedAnalysesController {
     private readonly shares: SharedAnalysesService,
     private readonly history: RecentAnalysesService,
     private readonly ownership: AnalysisOwnershipService,
+    private readonly productEvents: ProductEventsService,
   ) {}
 
   @Post('api/analyze/recent/:hash/share')
@@ -64,28 +70,36 @@ export class SharedAnalysesController {
 
   @Public()
   @Get('api/share/:id')
-  async open(@Param('id') id: string) {
+  async open(
+    @Param('id') id: string,
+    @Headers('x-product-session') clientSessionId?: string,
+  ) {
     const key = normalizeShareId(id);
     if (!key)
       throw new HttpException(
         'Shared analysis is unavailable',
         HttpStatus.NOT_FOUND,
       );
-    let result;
+    let shared;
     try {
-      result = await this.shares.getResult(key);
+      shared = await this.shares.getResultWithHash(key);
     } catch {
       throw new HttpException(
         'Shared analysis is temporarily unavailable',
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
-    if (!result)
+    if (!shared)
       throw new HttpException(
         'Shared analysis is unavailable',
         HttpStatus.NOT_FOUND,
       );
-    return result;
+    if (clientSessionId && CLIENT_SESSION_ID.test(clientSessionId))
+      await this.productEvents.recordSharedAnalysisOpened(
+        shared.hash,
+        clientSessionId,
+      );
+    return shared.result;
   }
 
   @Delete('api/analyze/recent/:hash/share')

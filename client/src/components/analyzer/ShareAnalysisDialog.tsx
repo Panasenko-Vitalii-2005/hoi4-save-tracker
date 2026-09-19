@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RecentAnalysis } from "@/types";
 import { apiFetch } from "@/lib/api-client";
+import { trackAnalysisEvent } from "@/lib/product-telemetry";
 
 export interface PublicShareLink {
   id: string;
@@ -62,6 +63,7 @@ export function ShareAnalysisDialog({
       const created = { id: value.id, path: value.path };
       setLink(created);
       onCreated(created);
+      void trackAnalysisEvent("analysis_shared", item.hash);
       setMessage("Public link created.");
     } catch {
       setMessage("Could not create the public link. Please try again.");

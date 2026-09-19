@@ -323,6 +323,9 @@ describe('AnalyzeController uploads', () => {
         .attach('file', payload, 'fixture.hoi4')
         .expect(201);
       const body = response.body as AnalyzeResponse;
+      expect(response.headers['x-analysis-hash']).toBe(
+        createHash('sha256').update(payload).digest('hex'),
+      );
 
       expect(body.game_date).toBe('1944.5.1');
       expect(body.navalLosses[0].sunkShip.name).toBe(name);

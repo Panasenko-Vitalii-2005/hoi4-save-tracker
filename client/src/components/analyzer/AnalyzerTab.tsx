@@ -48,6 +48,10 @@ import {
   type SingleSaveReportContext,
 } from "@/components/reports/SingleSaveReport";
 import { BinarySaveRecovery } from "./BinarySaveRecovery";
+import {
+  trackAnalysisEvent,
+  type AnalysisSection,
+} from "@/lib/product-telemetry";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -57,7 +61,6 @@ interface SaveFile {
   size_mb: number;
   modified: string;
 }
-
 function probeUploadFile(file: File): Promise<void> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -93,13 +96,7 @@ function isSaveBrowserData(
   );
 }
 type SortCol = keyof CountryStats;
-type AnalysisView =
-  | "overview"
-  | "war-casualties"
-  | "naval-losses"
-  | "stockpile"
-  | "production"
-  | "land-forces";
+type AnalysisView = AnalysisSection;
 
 const ANALYZER_VIEW_COPY: Record<
   AnalysisView,
@@ -467,6 +464,22 @@ export function AnalyzerTab({
   >(null);
 
   useEffect(() => {
+    const hash = resultSource.analysisHash;
+    if (readOnly || !result || !hash) return;
+    void trackAnalysisEvent("analysis_opened", hash);
+  }, [readOnly, result, resultSource.analysisHash]);
+
+  useEffect(() => {
+    const hash = resultSource.analysisHash;
+    if (readOnly || !result || !hash) return;
+    void trackAnalysisEvent(
+      "analysis_section_viewed",
+      hash,
+      analysisView,
+    );
+  }, [analysisView, readOnly, result, resultSource.analysisHash]);
+
+  useEffect(() => {
     if (!focusRequest || readOnly) return;
     const section = document.getElementById(
       focusRequest.target === "import"
@@ -634,9 +647,13 @@ export function AnalyzerTab({
         });
         return;
       }
+      const responseHash = resp.headers.get("X-Analysis-Hash");
       applyResult(data, {
         fileName,
-        analysisHash: null,
+        analysisHash:
+          responseHash && /^[0-9a-f]{64}$/i.test(responseHash)
+            ? responseHash.toLowerCase()
+            : null,
         playerCountryTag: null,
       });
       lastAnalysis.current = null;

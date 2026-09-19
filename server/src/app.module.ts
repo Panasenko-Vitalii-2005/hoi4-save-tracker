@@ -29,6 +29,7 @@ import { AnalysisOwnershipService } from './analyze/analysis-ownership.service';
 import { UserAnalysesService } from './analyze/user-analyses.service';
 import { ProductEventsRepository } from './telemetry/product-events.repository';
 import { ProductEventsService } from './telemetry/product-events.service';
+import { ClientProductEventsController } from './telemetry/client-product-events.controller';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { ProductEventsService } from './telemetry/product-events.service';
     BatchAnalysisController,
     HealthController,
     SavesController,
+    ClientProductEventsController,
   ],
   providers: [
     SaveAnalysisService,

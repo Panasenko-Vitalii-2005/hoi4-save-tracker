@@ -14,6 +14,7 @@ import { SharedAnalysesService } from './shared-analyses.service';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
 import type { NextFunction, Request, Response } from 'express';
 import type { SafeUserDto } from '../auth/auth.types';
+import { ProductEventsService } from '../telemetry/product-events.service';
 
 const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex');
@@ -43,6 +44,7 @@ describe('SharedAnalysesController', () => {
   let shares: SharedAnalysesService;
   let history: RecentAnalysesService;
   const hasOwnership = jest.fn().mockResolvedValue(true);
+  const recordSharedAnalysisOpened = jest.fn().mockResolvedValue(true);
 
   beforeEach(async () => {
     directory = await files.mkdtemp(join(tmpdir(), 'hoi4-share-api-'));
@@ -65,6 +67,10 @@ describe('SharedAnalysesController', () => {
             listAllOwnedHashes: jest.fn().mockResolvedValue(new Set()),
           },
         },
+        {
+          provide: ProductEventsService,
+          useValue: { recordSharedAnalysisOpened },
+        },
       ],
     }).compile();
     results = moduleRef.get(PersistedAnalysisResultService);
@@ -83,6 +89,7 @@ describe('SharedAnalysesController', () => {
     );
     await app.init();
     hasOwnership.mockReset().mockResolvedValue(true);
+    recordSharedAnalysisOpened.mockClear();
     await history.list();
   });
 
@@ -124,8 +131,13 @@ describe('SharedAnalysesController', () => {
     const createdBody = created.body as ShareResponse;
     const opened = await request(app.getHttpServer())
       .get(`/api/share/${createdBody.id}`)
+      .set('X-Product-Session', '22222222-2222-4222-8222-222222222222')
       .expect(200);
     expect(opened.body).toEqual(result);
+    expect(recordSharedAnalysisOpened).toHaveBeenCalledWith(
+      key,
+      '22222222-2222-4222-8222-222222222222',
+    );
     expect(await history.list()).toEqual(before);
   });
 
@@ -138,6 +150,19 @@ describe('SharedAnalysesController', () => {
       .post(`/api/analyze/recent/${key.toUpperCase()}/share`)
       .expect(201);
     expect(second.body).toEqual(first.body);
+  });
+
+  test('public open ignores absent or malformed telemetry correlation', async () => {
+    const key = await persist('public-correlation');
+    const link = await shares.create(key);
+    await request(app.getHttpServer())
+      .get(`/api/share/${link!.id}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`/api/share/${link!.id}`)
+      .set('X-Product-Session', 'user-agent-fingerprint')
+      .expect(200);
+    expect(recordSharedAnalysisOpened).not.toHaveBeenCalled();
   });
 
   test('result must be durably persisted before it can be shared', async () => {
@@ -196,7 +221,7 @@ describe('SharedAnalysesController', () => {
     '..%5C..%5Cprivate',
     'AAAAAAAAAAAAAAAAAAAAA=',
   ])('public GET treats malformed identifier %s as unavailable', async (id) => {
-    const get = jest.spyOn(shares, 'getResult');
+    const get = jest.spyOn(shares, 'getResultWithHash');
     const response = await request(app.getHttpServer())
       .get(`/api/share/${id}`)
       .expect(404);
@@ -204,6 +229,7 @@ describe('SharedAnalysesController', () => {
       'Shared analysis is unavailable',
     );
     expect(get).not.toHaveBeenCalled();
+    expect(recordSharedAnalysisOpened).not.toHaveBeenCalled();
   });
 
   test('unknown, revoked and missing-result links have the same safe response', async () => {
@@ -214,12 +240,14 @@ describe('SharedAnalysesController', () => {
     const createdBody = created.body as ShareResponse;
     const unknown = await request(app.getHttpServer())
       .get('/api/share/AAAAAAAAAAAAAAAAAAAAAA')
+      .set('X-Product-Session', '22222222-2222-4222-8222-222222222222')
       .expect(404);
     await request(app.getHttpServer())
       .delete(`/api/analyze/recent/${key}/share`)
       .expect(200, { revoked: true });
     const revoked = await request(app.getHttpServer())
       .get(`/api/share/${createdBody.id}`)
+      .set('X-Product-Session', '22222222-2222-4222-8222-222222222222')
       .expect(404);
     const again = await request(app.getHttpServer())
       .delete(`/api/analyze/recent/${key}/share`)
@@ -234,8 +262,10 @@ describe('SharedAnalysesController', () => {
     await results.delete(key);
     const missing = await request(app.getHttpServer())
       .get(`/api/share/${recreatedBody.id}`)
+      .set('X-Product-Session', '22222222-2222-4222-8222-222222222222')
       .expect(404);
     expect(missing.body).toEqual(unknown.body);
+    expect(recordSharedAnalysisOpened).not.toHaveBeenCalled();
   });
 
   test('revoke preserves a result still retained by Recent Analyses', async () => {
@@ -261,7 +291,7 @@ describe('SharedAnalysesController', () => {
     create.mockRestore();
     const link = await shares.create(key);
     const open = jest
-      .spyOn(shares, 'getResult')
+      .spyOn(shares, 'getResultWithHash')
       .mockRejectedValueOnce(new Error('C:/private/result.json.gz'));
     const failedOpen = await request(app.getHttpServer())
       .get(`/api/share/${link!.id}`)

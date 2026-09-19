@@ -3,6 +3,7 @@ import type { AnalyzeResult } from "@/types";
 import { isAnalyzeResult } from "@/lib/analyze-result";
 import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
 import { apiFetch } from "@/lib/api-client";
+import { sharedAnalysisTelemetryHeaders } from "@/lib/product-telemetry";
 import { AnalyzerTab } from "./AnalyzerTab";
 
 const PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
@@ -39,7 +40,10 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
       try {
         const response = await apiFetch(
           `/api/share/${encodeURIComponent(publicId)}`,
-          { signal: controller.signal },
+          {
+            signal: controller.signal,
+            headers: sharedAnalysisTelemetryHeaders(),
+          },
           "public",
         );
         if (response.status === 404 || response.status === 410) {

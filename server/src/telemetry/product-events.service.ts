@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SAVE_ERRORS } from '../hoi4/save-input.error';
 import { ProductEventsRepository } from './product-events.repository';
 import {
+  ANALYSIS_SECTIONS,
   ANALYSIS_FAILURE_STAGES,
   ANALYSIS_SAVE_FORMATS,
   type AnalysisAttemptContext,
@@ -11,6 +12,7 @@ import {
   type AnalysisStartedProperties,
   type ProductAnalysisErrorCode,
   type ProductEventName,
+  type AnalysisSection,
 } from './product-events.types';
 
 const UUID =
@@ -22,6 +24,7 @@ const ERROR_CODES = new Set<ProductAnalysisErrorCode>([
 ]);
 const FAILURE_STAGES = new Set(ANALYSIS_FAILURE_STAGES);
 const SAVE_FORMATS = new Set(ANALYSIS_SAVE_FORMATS);
+const SECTIONS = new Set(ANALYSIS_SECTIONS);
 
 function optionalPositiveInteger(value: unknown): boolean {
   return (
@@ -149,8 +152,71 @@ export class ProductEventsService {
     }
   }
 
+  recordAnalysisOpened(
+    userId: string,
+    contentHash: string,
+    clientSessionId: string,
+  ): Promise<boolean> {
+    return this.recordClient(
+      'analysis_opened',
+      userId,
+      contentHash,
+      clientSessionId,
+      {},
+    );
+  }
+
+  recordAnalysisSectionViewed(
+    userId: string,
+    contentHash: string,
+    clientSessionId: string,
+    section: AnalysisSection,
+  ): Promise<boolean> {
+    if (!SECTIONS.has(section)) {
+      this.warn('analysis_section_viewed', 'invalid telemetry contract');
+      return Promise.resolve(false);
+    }
+    return this.recordClient(
+      'analysis_section_viewed',
+      userId,
+      contentHash,
+      clientSessionId,
+      { section },
+    );
+  }
+
+  recordAnalysisShared(
+    userId: string,
+    contentHash: string,
+    clientSessionId: string,
+  ): Promise<boolean> {
+    return this.recordClient(
+      'analysis_shared',
+      userId,
+      contentHash,
+      clientSessionId,
+      {},
+    );
+  }
+
+  recordSharedAnalysisOpened(
+    contentHash: string,
+    clientSessionId: string,
+  ): Promise<boolean> {
+    return this.recordClient(
+      'shared_analysis_opened',
+      null,
+      contentHash,
+      clientSessionId,
+      {},
+    );
+  }
+
   private async record(
-    eventName: Exclude<ProductEventName, 'analysis_completed'>,
+    eventName:
+      | 'analysis_upload_started'
+      | 'analysis_upload_rejected'
+      | 'analysis_failed',
     attempt: AnalysisAttemptContext,
     properties: AnalysisStartedProperties | AnalysisFailureProperties,
     validProperties: boolean,
@@ -168,6 +234,39 @@ export class ProductEventsService {
         properties,
       });
       return true;
+    } catch {
+      this.warn(eventName, 'database write failed');
+      return false;
+    }
+  }
+
+  private async recordClient(
+    eventName:
+      | 'analysis_opened'
+      | 'analysis_section_viewed'
+      | 'analysis_shared'
+      | 'shared_analysis_opened',
+    userId: string | null,
+    contentHash: string,
+    clientSessionId: string,
+    properties: Record<string, never> | { section: AnalysisSection },
+  ): Promise<boolean> {
+    if (
+      !validPrincipal(userId) ||
+      !HASH.test(contentHash) ||
+      !UUID.test(clientSessionId)
+    ) {
+      this.warn(eventName, 'invalid telemetry contract');
+      return false;
+    }
+    try {
+      return await this.events.insertClient({
+        eventName,
+        userId,
+        contentHash,
+        clientSessionId,
+        properties,
+      });
     } catch {
       this.warn(eventName, 'database write failed');
       return false;

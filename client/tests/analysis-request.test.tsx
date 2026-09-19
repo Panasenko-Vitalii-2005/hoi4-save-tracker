@@ -56,11 +56,20 @@ describe("analysis request lifecycle", () => {
     resolve: (response: Response) => void;
     reject: (reason: Error) => void;
   }>;
+  let telemetryRequests: RequestInit[];
+  let telemetryStatus: number;
 
   beforeEach(() => {
     seedCsrfCookie();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     requests = [];
+    telemetryRequests = [];
+    telemetryStatus = 202;
+    sessionStorage.clear();
+    sessionStorage.setItem(
+      "hoi4:product-telemetry:session:v1",
+      "22222222-2222-4222-8222-222222222222",
+    );
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
@@ -85,6 +94,12 @@ describe("analysis request lifecycle", () => {
               })),
             }),
           );
+        if (url === "/api/product-events/client") {
+          telemetryRequests.push(init ?? {});
+          return Promise.resolve(
+            new Response(null, { status: telemetryStatus }),
+          );
+        }
         expect(url).toBe("/api/analyze");
         return new Promise<Response>((resolve, reject) =>
           requests.push({ init, resolve, reject }),
@@ -521,5 +536,53 @@ describe("analysis request lifecycle", () => {
     expect(button("Analyze Save").disabled).toBe(true);
     await respond(0, snapshot());
     expect(date()).toBe("1944.5.1");
+  });
+
+  test("records one meaningful open and deduplicated section views without affecting UI", async () => {
+    await render();
+    await start();
+    await act(async () =>
+      requests[0].resolve(
+        Response.json(snapshot(), {
+          status: 201,
+          headers: { "X-Analysis-Hash": "a".repeat(64) },
+        }),
+      ),
+    );
+    await act(async () => Promise.resolve());
+
+    expect(date()).toBe("1944.5.1");
+    expect(
+      telemetryRequests.map((entry) =>
+        JSON.parse(String(entry.body)).eventName,
+      ),
+    ).toEqual(["analysis_opened", "analysis_section_viewed"]);
+    expect(JSON.parse(String(telemetryRequests[1].body)).section).toBe(
+      "overview",
+    );
+
+    await render();
+    await act(async () => button("Production").click());
+    await act(async () => button("Overview").click());
+    await act(async () => Promise.resolve());
+    expect(
+      telemetryRequests.map((entry) => JSON.parse(String(entry.body))),
+    ).toEqual([
+      expect.objectContaining({ eventName: "analysis_opened" }),
+      expect.objectContaining({
+        eventName: "analysis_section_viewed",
+        section: "overview",
+      }),
+      expect.objectContaining({
+        eventName: "analysis_section_viewed",
+        section: "production",
+      }),
+    ]);
+
+    telemetryStatus = 503;
+    await act(async () => button("Stockpile").click());
+    await act(async () => Promise.resolve());
+    expect(date()).toBe("1944.5.1");
+    expect(container.textContent).not.toContain("telemetry");
   });
 });

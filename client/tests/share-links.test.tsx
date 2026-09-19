@@ -9,6 +9,7 @@ vi.mock("react-plotly.js", () => ({ default: () => null }));
 
 const publicId = "AbCdEfGhIjKlMnOpQrStUv";
 const hash = "a".repeat(64);
+const telemetrySessionId = "22222222-2222-4222-8222-222222222222";
 const entry = {
   hash,
   fileName: "Vitalii-private-save.hoi4",
@@ -77,6 +78,7 @@ describe("Recent Analyses Share action", () => {
     resolve: (response: Response) => void;
   }>;
   let historyItems: typeof entry[];
+  let telemetryRequests: RequestInit[];
   let clipboard: ReturnType<typeof vi.fn>;
   let clipboardDescriptor: PropertyDescriptor | undefined;
 
@@ -88,6 +90,12 @@ describe("Recent Analyses Share action", () => {
       vi.fn(() => true),
     );
     shareRequests = [];
+    telemetryRequests = [];
+    sessionStorage.clear();
+    sessionStorage.setItem(
+      "hoi4:product-telemetry:session:v1",
+      telemetrySessionId,
+    );
     historyItems = [entry];
     clipboard = vi.fn(() => Promise.resolve());
     clipboardDescriptor = Object.getOwnPropertyDescriptor(
@@ -107,6 +115,10 @@ describe("Recent Analyses Share action", () => {
           return new Promise<Response>((resolve) =>
             shareRequests.push({ method: init?.method ?? "GET", resolve }),
           );
+        if (url === "/api/product-events/client") {
+          telemetryRequests.push(init ?? {});
+          return Promise.resolve(new Response(null, { status: 202 }));
+        }
         if (url.startsWith("/api/analyze/recent/") && init?.method === "DELETE")
           return Promise.resolve(Response.json({ items: [] }));
         throw new Error(`Unexpected URL ${url}`);
@@ -199,6 +211,12 @@ describe("Recent Analyses Share action", () => {
     expect(container.querySelector('[role="dialog"]')?.innerHTML).not.toContain(
       hash,
     );
+    expect(telemetryRequests).toHaveLength(1);
+    expect(JSON.parse(String(telemetryRequests[0].body))).toEqual({
+      eventName: "analysis_shared",
+      analysisHash: hash,
+      clientSessionId: telemetrySessionId,
+    });
   });
 
   test("Copy uses the Clipboard API with the user-facing route", async () => {
@@ -280,6 +298,7 @@ describe("Recent Analyses Share action", () => {
       container.querySelector('[role="dialog"] [role="status"]')?.textContent,
     ).not.toMatch(/private|stack/i);
     expect(button("Create public link").disabled).toBe(false);
+    expect(telemetryRequests).toHaveLength(0);
   });
 
   test("malformed create response is rejected without showing an internal API URL", async () => {
@@ -318,6 +337,11 @@ describe("public /share route", () => {
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     requests = [];
+    sessionStorage.clear();
+    sessionStorage.setItem(
+      "hoi4:product-telemetry:session:v1",
+      telemetrySessionId,
+    );
     originalTitle = document.title;
     window.history.replaceState({}, "", `/share/${publicId}`);
     vi.stubGlobal(
@@ -355,6 +379,9 @@ describe("public /share route", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0].url).toBe(`/api/share/${publicId}`);
     expect(requests[0].init?.signal).toBeInstanceOf(AbortSignal);
+    expect(new Headers(requests[0].init?.headers).get("X-Product-Session")).toBe(
+      telemetrySessionId,
+    );
     expect(container.querySelector('[role="status"]')?.textContent).toContain(
       "Loading shared analysis",
     );

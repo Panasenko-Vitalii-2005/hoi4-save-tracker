@@ -88,4 +88,55 @@ describe('ProductEventsRepository', () => {
       ],
     );
   });
+
+  test('links client events by canonical hash and leaves identity/time server-controlled', async () => {
+    let capturedSql = '';
+    const query = jest.fn((sql: string, values: readonly unknown[]) => {
+      capturedSql = sql;
+      void values;
+      return Promise.resolve({ rows: [{ id: 'event-id' }] });
+    });
+    const database = { query };
+    const repository = new ProductEventsRepository(
+      database as unknown as DatabaseService,
+    );
+    await expect(
+      repository.insertClient({
+        eventName: 'analysis_section_viewed',
+        userId: '11111111-1111-4111-8111-111111111111',
+        contentHash: 'a'.repeat(64),
+        clientSessionId: '22222222-2222-4222-8222-222222222222',
+        properties: { section: 'stockpile' },
+      }),
+    ).resolves.toBe(true);
+
+    const sql = capturedSql;
+    expect(sql).toContain('FROM analyses');
+    expect(sql).toContain('analyses.content_hash = $3');
+    expect(sql).toContain('ON CONFLICT DO NOTHING');
+    expect(sql).not.toContain('occurred_at');
+    expect(query).toHaveBeenCalledWith(sql, [
+      'analysis_section_viewed',
+      '11111111-1111-4111-8111-111111111111',
+      'a'.repeat(64),
+      '22222222-2222-4222-8222-222222222222',
+      JSON.stringify({ section: 'stockpile' }),
+    ]);
+  });
+
+  test('reports a missing canonical analysis without fabricating one', async () => {
+    const database = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+    const repository = new ProductEventsRepository(
+      database as unknown as DatabaseService,
+    );
+    await expect(
+      repository.insertClient({
+        eventName: 'analysis_opened',
+        userId: null,
+        contentHash: 'a'.repeat(64),
+        clientSessionId: '22222222-2222-4222-8222-222222222222',
+        properties: {},
+      }),
+    ).resolves.toBe(false);
+  });
 });

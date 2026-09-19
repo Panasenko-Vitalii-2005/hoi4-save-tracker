@@ -20,6 +20,7 @@ describe('ProductEventsService', () => {
   const repository = {
     insert: jest.fn().mockResolvedValue(undefined),
     insertCompletion: jest.fn().mockResolvedValue('analysis-id'),
+    insertClient: jest.fn().mockResolvedValue(true),
   };
   let service: ProductEventsService;
   let warning: jest.SpyInstance;
@@ -123,6 +124,79 @@ describe('ProductEventsService', () => {
     );
     expect(warning).not.toHaveBeenCalledWith(
       expect.stringContaining('private database path'),
+    );
+  });
+
+  test('persists client events with trusted principal, canonical hash and browser session', async () => {
+    const hash = 'a'.repeat(64);
+    await expect(
+      service.recordAnalysisOpened(USER_ID, hash, FLOW_ID),
+    ).resolves.toBe(true);
+    await expect(
+      service.recordAnalysisSectionViewed(
+        USER_ID,
+        hash,
+        FLOW_ID,
+        'land-forces',
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      service.recordSharedAnalysisOpened(hash, FLOW_ID),
+    ).resolves.toBe(true);
+
+    expect(repository.insertClient).toHaveBeenNthCalledWith(1, {
+      eventName: 'analysis_opened',
+      userId: USER_ID,
+      contentHash: hash,
+      clientSessionId: FLOW_ID,
+      properties: {},
+    });
+    expect(repository.insertClient).toHaveBeenNthCalledWith(2, {
+      eventName: 'analysis_section_viewed',
+      userId: USER_ID,
+      contentHash: hash,
+      clientSessionId: FLOW_ID,
+      properties: { section: 'land-forces' },
+    });
+    expect(repository.insertClient).toHaveBeenNthCalledWith(3, {
+      eventName: 'shared_analysis_opened',
+      userId: null,
+      contentHash: hash,
+      clientSessionId: FLOW_ID,
+      properties: {},
+    });
+  });
+
+  test('rejects invalid client identifiers and sections before persistence', async () => {
+    await expect(
+      service.recordAnalysisOpened(USER_ID, 'not-a-hash', FLOW_ID),
+    ).resolves.toBe(false);
+    await expect(
+      service.recordAnalysisOpened(USER_ID, 'a'.repeat(64), 'not-a-uuid'),
+    ).resolves.toBe(false);
+    await expect(
+      service.recordAnalysisSectionViewed(
+        USER_ID,
+        'a'.repeat(64),
+        FLOW_ID,
+        'not-a-section' as never,
+      ),
+    ).resolves.toBe(false);
+    expect(repository.insertClient).not.toHaveBeenCalled();
+  });
+
+  test('client telemetry storage failure is best effort and safely logged', async () => {
+    repository.insertClient.mockRejectedValueOnce(
+      new Error('C:/private/database'),
+    );
+    await expect(
+      service.recordAnalysisShared(USER_ID, 'a'.repeat(64), FLOW_ID),
+    ).resolves.toBe(false);
+    expect(warning).toHaveBeenCalledWith(
+      'Could not record analysis_shared: database write failed.',
+    );
+    expect(warning).not.toHaveBeenCalledWith(
+      expect.stringContaining('C:/private/database'),
     );
   });
 });

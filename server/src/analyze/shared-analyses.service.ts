@@ -14,6 +14,11 @@ export interface SharedAnalysisLink {
   path: string;
 }
 
+export interface SharedAnalysisResult {
+  hash: string;
+  result: AnalyzeResult;
+}
+
 interface SharedAnalysisRecord {
   id: string;
   hash: string;
@@ -217,14 +222,18 @@ export class SharedAnalysesService {
     });
   }
 
-  getResult(id: string): Promise<AnalyzeResult | null> {
+  async getResult(id: string): Promise<AnalyzeResult | null> {
+    return (await this.getResultWithHash(id))?.result ?? null;
+  }
+
+  getResultWithHash(id: string): Promise<SharedAnalysisResult | null> {
     const key = normalizeShareId(id);
     if (!key) return Promise.resolve(null);
     return this.enqueue(async () => {
       const record = this.records.find((entry) => entry.id === key);
       if (!record) return null;
       const result = await this.results.get(record.hash);
-      if (result) return result;
+      if (result) return { hash: record.hash, result };
       const next = this.records.filter((entry) => entry !== record);
       try {
         await this.persist(next);

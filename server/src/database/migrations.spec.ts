@@ -7,7 +7,7 @@ describe('database migrations', () => {
       resolve(process.cwd(), 'migrations'),
     );
 
-    expect(migrations).toHaveLength(4);
+    expect(migrations).toHaveLength(5);
     expect(migrations[0]).toMatchObject({
       version: '0001',
       name: '0001_users_sessions.sql',
@@ -41,5 +41,14 @@ describe('database migrations', () => {
     expect(migrations[3].sql).not.toContain('file_name');
     expect(migrations[3].sql).not.toContain('email');
     expect(migrations[3].sql).not.toContain('ip_address');
+    expect(migrations[4]).toMatchObject({
+      version: '0005',
+      name: '0005_client_product_events.sql',
+    });
+    expect(migrations[4].sql).toContain('analysis_section_viewed');
+    expect(migrations[4].sql).toContain('client_session_id');
+    expect(migrations[4].sql).not.toContain('file_name');
+    expect(migrations[4].sql).not.toContain('email');
+    expect(migrations[4].sql).not.toContain('ip_address');
   });
 });

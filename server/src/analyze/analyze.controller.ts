@@ -384,6 +384,7 @@ export class AnalyzeController {
         campaignId: comparisonContext.campaignId,
       };
     }
+    if (!response.destroyed) response.setHeader('X-Analysis-Hash', hash);
     return result;
   }
 

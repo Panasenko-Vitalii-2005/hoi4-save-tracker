@@ -12,6 +12,7 @@ import { SharedAnalysesController } from '../analyze/shared-analyses.controller'
 import { RecentAnalysesService } from '../analyze/recent-analyses.service';
 import { AnalysisOwnershipService } from '../analyze/analysis-ownership.service';
 import { SharedAnalysesService } from '../analyze/shared-analyses.service';
+import { ProductEventsService } from '../telemetry/product-events.service';
 import { DatabaseService } from '../database/database.service';
 import { configureHttpSecurity } from '../http-security';
 import { HealthController } from '../records/records.controller';
@@ -105,7 +106,10 @@ describe('HTTP session security boundary', () => {
         {
           provide: SharedAnalysesService,
           useValue: {
-            getResult: jest.fn().mockResolvedValue({ game_date: '1944.5.1' }),
+            getResultWithHash: jest.fn().mockResolvedValue({
+              hash: 'a'.repeat(64),
+              result: { game_date: '1944.5.1' },
+            }),
             create: jest.fn(),
           },
         },
@@ -116,6 +120,10 @@ describe('HTTP session security boundary', () => {
         {
           provide: AnalysisOwnershipService,
           useValue: { hasOwnership: jest.fn().mockResolvedValue(true) },
+        },
+        {
+          provide: ProductEventsService,
+          useValue: { recordSharedAnalysisOpened: jest.fn() },
         },
       ],
     })
