@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { downloadTextFile } from "@/lib/data-export";
+import { useAppTranslation } from "@/i18n";
 
 interface ExportFile {
   content: string;
@@ -15,6 +16,7 @@ export function ExportControls({
   createCsv: () => ExportFile;
   createJson: () => ExportFile;
 }) {
+  const { t } = useAppTranslation();
   const [error, setError] = useState("");
 
   const download = (format: "csv" | "json") => {
@@ -27,13 +29,13 @@ export function ExportControls({
         format === "csv" ? "text/csv" : "application/json",
       );
     } catch {
-      setError("Export could not be created. Please try again.");
+      setError(t("common.exportFailed"));
     }
   };
 
   return (
     <div className="export-controls" aria-label={label}>
-      <span>Export</span>
+      <span>{t("common.export")}</span>
       <button
         type="button"
         className="button button-secondary"

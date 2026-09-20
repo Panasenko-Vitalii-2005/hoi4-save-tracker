@@ -10,6 +10,7 @@ import {
 } from "@/lib/utils";
 import { CountryDisplay } from "./CountryDisplay";
 import { ProductionLineTable } from "./ProductionLineTable";
+import { useAppTranslation } from "@/i18n";
 
 interface Props {
   country: CountryMilitaryProductionSummary | null;
@@ -23,8 +24,9 @@ function DefinitionRate({
 }: {
   definition: MilitaryProductionDefinitionSummary;
 }) {
+  const { t } = useAppTranslation();
   if (definition.outputComplete) {
-    return <>{formatProductionRate(definition.currentItemsPerDay)} / day</>;
+    return <>{t("production.perDay", { value: formatProductionRate(definition.currentItemsPerDay) })}</>;
   }
 
   const hasKnownRate = definition.lines.some(
@@ -33,9 +35,9 @@ function DefinitionRate({
   return (
     <>
       {hasKnownRate
-        ? `Known: ${formatProductionRate(definition.knownCurrentItemsPerDay)} / day`
-        : "Unavailable"}
-      <span className="production-cell-note">Some lines unavailable</span>
+        ? t("production.perDay", { value: formatProductionRate(definition.knownCurrentItemsPerDay) })
+        : t("common.unavailable")}
+      <span className="production-cell-note">{t("production.someUnavailable")}</span>
     </>
   );
 }
@@ -46,6 +48,7 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
   effectiveMilitaryFactories,
   onSelectDefinition,
 }: Props) {
+  const { t } = useAppTranslation();
   const sortedDefinitions = useMemo(
     () =>
       [...(country?.definitions ?? [])].sort(
@@ -59,20 +62,20 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
   if (!country) {
     return (
       <section className="panel production-details-panel production-empty">
-        Select a country to inspect its current military production.
+        {t("production.select")}
       </section>
     );
   }
 
   const summaryFields = [
-    ["Production lines", country.lineCount],
-    ["Definitions", country.definitionCount],
-    ["Effective MIL factories", effectiveMilitaryFactories],
-    ["Active factories", country.activeFactories],
-    ["Requested", country.requestedFactories],
-    ["Queued", country.queuedFactories],
-    ["Damaged", country.damagedFactories],
-    ["Resource shortages", country.resourceShortageLineCount],
+    [t("production.currentLines"), country.lineCount],
+    [t("stockpile.definitions"), country.definitionCount],
+    [t("production.effectiveMil"), effectiveMilitaryFactories],
+    [t("production.activeFactories"), country.activeFactories],
+    [t("production.requested"), country.requestedFactories],
+    [t("production.queued"), country.queuedFactories],
+    [t("production.damaged"), country.damagedFactories],
+    [t("production.shortageLines"), country.resourceShortageLineCount],
   ] as const;
 
   return (
@@ -112,11 +115,11 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
             <table className="recent-table production-definition-table">
               <thead>
                 <tr>
-                  <th>Equipment</th>
-                  <th className="numeric-cell">Lines</th>
-                  <th className="numeric-cell">Active / requested</th>
-                  <th className="numeric-cell">Current rate</th>
-                  <th className="numeric-cell">Shortage</th>
+                  <th>{t("production.equipment")}</th>
+                  <th className="numeric-cell">{t("production.lines")}</th>
+                  <th className="numeric-cell">{t("production.activeRequested")}</th>
+                  <th className="numeric-cell">{t("production.currentRate")}</th>
+                  <th className="numeric-cell">{t("production.shortage")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -182,7 +185,7 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
                               : "lines"}
                           </span>
                         ) : (
-                          <span className="production-resource-none">None</span>
+                          <span className="production-resource-none">{t("common.none")}</span>
                         )}
                       </td>
                     </tr>

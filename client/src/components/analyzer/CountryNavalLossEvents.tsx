@@ -6,6 +6,7 @@ import {
   navalShipTypeLabel,
   parseHoi4Date,
 } from "@/lib/utils";
+import { useAppTranslation } from "@/i18n";
 
 interface Props {
   summary: CountryNavalLossSummary;
@@ -48,6 +49,7 @@ export const CountryNavalLossEvents = memo(function CountryNavalLossEvents({
   summary,
   events,
 }: Props) {
+  const { t } = useAppTranslation();
   const selectedEvents = useMemo(
     () =>
       events
@@ -72,27 +74,27 @@ export const CountryNavalLossEvents = memo(function CountryNavalLossEvents({
       <div className="panel-head">
         <h2>
           {countMatches
-            ? `Individual losses — ${selectedEvents.length.toLocaleString()} ships`
-            : "Individual losses"}
+            ? t("naval.individualLossesCount", { count: selectedEvents.length.toLocaleString() })
+            : t("naval.individualLosses")}
         </h2>
       </div>
       {!countMatches ? (
         <div className="naval-losses-inconsistent" role="alert">
-          Naval loss details do not match the selected country summary.
+          {t("naval.mismatch")}
         </div>
       ) : selectedEvents.length === 0 ? (
         <div className="naval-losses-events-empty">
-          No matching logical naval-loss events were found.
+          {t("naval.noMatchingEvents")}
         </div>
       ) : (
         <div className="table-wrap">
           <table className="recent-table naval-losses-table naval-losses-events-table">
             <thead>
               <tr>
-                <th>Ship</th>
-                <th>Type</th>
-                <th>Date sunk</th>
-                <th>Killer</th>
+                <th>{t("naval.ship")}</th>
+                <th>{t("naval.type")}</th>
+                <th>{t("naval.dateSunk")}</th>
+                <th>{t("naval.killer")}</th>
               </tr>
             </thead>
             <tbody>

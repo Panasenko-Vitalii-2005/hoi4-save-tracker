@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { CountryNavalKillSummary } from "@/types";
 import { navalShipTypeLabel } from "@/lib/utils";
 import { CountryDisplay } from "./CountryDisplay";
+import { useAppTranslation } from "@/i18n";
 
 export const CountryNavalKillDetails = memo(
   function CountryNavalKillDetails({
@@ -9,6 +10,7 @@ export const CountryNavalKillDetails = memo(
   }: {
     summary: CountryNavalKillSummary;
   }) {
+    const { t } = useAppTranslation();
     return (
       <section className="panel naval-kills-details">
         <div className="naval-kills-detail-head">
@@ -17,15 +19,15 @@ export const CountryNavalKillDetails = memo(
           </h2>
           <div className="naval-kills-total">
             <strong>{summary.creditedKills.toLocaleString()}</strong>
-            <span>credited naval kills found in detailed save records</span>
+            <span>{t("naval.creditedDetail")}</span>
           </div>
         </div>
         <div className="table-wrap">
           <table className="recent-table naval-kills-table naval-kills-type-table">
             <thead>
               <tr>
-                <th>Enemy ship type</th>
-                <th className="numeric-cell">Credited kills</th>
+                <th>{t("naval.enemyType")}</th>
+                <th className="numeric-cell">{t("naval.creditedKills")}</th>
               </tr>
             </thead>
             <tbody>
@@ -43,7 +45,7 @@ export const CountryNavalKillDetails = memo(
           </table>
         </div>
         <p className="naval-kills-note">
-          Only sinkings with resolvable credited-killer attribution are counted.
+          {t("naval.creditedNote")}
         </p>
       </section>
     );

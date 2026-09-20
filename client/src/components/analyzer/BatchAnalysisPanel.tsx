@@ -6,10 +6,11 @@ import {
   useState,
 } from "react";
 import {
-  ANALYZER_UNAVAILABLE_MESSAGE,
+  analyzerUnavailableMessage,
   analysisError,
 } from "@/lib/analysis-error";
 import { apiFetch } from "@/lib/api-client";
+import { useAppTranslation } from "@/i18n";
 
 type BatchStatus =
   | "identifying"
@@ -105,6 +106,7 @@ export const BatchAnalysisPanel = forwardRef<
   },
   ref,
 ) {
+  const { t } = useAppTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const itemsRef = useRef<BatchItem[]>([]);
   const generationRef = useRef(0);
@@ -209,7 +211,7 @@ export const BatchAnalysisPanel = forwardRef<
           body: JSON.stringify({ hashes: chunk }),
         });
       } catch {
-        throw new Error(ANALYZER_UNAVAILABLE_MESSAGE);
+        throw new Error(analyzerUnavailableMessage());
       }
       if (!response.ok) throw new Error(PREFLIGHT_UNAVAILABLE);
       const value: unknown = await response.json();
@@ -287,7 +289,7 @@ export const BatchAnalysisPanel = forwardRef<
       if (generation !== generationRef.current) return;
       setPreflightError(
         error instanceof Error &&
-          error.message === ANALYZER_UNAVAILABLE_MESSAGE
+          error.message === analyzerUnavailableMessage()
           ? error.message
           : PREFLIGHT_UNAVAILABLE,
       );
@@ -304,7 +306,7 @@ export const BatchAnalysisPanel = forwardRef<
     } catch (error: unknown) {
       setPreflightError(
         error instanceof Error &&
-          error.message === ANALYZER_UNAVAILABLE_MESSAGE
+          error.message === analyzerUnavailableMessage()
           ? error.message
           : PREFLIGHT_UNAVAILABLE,
       );
@@ -329,7 +331,7 @@ export const BatchAnalysisPanel = forwardRef<
               : entry,
           ),
         );
-        let failureMessage = ANALYZER_UNAVAILABLE_MESSAGE;
+        let failureMessage = analyzerUnavailableMessage();
         try {
           const formData = new FormData();
           formData.append("file", item.file);
@@ -436,19 +438,16 @@ export const BatchAnalysisPanel = forwardRef<
     >
       <div className="panel-head batch-analysis-head">
         <div>
-          <span className="batch-analysis-eyebrow">Campaign import</span>
-          <h2 id="batch-analysis-title">Import campaign</h2>
-          <p>
-            Select or drop multiple .hoi4 saves. Already analyzed saves are
-            skipped; only new saves are analyzed and added to Campaign Trends.
-          </p>
+          <span className="batch-analysis-eyebrow">{t("batch.eyebrow")}</span>
+          <h2 id="batch-analysis-title">{t("batch.title")}</h2>
+          <p>{t("batch.body")}</p>
         </div>
         <button
           className="button button-secondary"
           disabled={disabled || phase === "running" || phase === "identifying"}
           onClick={() => inputRef.current?.click()}
         >
-          Import Campaign
+          {t("analysis.importCampaign")}
         </button>
         <input
           ref={inputRef}
@@ -475,23 +474,23 @@ export const BatchAnalysisPanel = forwardRef<
           <div className="batch-analysis-summary" aria-live="polite">
             <div>
               <strong>{counts.selected}</strong>
-              <span>Selected</span>
+              <span>{t("batch.selected")}</span>
             </div>
             <div>
               <strong>{counts.known}</strong>
-              <span>Already analyzed</span>
+              <span>{t("batch.alreadyAnalyzed")}</span>
             </div>
             <div>
               <strong>{counts.queued}</strong>
-              <span>New</span>
+              <span>{t("batch.new")}</span>
             </div>
             <div>
               <strong>{counts.invalid}</strong>
-              <span>Invalid</span>
+              <span>{t("batch.invalid")}</span>
             </div>
             <div>
               <strong>{counts.duplicates}</strong>
-              <span>Duplicates skipped</span>
+              <span>{t("batch.duplicates")}</span>
             </div>
           </div>
 
@@ -507,7 +506,7 @@ export const BatchAnalysisPanel = forwardRef<
             <div className="batch-analysis-progress" role="status">
               <span className="spinner" aria-hidden="true" />
               <div>
-                <strong>Analyzing campaign saves</strong>
+                <strong>{t("batch.analyzing")}</strong>
                 <span>
                   {processed} / {items.length} processed
                 </span>
@@ -523,7 +522,7 @@ export const BatchAnalysisPanel = forwardRef<
                 className="button button-secondary"
                 onClick={() => void retryPreflight()}
               >
-                Try again
+                {t("common.retry")}
               </button>
             </div>
           )}
@@ -531,7 +530,7 @@ export const BatchAnalysisPanel = forwardRef<
           {phase === "complete" && (
             <div className="batch-analysis-complete" role="status">
               <div>
-                <strong>Batch complete</strong>
+                <strong>{t("batch.complete")}</strong>
                 <span>{completionSummary}</span>
               </div>
               <div className="batch-analysis-actions">
@@ -567,7 +566,7 @@ export const BatchAnalysisPanel = forwardRef<
 
           {phase === "complete" && failureGroups.length > 0 && (
             <div className="batch-failure-summary" role="alert">
-              <strong>Files that need attention</strong>
+              <strong>{t("batch.attention")}</strong>
               <ul>
                 {failureGroups.map(({ message, count }) => (
                   <li key={message}>
@@ -628,9 +627,9 @@ export const BatchAnalysisPanel = forwardRef<
                 <table>
                   <thead>
                     <tr>
-                      <th>Save</th>
-                      <th>Size</th>
-                      <th>Status</th>
+                      <th>{t("batch.save")}</th>
+                      <th>{t("batch.size")}</th>
+                      <th>{t("batch.status")}</th>
                     </tr>
                   </thead>
                   <tbody>

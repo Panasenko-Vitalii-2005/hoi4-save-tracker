@@ -8,6 +8,7 @@ import {
   formatEquipmentDefinition,
   formatStockpileAmount,
 } from "@/lib/utils";
+import { useAppTranslation } from "@/i18n";
 
 function displayTag(tag: string | null): string {
   if (!tag) return "—";
@@ -30,6 +31,7 @@ export const StockpileVariantTable = memo(function StockpileVariantTable({
   definition: StockpileDefinitionSummary | null;
   unresolvedVariants: UnresolvedStockpileVariantSummary[];
 }) {
+  const { t } = useAppTranslation();
   return (
     <>
       <section className="panel stockpile-variant-panel">
@@ -41,7 +43,7 @@ export const StockpileVariantTable = memo(function StockpileVariantTable({
           <>
             <div className="panel-head stockpile-variant-head">
               <div>
-                <h2>Designs</h2>
+                <h2>{t("stockpile.designs")}</h2>
                 <div className="micro-copy">
                   {formatEquipmentDefinition(definition.definition)}
                 </div>
@@ -54,11 +56,11 @@ export const StockpileVariantTable = memo(function StockpileVariantTable({
               <table className="recent-table stockpile-variant-table">
                 <thead>
                   <tr>
-                    <th>Design</th>
-                    <th className="numeric-cell">Amount</th>
-                    <th>Version</th>
-                    <th>Creator</th>
-                    <th>Origin</th>
+                    <th>{t("production.design")}</th>
+                    <th className="numeric-cell">{t("stockpile.amount")}</th>
+                    <th>{t("stockpile.version")}</th>
+                    <th>{t("stockpile.creator")}</th>
+                    <th>{t("stockpile.origin")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -68,10 +70,10 @@ export const StockpileVariantTable = memo(function StockpileVariantTable({
                     >
                       <td className="design-cell">
                         <strong>
-                          {variant.variantName?.trim() || "Unnamed design"}
+                          {variant.variantName?.trim() || t("production.unnamedDesign")}
                         </strong>
                         {variant.obsolete && (
-                          <span className="stockpile-obsolete">Obsolete</span>
+                          <span className="stockpile-obsolete">{t("common.obsolete")}</span>
                         )}
                       </td>
                       <td className="numeric-cell">
@@ -99,7 +101,7 @@ export const StockpileVariantTable = memo(function StockpileVariantTable({
         <section className="panel stockpile-unresolved-panel">
           <div className="panel-head">
             <div>
-              <h2>Unresolved equipment references</h2>
+              <h2>{t("stockpile.unresolved")}</h2>
               <div className="micro-copy">
                 Definition metadata is unavailable for these balances.
               </div>
@@ -109,14 +111,14 @@ export const StockpileVariantTable = memo(function StockpileVariantTable({
             <table className="recent-table stockpile-unresolved-table">
               <thead>
                 <tr>
-                  <th>Equipment</th>
-                  <th className="numeric-cell">Amount</th>
+                  <th>{t("stockpile.equipment")}</th>
+                  <th className="numeric-cell">{t("stockpile.amount")}</th>
                 </tr>
               </thead>
               <tbody>
                 {unresolvedVariants.map((variant, index) => (
                   <tr key={unresolvedKey(variant, index)}>
-                    <td>Unresolved equipment</td>
+                    <td>{t("stockpile.unresolvedEquipment")}</td>
                     <td className="numeric-cell">
                       {formatStockpileAmount(variant.amount)}
                     </td>

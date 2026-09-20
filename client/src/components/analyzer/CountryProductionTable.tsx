@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { CountryMilitaryProductionSummary } from "@/types";
 import { countryFullName } from "@/lib/utils";
 import { CountryDisplay } from "./CountryDisplay";
+import { useAppTranslation } from "@/i18n";
 
 interface Props {
   countries: CountryMilitaryProductionSummary[];
@@ -14,10 +15,11 @@ export const CountryProductionTable = memo(function CountryProductionTable({
   selectedTag,
   onSelect,
 }: Props) {
+  const { t } = useAppTranslation();
   return (
     <section className="panel production-country-panel">
       <div className="panel-head">
-        <h2>Countries</h2>
+        <h2>{t("production.countries")}</h2>
         <div className="micro-copy">
           {countries.length.toLocaleString()} with current production
         </div>
@@ -26,9 +28,9 @@ export const CountryProductionTable = memo(function CountryProductionTable({
         <table className="recent-table production-country-table">
           <thead>
             <tr>
-              <th>Country</th>
-              <th className="numeric-cell">Active factories</th>
-              <th className="numeric-cell">Lines</th>
+              <th>{t("common.country")}</th>
+              <th className="numeric-cell">{t("production.activeFactories")}</th>
+              <th className="numeric-cell">{t("production.lines")}</th>
             </tr>
           </thead>
           <tbody>

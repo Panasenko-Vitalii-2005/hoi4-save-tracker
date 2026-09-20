@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RecentAnalysis } from "@/types";
 import { apiFetch } from "@/lib/api-client";
 import { trackAnalysisEvent } from "@/lib/product-telemetry";
+import { useAppTranslation } from "@/i18n";
 
 export interface PublicShareLink {
   id: string;
@@ -27,6 +28,7 @@ export function ShareAnalysisDialog({
   onCreated: (link: PublicShareLink) => void;
   onRevoked: () => void;
 }) {
+  const { t } = useAppTranslation();
   const [link, setLink] = useState<PublicShareLink | null>(
     initialLink ?? null,
   );
@@ -64,9 +66,9 @@ export function ShareAnalysisDialog({
       setLink(created);
       onCreated(created);
       void trackAnalysisEvent("analysis_shared", item.hash);
-      setMessage("Public link created.");
+      setMessage(t("share.created"));
     } catch {
-      setMessage("Could not create the public link. Please try again.");
+      setMessage(t("share.createFailed"));
     } finally {
       setBusy(false);
     }
@@ -76,9 +78,9 @@ export function ShareAnalysisDialog({
     if (!link || busy) return;
     try {
       await navigator.clipboard.writeText(publicUrl(link));
-      setMessage("Public link copied.");
+      setMessage(t("share.copiedStatus"));
     } catch {
-      setMessage("Could not copy automatically. Select and copy the URL below.");
+      setMessage(t("share.copyFailed"));
     }
   };
 
@@ -87,7 +89,7 @@ export function ShareAnalysisDialog({
       !link ||
       busy ||
       !window.confirm(
-        "Revoke this public link? Anyone using it will no longer be able to open the shared analysis.",
+        t("share.revokeConfirm"),
       )
     )
       return;
@@ -101,9 +103,9 @@ export function ShareAnalysisDialog({
       if (!response.ok) throw new Error("Revoke unavailable");
       setLink(null);
       onRevoked();
-      setMessage("Public link revoked.");
+      setMessage(t("share.revoked"));
     } catch {
-      setMessage("Could not revoke the public link. Please try again.");
+      setMessage(t("share.revokeFailed"));
     } finally {
       setBusy(false);
     }
@@ -120,25 +122,23 @@ export function ShareAnalysisDialog({
         aria-busy={busy}
       >
         <div className="panel-head">
-          <h2 id="share-analysis-title">Share analysis</h2>
+          <h2 id="share-analysis-title">{t("share.title")}</h2>
           <button
             className="button button-secondary"
             onClick={onClose}
             disabled={busy}
-            aria-label="Close share dialog"
+            aria-label={t("share.close")}
           >
-            Close
+            {t("common.close")}
           </button>
         </div>
-        {!link && message !== "Public link revoked." ? (
+        {!link && message !== t("share.revoked") ? (
           <>
             <p id="share-analysis-description">
-              Create a public, read-only link for this analysis? Anyone with the
-              link can view the analyzed campaign data.
+              {t("share.createBody")}
             </p>
             <p className="micro-copy">
-              The original save file, private filename and Recent Analyses
-              controls are not shared.
+              {t("share.privacy")}
             </p>
             <div className="share-dialog-actions">
               <button
@@ -146,7 +146,7 @@ export function ShareAnalysisDialog({
                 onClick={onClose}
                 disabled={busy}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 ref={primaryAction}
@@ -154,17 +154,17 @@ export function ShareAnalysisDialog({
                 onClick={() => void create()}
                 disabled={busy}
               >
-                {busy ? "Creating…" : "Create public link"}
+                {busy ? t("share.creating") : t("share.create")}
               </button>
             </div>
           </>
         ) : link ? (
           <>
             <p id="share-analysis-description">
-              Anyone with this link can open a read-only analysis view.
+              {t("share.linkBody")}
             </p>
             <label className="share-dialog-url" htmlFor="public-share-url">
-              Public URL
+              {t("share.publicUrl")}
               <input
                 id="public-share-url"
                 value={publicUrl(link)}
@@ -179,7 +179,7 @@ export function ShareAnalysisDialog({
                 onClick={() => void copy()}
                 disabled={busy}
               >
-                Copy link
+                {t("share.copy")}
               </button>
               <a
                 className="button button-secondary share-dialog-open"
@@ -187,19 +187,19 @@ export function ShareAnalysisDialog({
                 target="_blank"
                 rel="noreferrer"
               >
-                Open public view
+                {t("share.openPublic")}
               </a>
               <button
                 className="button button-secondary analyzer-recent-delete"
                 onClick={() => void revoke()}
                 disabled={busy}
               >
-                {busy ? "Revoking…" : "Revoke link"}
+                {busy ? t("share.revoking") : t("share.revoke")}
               </button>
             </div>
           </>
         ) : (
-          <p id="share-analysis-description">This public link is revoked.</p>
+          <p id="share-analysis-description">{t("share.revoked")}</p>
         )}
         <div className="micro-copy" role="status" aria-live="polite">
           {message}

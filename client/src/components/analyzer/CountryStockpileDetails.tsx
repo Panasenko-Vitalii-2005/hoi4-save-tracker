@@ -9,6 +9,7 @@ import {
 } from "@/lib/utils";
 import { CountryDisplay } from "./CountryDisplay";
 import { StockpileVariantTable } from "./StockpileVariantTable";
+import { useAppTranslation } from "@/i18n";
 
 interface Props {
   country: CountryStockpileSummary | null;
@@ -21,10 +22,11 @@ export const CountryStockpileDetails = memo(function CountryStockpileDetails({
   selectedDefinition,
   onSelectDefinition,
 }: Props) {
+  const { t } = useAppTranslation();
   if (!country) {
     return (
       <section className="panel stockpile-details-panel stockpile-empty">
-        Select a country to inspect its national stockpile.
+        {t("stockpile.select")}
       </section>
     );
   }
@@ -56,9 +58,9 @@ export const CountryStockpileDetails = memo(function CountryStockpileDetails({
             <table className="recent-table stockpile-definition-table">
               <thead>
                 <tr>
-                  <th>Equipment</th>
-                  <th className="numeric-cell">Amount</th>
-                  <th className="numeric-cell">Designs</th>
+                  <th>{t("stockpile.equipment")}</th>
+                  <th className="numeric-cell">{t("stockpile.amount")}</th>
+                  <th className="numeric-cell">{t("stockpile.designs")}</th>
                 </tr>
               </thead>
               <tbody>

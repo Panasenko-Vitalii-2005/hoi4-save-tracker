@@ -7,6 +7,7 @@ import type {
   AnalysisStorageStatus,
   RecentAnalysis,
 } from "@/types";
+import { useAppTranslation } from "@/i18n";
 
 type CleanupAction =
   | { kind: "campaign"; campaign: AnalysisStorageCampaign }
@@ -98,6 +99,7 @@ function StorageConfirmationDialog({
   onCancel: () => void;
   onConfirm: (includePinned: boolean) => void;
 }) {
+  const { t } = useAppTranslation();
   const [acknowledgedPins, setAcknowledgedPins] = useState(false);
   const cancel = useRef<HTMLButtonElement>(null);
   const campaign = action.kind === "campaign" ? action.campaign : null;
@@ -142,8 +144,8 @@ function StorageConfirmationDialog({
       >
         <h2 id="storage-confirm-title">
           {action.kind === "campaign"
-            ? "Delete campaign analyses?"
-            : "Delete all unpinned analyses?"}
+            ? t("storage.confirmCampaign")
+            : t("storage.confirmUnpinned")}
         </h2>
         {campaign && (
           <div className="storage-confirm-campaign">
@@ -155,9 +157,7 @@ function StorageConfirmationDialog({
           </div>
         )}
         <p id="storage-confirm-description">
-          This removes {countLabel(count, "stored analysis", "stored analyses")}{" "}
-          from Recent Analyses. It does not remove your original .hoi4 save
-          files.
+          {t("storage.confirmBody", { count })}
         </p>
         {action.kind === "unpinned" && (
           <p className="micro-copy">
@@ -198,7 +198,7 @@ function StorageConfirmationDialog({
         {error && (
           <div className="recovery-notice" role="alert">
             <div>
-              <strong>Cleanup failed</strong>
+              <strong>{t("storage.cleanupFailed")}</strong>
               <span>{error}</span>
             </div>
           </div>
@@ -210,14 +210,14 @@ function StorageConfirmationDialog({
             onClick={onCancel}
             disabled={busy}
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             className="button analyzer-storage-destructive"
             onClick={() => onConfirm(pinned > 0)}
             disabled={busy || (pinned > 0 && !acknowledgedPins)}
           >
-            {busy ? "Deleting…" : "Delete stored analyses"}
+            {busy ? t("storage.deleting") : t("storage.deleteStored")}
           </button>
         </div>
       </section>
@@ -238,6 +238,7 @@ export function AnalysisStorageManagement({
   onBusyChange: (busy: boolean) => void;
   onChanged: (items: RecentAnalysis[], message: string) => void;
 }) {
+  const { t } = useAppTranslation();
   const [status, setStatus] = useState<AnalysisStorageStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -335,10 +336,10 @@ export function AnalysisStorageManagement({
 
   if (!loading && !status && !loadError) return null;
   return (
-    <section className="analyzer-storage" aria-label="Your saved analyses">
+    <section className="analyzer-storage" aria-label={t("storage.title")}>
       <div className="analyzer-storage-summary">
         <div>
-          <strong>Your saved analyses</strong>
+          <strong>{t("storage.title")}</strong>
           {status ? (
             <span>
               {countLabel(status.persistedAnalysisCount, "stored result")} ·{" "}
@@ -346,31 +347,28 @@ export function AnalysisStorageManagement({
             </span>
           ) : (
             <span>
-              {loading ? "Checking storage…" : "Storage status unavailable"}
+              {loading ? t("storage.checking") : t("storage.unavailable")}
             </span>
           )}
         </div>
         {status && (
           <div className="analyzer-storage-usage">
             <span>
-              {formatBytes(status.persistedResultBytes)} logical result data
+              {t("storage.logicalData", { size: formatBytes(status.persistedResultBytes) })}
             </span>
             <span className="micro-copy">
-              Shared artifact-store limit:{" "}
-              {formatBytes(status.maxPersistedResultBytes)}
+              {t("storage.limit", { size: formatBytes(status.maxPersistedResultBytes) })}
             </span>
           </div>
         )}
       </div>
       <p className="micro-copy analyzer-storage-copy">
-        Uploaded .hoi4 files are processed temporarily and are not retained
-        here. Derived analysis results and Recent metadata are stored locally;
-        deleting a result means analyzing the original save again to reopen it.
+        {t("storage.explanation")}
       </p>
       {loadError && (
         <div className="recovery-notice" role="alert">
           <div>
-            <strong>Storage status unavailable</strong>
+            <strong>{t("storage.unavailable")}</strong>
             <span>{loadError}</span>
           </div>
           <button
@@ -378,18 +376,18 @@ export function AnalysisStorageManagement({
             onClick={() => setRetry((value) => value + 1)}
             disabled={loading}
           >
-            Try again
+            {t("common.retry")}
           </button>
         </div>
       )}
       {status &&
         (status.cleanupEligibleCount > 0 || status.campaigns.length > 0) && (
           <details className="analyzer-storage-management">
-            <summary>Manage storage</summary>
+            <summary>{t("storage.manage")}</summary>
             <div className="analyzer-storage-controls">
               {status.campaigns.length > 0 && (
                 <label htmlFor="storage-campaign-select">
-                  Known campaign
+                  {t("storage.knownCampaign")}
                   <select
                     id="storage-campaign-select"
                     value={selectedCampaign}
@@ -420,7 +418,7 @@ export function AnalysisStorageManagement({
                     }}
                     disabled={disabled || busy}
                   >
-                    Delete campaign
+                    {t("storage.deleteCampaign")}
                   </button>
                 )}
                 {status.cleanupEligibleCount > 0 && (
@@ -432,15 +430,12 @@ export function AnalysisStorageManagement({
                     }}
                     disabled={disabled || busy}
                   >
-                    Delete {status.cleanupEligibleCount.toLocaleString()}{" "}
-                    unpinned
+                    {t("storage.deleteUnpinned", { count: status.cleanupEligibleCount.toLocaleString() })}
                   </button>
                 )}
               </div>
               <p className="micro-copy">
-                Pinned analyses are protected from unpinned cleanup. Removing an
-                analysis revokes your access; its deduplicated result
-                artifact may remain for another owner or an active public link.
+                {t("storage.protected")}
               </p>
             </div>
           </details>

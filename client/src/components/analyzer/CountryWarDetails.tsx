@@ -1,12 +1,14 @@
 import { memo, useMemo, useState } from "react";
 import type { CountryStats } from "@/types";
 import { CountryDisplay } from "./CountryDisplay";
+import { useAppTranslation } from "@/i18n";
 
 export const CountryWarDetails = memo(function CountryWarDetails({
   country,
 }: {
   country: CountryStats | null;
 }) {
+  const { t } = useAppTranslation();
   const [showZeroCasualties, setShowZeroCasualties] = useState(false);
   const filteredAndSortedWars = useMemo(
     () =>
@@ -19,7 +21,7 @@ export const CountryWarDetails = memo(function CountryWarDetails({
   return (
     <section className="panel war-casualties-details">
       {!country ? (
-        <div className="war-casualties-empty">Select a country to inspect its war casualties.</div>
+        <div className="war-casualties-empty">{t("casualties.select")}</div>
       ) : (
         <>
           <div className="war-casualties-detail-head">
@@ -27,8 +29,8 @@ export const CountryWarDetails = memo(function CountryWarDetails({
               <CountryDisplay tag={country.tag} />
             </h2>
             <div className="war-casualties-stats">
-              <div><span>Calculated casualties:</span><strong>{(country.calculatedWarCasualtiesTotal ?? 0).toLocaleString()}</strong></div>
-              <div><span>Wars:</span><strong>{country.warCasualties.length.toLocaleString()}</strong></div>
+              <div><span>{t("casualties.calculated")}</span><strong>{(country.calculatedWarCasualtiesTotal ?? 0).toLocaleString()}</strong></div>
+              <div><span>{t("casualties.wars")}:</span><strong>{country.warCasualties.length.toLocaleString()}</strong></div>
             </div>
           </div>
           <div className="war-casualties-controls">
@@ -38,16 +40,15 @@ export const CountryWarDetails = memo(function CountryWarDetails({
                 checked={showZeroCasualties}
                 onChange={(event) => setShowZeroCasualties(event.target.checked)}
               />
-              <span>Show zero-casualty wars</span>
+              <span>{t("casualties.showZero")}</span>
             </label>
             <span className="micro-copy">
-              Showing {filteredAndSortedWars.length.toLocaleString()} of{" "}
-              {country.warCasualties.length.toLocaleString()} relations
+              {t("casualties.showing", { shown: filteredAndSortedWars.length.toLocaleString(), total: country.warCasualties.length.toLocaleString() })}
             </span>
           </div>
           <div className="table-wrap">
             <table className="recent-table war-casualties-table">
-              <thead><tr><th>Opponent</th><th>Start date</th><th className="numeric-cell">Casualties</th></tr></thead>
+              <thead><tr><th>{t("casualties.opponent")}</th><th>{t("casualties.startDate")}</th><th className="numeric-cell">{t("casualties.casualties")}</th></tr></thead>
               <tbody>
                 {filteredAndSortedWars.map((war, index) => (
                   <tr key={`${war.opponentTag}-${war.startDate ?? "null"}-${index}`}>

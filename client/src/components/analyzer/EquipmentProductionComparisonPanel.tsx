@@ -1,4 +1,5 @@
 import { memo, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   CountryEquipmentProductionComparison,
   EquipmentDefinitionComparison,
@@ -24,8 +25,9 @@ function Delta({
   value: NumericDiff;
   formatter?: (value: number | null) => string;
 }) {
+  const { t } = useTranslation();
   if (value.delta === null)
-    return <span className="comparison-delta-value unavailable">N/A</span>;
+    return <span className="comparison-delta-value unavailable">{t("compare.unavailableValue")}</span>;
   if (value.delta === 0)
     return <span className="comparison-delta-value no-change">—</span>;
   return (
@@ -40,13 +42,6 @@ function Delta({
   );
 }
 
-const presenceLabel = (value: SnapshotPresence) =>
-  value === "base_only"
-    ? "Base only"
-    : value === "target_only"
-      ? "Target only"
-      : null;
-
 function PresenceBadge({
   label,
   presence,
@@ -54,7 +49,12 @@ function PresenceBadge({
   label: string;
   presence: SnapshotPresence;
 }) {
-  const state = presenceLabel(presence);
+  const { t } = useTranslation();
+  const state = presence === "base_only"
+    ? t("compare.baseOnly")
+    : presence === "target_only"
+      ? t("compare.targetOnly")
+      : null;
   return state ? (
     <span className={`comparison-equipment-presence ${presence}`}>
       {label}: {state}
@@ -69,6 +69,7 @@ function RateValue({
   rate: ProductionRateComparison;
   side: "base" | "target";
 }) {
+  const { t } = useTranslation();
   const complete = side === "base" ? rate.baseComplete : rate.targetComplete;
   const value = side === "base" ? rate.before : rate.after;
   const known = side === "base" ? rate.baseKnown : rate.targetKnown;
@@ -76,8 +77,8 @@ function RateValue({
   if (complete) return <>{formatProductionRate(value)}</>;
   return (
     <span className="comparison-equipment-incomplete">
-      {known === null ? "Unavailable" : `Known ${formatProductionRate(known)}`}
-      <small>Incomplete</small>
+      {known === null ? t("compare.valueUnavailable") : t("compare.equipment.known", { value: formatProductionRate(known) })}
+      <small>{t("compare.equipment.incomplete")}</small>
     </span>
   );
 }
@@ -128,6 +129,7 @@ export const EquipmentProductionComparisonPanel = memo(
     countryTag: string | null;
     comparison: CountryEquipmentProductionComparison | null;
   }) {
+    const { t } = useTranslation();
     const definitions = useMemo(
       () => [...(comparison?.definitions ?? [])].sort(presentationOrder),
       [comparison],
@@ -136,47 +138,46 @@ export const EquipmentProductionComparisonPanel = memo(
     return (
       <section
         className="comparison-equipment-panel"
-        aria-label="Equipment and production comparison"
+        aria-label={t("compare.equipment.aria")}
       >
         <div className="comparison-equipment-heading">
           <div>
-            <span className="eyebrow">Equipment &amp; production</span>
+            <span className="eyebrow">{t("compare.equipment.title")}</span>
             <h3>
               {countryTag ? (
                 <CountryDisplay tag={countryTag} />
               ) : (
-                "Select a country"
+                t("common.selectCountry")
               )}
             </h3>
           </div>
           <p>
-            Exact equipment definitions · Target − Base snapshot comparison
+            {t("compare.equipment.semantics")}
           </p>
         </div>
 
         {!countryTag ? (
           <p className="comparison-equipment-empty micro-copy">
-            Select a country to inspect equipment and production changes.
+            {t("compare.equipment.select")}
           </p>
         ) : definitions.length === 0 ? (
           <p className="comparison-equipment-empty micro-copy">
-            No comparable stockpile or military production definitions were
-            found for this country.
+            {t("compare.equipment.empty")}
           </p>
         ) : (
           <div
             className="table-wrap comparison-equipment-scroll"
             role="region"
-            aria-label={`Equipment and production changes for ${countryTag}`}
+            aria-label={t("compare.equipment.changesFor", { country: countryTag })}
             tabIndex={0}
           >
             <table className="recent-table comparison-equipment-table">
               <thead>
                 <tr>
-                  <th rowSpan={2}>Equipment definition</th>
-                  <th colSpan={3}>National stockpile balance</th>
-                  <th colSpan={3}>Active production factory slots</th>
-                  <th colSpan={3}>Current production rate / day</th>
+                  <th rowSpan={2}>{t("compare.equipment.definition")}</th>
+                  <th colSpan={3}>{t("compare.equipment.stockpileBalance")}</th>
+                  <th colSpan={3}>{t("compare.equipment.factorySlots")}</th>
+                  <th colSpan={3}>{t("compare.equipment.rate")}</th>
                 </tr>
                 <tr>
                   {Array.from({ length: 3 }, (_, group) => (
@@ -191,21 +192,21 @@ export const EquipmentProductionComparisonPanel = memo(
                       <strong>
                         {formatEquipmentDefinition(
                           definition.equipmentDefinition,
-                        ) || "Unknown equipment definition"}
+                        ) || t("compare.equipment.unknownDefinition")}
                       </strong>
                       <span className="production-code">
-                        {definition.equipmentDefinition || "Unknown definition"}
+                        {definition.equipmentDefinition || t("compare.equipment.unknownRawDefinition")}
                       </span>
                       <span className="comparison-equipment-presences">
                         {definition.stockpile && (
                           <PresenceBadge
-                            label="Stockpile"
+                            label={t("compare.equipment.stockpile")}
                             presence={definition.stockpile.presence}
                           />
                         )}
                         {definition.production && (
                           <PresenceBadge
-                            label="Production"
+                            label={t("compare.equipment.production")}
                             presence={definition.production.presence}
                           />
                         )}
@@ -221,7 +222,7 @@ export const EquipmentProductionComparisonPanel = memo(
                       {definition.stockpile ? (
                         <Delta value={definition.stockpile.balance} />
                       ) : (
-                        <span className="muted">N/A</span>
+                        <span className="muted">{t("compare.unavailableValue")}</span>
                       )}
                     </td>
                     <td className="numeric-cell comparison-equipment-group-start">
@@ -238,7 +239,7 @@ export const EquipmentProductionComparisonPanel = memo(
                       {definition.production ? (
                         <Delta value={definition.production.activeFactories} />
                       ) : (
-                        <span className="muted">N/A</span>
+                        <span className="muted">{t("compare.unavailableValue")}</span>
                       )}
                     </td>
                     <td className="numeric-cell comparison-equipment-group-start">
@@ -268,7 +269,7 @@ export const EquipmentProductionComparisonPanel = memo(
                           formatter={formatProductionRate}
                         />
                       ) : (
-                        <span className="muted">N/A</span>
+                        <span className="muted">{t("compare.unavailableValue")}</span>
                       )}
                     </td>
                   </tr>
@@ -278,9 +279,7 @@ export const EquipmentProductionComparisonPanel = memo(
           </div>
         )}
         <p className="comparison-equipment-note">
-          Stockpile values are signed national balances. Production values are
-          current land/air snapshot metrics; incomplete rates have no calculated
-          delta. Factory slots do not necessarily reconcile with effective MIL.
+          {t("compare.equipment.note")}
         </p>
       </section>
     );
@@ -288,11 +287,12 @@ export const EquipmentProductionComparisonPanel = memo(
 );
 
 function FragmentHeaders() {
+  const { t } = useTranslation();
   return (
     <>
-      <th className="numeric-cell comparison-equipment-group-start">Base</th>
-      <th className="numeric-cell">Target</th>
-      <th className="numeric-cell">Change</th>
+      <th className="numeric-cell comparison-equipment-group-start">{t("compare.base")}</th>
+      <th className="numeric-cell">{t("compare.target")}</th>
+      <th className="numeric-cell">{t("compare.change")}</th>
     </>
   );
 }

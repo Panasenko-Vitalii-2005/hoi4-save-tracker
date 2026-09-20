@@ -12,9 +12,11 @@
   },
   "dependencies": {
     "@types/react-plotly.js": "^2.6.4",
+    "i18next": "^26.4.2",
     "plotly.js": "^3.7.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-i18next": "^17.0.14",
     "react-plotly.js": "^4.0.0"
   },
   "devDependencies": {

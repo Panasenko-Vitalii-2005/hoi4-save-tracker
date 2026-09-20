@@ -1,4 +1,6 @@
 import { memo, useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import type {
   ArmySummary,
   CountryArmyHierarchySummary,
@@ -18,12 +20,12 @@ interface Props {
 
 function commanderText(army: {
   commander: { name: string | null; skill: number | null } | null;
-}): string {
-  if (!army.commander) return "Uncommanded";
-  const name = army.commander.name ?? "Unnamed commander";
+}, t: TFunction): string {
+  if (!army.commander) return t("land.uncommanded");
+  const name = army.commander.name ?? t("land.unnamedCommander");
   return army.commander.skill === null
     ? name
-    : `${name} · Skill ${army.commander.skill}`;
+    : `${name} · ${t("land.skill", { skill: army.commander.skill })}`;
 }
 
 function DivisionReferenceList({
@@ -39,8 +41,9 @@ function DivisionReferenceList({
   selectedDivisionKey: string | null;
   onSelectDivision: (divisionKey: string) => void;
 }) {
+  const { t } = useTranslation();
   if (references.length === 0) {
-    return <div className="land-forces-inner-empty">No divisions.</div>;
+    return <div className="land-forces-inner-empty">{t("land.noDivisions")}</div>;
   }
 
   return (
@@ -55,7 +58,7 @@ function DivisionReferenceList({
           ? templateByRef.get(templateKey)
           : undefined;
         const name =
-          division?.overrideName ?? template?.name ?? "Unnamed division";
+          division?.overrideName ?? template?.name ?? t("land.unnamedDivision");
         return (
           <li key={key ?? `missing-${reference.countryTag}-${index}`}>
             <button
@@ -65,8 +68,8 @@ function DivisionReferenceList({
               disabled={!key || !division}
               onClick={() => key && onSelectDivision(key)}
             >
-              <span>{division ? name : "Unknown division reference"}</span>
-              <small>{template?.name ?? "Template unavailable"}</small>
+              <span>{division ? name : t("land.unknownDivisionReference")}</span>
+              <small>{template?.name ?? t("land.templateUnavailable")}</small>
             </button>
           </li>
         );
@@ -94,6 +97,7 @@ const ArmyBlock = memo(function ArmyBlock({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
   const contentId = `land-forces-army-${identity.replaceAll(":", "-")}`;
   return (
     <section className="land-forces-army">
@@ -105,11 +109,11 @@ const ArmyBlock = memo(function ArmyBlock({
         onClick={onToggle}
       >
         <span>
-          <strong>{army.name ?? "Unnamed army"}</strong>
-          <small>{commanderText(army)}</small>
+          <strong>{army.name ?? t("land.unnamedArmy")}</strong>
+          <small>{commanderText(army, t)}</small>
         </span>
         <span className="land-forces-expand-meta">
-          {army.divisions.length.toLocaleString()} divisions
+          {t("land.divisionsCountShort", { count: army.divisions.length.toLocaleString() })}
           <b aria-hidden="true">{expanded ? "−" : "+"}</b>
         </span>
       </button>
@@ -135,6 +139,7 @@ export const ArmyHierarchyView = memo(function ArmyHierarchyView({
   selectedDivisionKey,
   onSelectDivision,
 }: Props) {
+  const { t } = useTranslation();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     () => new Set(),
   );
@@ -157,7 +162,7 @@ export const ArmyHierarchyView = memo(function ArmyHierarchyView({
   if (!hierarchy) {
     return (
       <div className="land-forces-inner-empty">
-        No army hierarchy data was found for this country.
+        {t("land.noHierarchy")}
       </div>
     );
   }
@@ -166,7 +171,7 @@ export const ArmyHierarchyView = memo(function ArmyHierarchyView({
     <div className="land-forces-hierarchy">
       {hierarchy.armyGroups.length > 0 && (
         <section className="land-forces-hierarchy-section">
-          <h3>Army groups</h3>
+          <h3>{t("land.armyGroups")}</h3>
           <div className="land-forces-group-list">
             {hierarchy.armyGroups.map((group, groupIndex) => {
               const key =
@@ -188,12 +193,11 @@ export const ArmyHierarchyView = memo(function ArmyHierarchyView({
                     onClick={() => toggle(setExpandedGroups, key)}
                   >
                     <span>
-                      <strong>{group.name ?? "Unnamed army group"}</strong>
-                      <small>{commanderText(group)}</small>
+                      <strong>{group.name ?? t("land.unnamedArmyGroup")}</strong>
+                      <small>{commanderText(group, t)}</small>
                     </span>
                     <span className="land-forces-expand-meta">
-                      {group.armies.length.toLocaleString()} armies ·{" "}
-                      {divisionCount.toLocaleString()} divisions
+                      {t("land.armiesAndDivisions", { armies: group.armies.length.toLocaleString(), divisions: divisionCount.toLocaleString() })}
                       <b aria-hidden="true">{expanded ? "−" : "+"}</b>
                     </span>
                   </button>
@@ -201,7 +205,7 @@ export const ArmyHierarchyView = memo(function ArmyHierarchyView({
                     <div id={contentId} className="land-forces-group-content">
                       {group.armies.length === 0 ? (
                         <div className="land-forces-inner-empty">
-                          No linked armies.
+                          {t("land.noLinkedArmies")}
                         </div>
                       ) : (
                         group.armies.map((army, armyIndex) => {
@@ -236,7 +240,7 @@ export const ArmyHierarchyView = memo(function ArmyHierarchyView({
 
       {hierarchy.grouplessArmies.length > 0 && (
         <section className="land-forces-hierarchy-section">
-          <h3>Groupless armies</h3>
+          <h3>{t("land.grouplessArmies")}</h3>
           <div className="land-forces-group-list">
             {hierarchy.grouplessArmies.map((army, index) => {
               const key =
@@ -262,7 +266,7 @@ export const ArmyHierarchyView = memo(function ArmyHierarchyView({
 
       <section className="land-forces-hierarchy-section">
         <h3>
-          Unassigned divisions
+          {t("land.unassignedDivisions")}
           <span>{hierarchy.unassignedDivisionCount.toLocaleString()}</span>
         </h3>
         <DivisionReferenceList

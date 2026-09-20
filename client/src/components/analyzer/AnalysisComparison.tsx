@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RecentAnalysis } from "@/types";
+import { useAppTranslation } from "@/i18n";
 import type { AnalysisComparisonDto } from "@/types/analysis-comparison";
-import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
+import { analyzerUnavailableMessage } from "@/lib/analysis-error";
 import { AnalysisComparisonResults } from "./AnalysisComparisonResults";
 import { ComparisonReport } from "@/components/reports/ComparisonReport";
 import { apiFetch } from "@/lib/api-client";
@@ -49,6 +50,7 @@ export function AnalysisComparison({
   onRetryOptions?: () => void;
   onAnalyzeSave?: () => void;
 }) {
+  const { t } = useAppTranslation();
   const [baseHash, setBaseHash] = useState("");
   const [targetHash, setTargetHash] = useState("");
   const [loading, setLoading] = useState(false);
@@ -154,7 +156,7 @@ export function AnalysisComparison({
         setError(
           reachedService
             ? "Could not compare saved analyses. The saved results are unchanged. Try again."
-            : ANALYZER_UNAVAILABLE_MESSAGE,
+            : analyzerUnavailableMessage(),
         );
         setErrorRetryable(true);
       }
@@ -171,22 +173,19 @@ export function AnalysisComparison({
       return (
         <section
           className="panel analysis-comparison-controls analysis-comparison-empty"
-          aria-label="Compare saves"
+          aria-label={t("compare.label")}
         >
           <div>
-            <span className="eyebrow">Saved analysis comparison</span>
-            <h2>Comparison options unavailable</h2>
-            <p>
-              Recent analyses could not be loaded. Existing saved data has not
-              been changed.
-            </p>
+            <span className="eyebrow">{t("compare.eyebrow")}</span>
+            <h2>{t("compare.unavailable")}</h2>
+            <p>{t("compare.unavailableBody")}</p>
           </div>
           {onRetryOptions && (
             <button
               className="button button-secondary"
               onClick={onRetryOptions}
             >
-              Try again
+              {t("common.retry")}
             </button>
           )}
         </section>
@@ -196,13 +195,13 @@ export function AnalysisComparison({
       return (
         <section
           className="panel analysis-comparison-controls analysis-comparison-empty"
-          aria-label="Compare saves"
+          aria-label={t("compare.label")}
           aria-busy="true"
         >
           <div>
-            <span className="eyebrow">Saved analysis comparison</span>
-            <h2>Loading comparison options…</h2>
-            <p>Reading saved analyses.</p>
+            <span className="eyebrow">{t("compare.eyebrow")}</span>
+            <h2>{t("compare.loadingOptions")}</h2>
+            <p>{t("compare.reading")}</p>
           </div>
         </section>
       );
@@ -211,20 +210,20 @@ export function AnalysisComparison({
     return (
       <section
         className="panel analysis-comparison-controls analysis-comparison-empty"
-        aria-label="Compare saves"
+        aria-label={t("compare.label")}
       >
         <div>
-          <span className="eyebrow">Saved analysis comparison</span>
-          <h2>Compare Saves</h2>
+          <span className="eyebrow">{t("compare.eyebrow")}</span>
+          <h2>{t("compare.title")}</h2>
           <p>
             {noneAvailable
-              ? "Analyze at least two saves before comparing campaign snapshots."
-              : "One saved analysis is ready. Analyze one more save to compare changes."}
+              ? t("compare.needTwo")
+              : t("compare.needOneMore")}
           </p>
         </div>
         {onAnalyzeSave && (
           <button className="button button-primary" onClick={onAnalyzeSave}>
-            {noneAvailable ? "Analyze Save" : "Analyze Another Save"}
+            {noneAvailable ? t("analysis.analyzeSave") : t("compare.analyzeAnother")}
           </button>
         )}
       </section>
@@ -255,18 +254,16 @@ export function AnalysisComparison({
     <>
       <section
         className="panel analysis-comparison-controls"
-        aria-label="Compare saves"
+        aria-label={t("compare.label")}
         aria-busy={loading}
       >
         <div className="comparison-control-layout">
           <div className="comparison-control-copy">
-            <span className="eyebrow">Saved analysis comparison</span>
-            <h2>Compare Saves</h2>
+            <span className="eyebrow">{t("compare.eyebrow")}</span>
+            <h2>{t("compare.title")}</h2>
             <p className="comparison-subtitle">
-              Compare two saved world snapshots.
-              <span>
-                All values show the difference <strong>Target − Base</strong>.
-              </span>
+              {t("compare.subtitle")}
+              <span>{t("compare.semantics")}</span>
             </p>
           </div>
           <div className="comparison-picker-region">
@@ -280,14 +277,14 @@ export function AnalysisComparison({
                     htmlFor={`compare-${side}`}
                   >
                     <span className="comparison-save-role">
-                      {side === "base" ? "Base" : "Target"}
+                      {side === "base" ? t("compare.base") : t("compare.target")}
                     </span>
                     <select
                       id={`compare-${side}`}
                       value={selected?.hash ?? ""}
                       onChange={(e) => select(side, e.target.value)}
                     >
-                      <option value="">Select an analysis</option>
+                      <option value="">{t("compare.select")}</option>
                       {available.map((item) => (
                         <option key={item.hash} value={item.hash}>
                           {item.fileName}
@@ -295,15 +292,15 @@ export function AnalysisComparison({
                       ))}
                     </select>
                     <span className="comparison-save-date">
-                      {selected?.gameDate || "No save selected"}
+                      {selected?.gameDate || t("compare.noSave")}
                     </span>
                   </label>
                 );
               })}
               <button
                 className="button button-secondary comparison-swap"
-                aria-label="Swap base and target analyses"
-                title="Swap Base and Target"
+                aria-label={t("compare.swapAria")}
+                title={t("compare.swapAria")}
                 disabled={!base || !target}
                 onClick={() => {
                   cancel();
@@ -314,7 +311,7 @@ export function AnalysisComparison({
                 }}
               >
                 <span aria-hidden="true">⇄</span>
-                <span className="comparison-swap-label">Swap</span>
+                <span className="comparison-swap-label">{t("compare.swap")}</span>
               </button>
             </div>
             <div className="comparison-actions">
@@ -323,13 +320,13 @@ export function AnalysisComparison({
                 disabled={!base || !target || busy || loading}
                 onClick={() => void compare()}
               >
-                {loading ? "Comparing…" : "Compare"}
+                {loading ? t("compare.comparing") : t("compare.action")}
               </button>
             </div>
           </div>
         </div>
         <p className="micro-copy" role="status" aria-live="polite">
-          {loading ? "Loading saved analyses for comparison…" : ""}
+          {loading ? t("compare.loading") : ""}
         </p>
         {error && (
           <div className="recovery-notice" role="alert">
@@ -340,7 +337,7 @@ export function AnalysisComparison({
                 onClick={() => void compare()}
                 disabled={loading || busy || !base || !target}
               >
-                Try again
+                {t("common.retry")}
               </button>
             )}
           </div>

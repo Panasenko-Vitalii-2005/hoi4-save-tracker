@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   CountryArmyHierarchySummary,
   CountryDivisionSummary,
@@ -37,6 +38,7 @@ export const CountryLandForcesDetails = memo(
     selectedTemplate,
     onSelectDivision,
   }: Props) {
+    const { t } = useTranslation();
     const hasHierarchy = Boolean(
       hierarchy &&
         (hierarchy.armyGroups.length > 0 ||
@@ -65,13 +67,13 @@ export const CountryLandForcesDetails = memo(
     );
 
     const summary = [
-      ["Divisions", country.divisionCount],
-      ["Full manpower", country.fullManpowerDivisionCount],
-      ["Under manpower", country.underManpowerDivisionCount],
-      ["Armies", armyCount],
-      ["Army groups", hierarchy?.armyGroups.length ?? 0],
-      ["Unassigned", hierarchy?.unassignedDivisionCount ?? 0],
-      ["Expeditionary", expeditionaryCount],
+      [t("land.divisions"), country.divisionCount],
+      [t("land.fullManpower"), country.fullManpowerDivisionCount],
+      [t("land.under"), country.underManpowerDivisionCount],
+      [t("land.armies"), armyCount],
+      [t("land.armyGroups"), hierarchy?.armyGroups.length ?? 0],
+      [t("land.unassigned"), hierarchy?.unassignedDivisionCount ?? 0],
+      [t("land.expeditionary"), expeditionaryCount],
     ] as const;
     const manpowerProgress =
       country.requiredManpowerTotal > 0 &&
@@ -89,30 +91,30 @@ export const CountryLandForcesDetails = memo(
                 <CountryDisplay tag={country.countryTag} />
               </h2>
               <div className="micro-copy">
-                Current land-force snapshot
+                {t("land.currentSnapshot")}
               </div>
             </div>
           </div>
 
           <div className="land-forces-manpower-overview">
             <div className="land-forces-manpower-copy">
-              <span>Current manpower</span>
+              <span>{t("land.currentManpower")}</span>
               <strong>
                 {country.currentManpowerTotal.toLocaleString()}
                 <small>
-                  / {country.requiredManpowerTotal.toLocaleString()} required
+                  / {country.requiredManpowerTotal.toLocaleString()} {t("land.required")}
                 </small>
               </strong>
             </div>
             <div className="land-forces-manpower-missing">
-              <span>Missing</span>
+              <span>{t("land.missing")}</span>
               <strong>{country.missingManpowerTotal.toLocaleString()}</strong>
             </div>
             {manpowerProgress !== null && (
               <div
                 className="land-forces-manpower-track"
                 role="progressbar"
-                aria-label="Current manpower compared with required manpower"
+                aria-label={t("land.manpowerProgress")}
                 aria-valuemin={0}
                 aria-valuemax={country.requiredManpowerTotal}
                 aria-valuenow={country.currentManpowerTotal}
@@ -134,7 +136,7 @@ export const CountryLandForcesDetails = memo(
           <div
             className="land-forces-view-tabs"
             role="tablist"
-            aria-label={`${country.countryTag} land-force views`}
+            aria-label={t("land.views", { country: country.countryTag })}
           >
             <button
               type="button"
@@ -144,7 +146,7 @@ export const CountryLandForcesDetails = memo(
               disabled={!hasHierarchy}
               onClick={() => setView("hierarchy")}
             >
-              Army hierarchy
+              {t("land.hierarchy")}
             </button>
             <button
               type="button"
@@ -153,7 +155,7 @@ export const CountryLandForcesDetails = memo(
               className={effectiveView === "divisions" ? "active" : ""}
               onClick={() => setView("divisions")}
             >
-              Divisions
+              {t("land.divisions")}
             </button>
           </div>
 

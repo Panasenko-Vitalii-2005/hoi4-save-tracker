@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   DivisionTemplateCatalogEntry,
   DivisionTemplateUnitSlot,
@@ -16,11 +17,12 @@ function CompositionGroup({
   title: string;
   slots: DivisionTemplateUnitSlot[];
 }) {
+  const { t } = useTranslation();
   return (
     <section className="land-forces-composition-group">
       <h4>{title}</h4>
       {slots.length === 0 ? (
-        <div className="micro-copy">None recorded</div>
+        <div className="micro-copy">{t("land.noneRecorded")}</div>
       ) : (
         <ol>
           {slots.map((slot, index) => (
@@ -47,17 +49,18 @@ export const DivisionTemplateDetails = memo(
     template: DivisionTemplateCatalogEntry | null;
     templateRef: EquipmentRef | null;
   }) {
+    const { t } = useTranslation();
     if (!template) {
       return (
         <section className="land-forces-template-section">
           <div className="panel-head">
-            <h3>Division template</h3>
+            <h3>{t("land.divisionTemplate")}</h3>
           </div>
           <div className="land-forces-inner-empty">
-            Template metadata is unavailable.
+            {t("land.templateMetadataUnavailable")}
             {templateRef && (
               <span className="land-forces-code">
-                Reference {equipmentReferenceKey(templateRef)}
+                {t("land.reference", { reference: equipmentReferenceKey(templateRef) })}
               </span>
             )}
           </div>
@@ -66,29 +69,29 @@ export const DivisionTemplateDetails = memo(
     }
 
     const metadata = [
-      ["Role", template.role],
-      ["Template country", formatCountryDisplayName(template.countryTag)],
-      ["Original tag", formatCountryDisplayName(template.originalTag)],
+      [t("land.role"), template.role],
+      [t("land.templateCountry"), formatCountryDisplayName(template.countryTag)],
+      [t("land.originalTag"), formatCountryDisplayName(template.originalTag)],
       [
-        "Foreign template tag",
+        t("land.foreignTemplateTag"),
         formatCountryDisplayName(template.foreignTemplateTag),
       ],
-      ["Obsolete", template.obsolete ? "Yes" : "No"],
-      ["Obsolete change date", template.obsoleteChangeDate],
-      ["Record status", template.complete ? "Complete" : "Partial"],
+      [t("common.obsolete"), template.obsolete ? t("common.yes") : t("common.no")],
+      [t("land.obsoleteChangeDate"), template.obsoleteChangeDate],
+      [t("land.recordStatus"), template.complete ? t("land.complete") : t("common.partial")],
     ] as const;
 
     return (
       <section className="land-forces-template-section">
         <div className="panel-head land-forces-section-head">
           <div>
-            <h3>Division template</h3>
+            <h3>{t("land.divisionTemplate")}</h3>
             <div className="micro-copy">
-              {template.name ?? "Unnamed template"}
+              {template.name ?? t("land.unnamedTemplate")}
             </div>
           </div>
           {template.obsolete && (
-            <span className="land-forces-muted-badge">Obsolete</span>
+            <span className="land-forces-muted-badge">{t("common.obsolete")}</span>
           )}
         </div>
         <dl className="land-forces-detail-grid compact">
@@ -100,13 +103,13 @@ export const DivisionTemplateDetails = memo(
           ))}
         </dl>
         <div className="land-forces-composition-grid">
-          <CompositionGroup title="Regiments" slots={template.regiments} />
+          <CompositionGroup title={t("land.regiments")} slots={template.regiments} />
           <CompositionGroup
-            title="Support"
+            title={t("land.support")}
             slots={template.supportCompanies}
           />
           <CompositionGroup
-            title="Regimental support"
+            title={t("land.regimentalSupport")}
             slots={template.regimentalSupport}
           />
         </div>

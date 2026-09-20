@@ -29,7 +29,7 @@ import {
   type BatchAnalysisPanelHandle,
 } from "./BatchAnalysisPanel";
 import {
-  ANALYZER_UNAVAILABLE_MESSAGE,
+  analyzerUnavailableMessage,
   analysisError,
   analysisFileReadError,
   analysisNetworkError,
@@ -52,6 +52,7 @@ import {
   trackAnalysisEvent,
   type AnalysisSection,
 } from "@/lib/product-telemetry";
+import { useAppTranslation } from "@/i18n";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -98,46 +99,13 @@ function isSaveBrowserData(
 type SortCol = keyof CountryStats;
 type AnalysisView = AnalysisSection;
 
-const ANALYZER_VIEW_COPY: Record<
-  AnalysisView,
-  { eyebrow: string; title: string; description: string }
-> = {
-  overview: {
-    eyebrow: "Campaign intelligence",
-    title: "Strategic overview",
-    description:
-      "Campaign-scale manpower, forces and industrial capacity from the current save.",
-  },
-  "war-casualties": {
-    eyebrow: "Conflict analysis",
-    title: "War casualties",
-    description:
-      "Calculated bilateral casualty records with exact per-war detail.",
-  },
-  "naval-losses": {
-    eyebrow: "Naval intelligence",
-    title: "Naval losses",
-    description:
-      "Recoverable ship-loss events and safely credited naval kills.",
-  },
-  stockpile: {
-    eyebrow: "Logistics intelligence",
-    title: "National stockpiles",
-    description:
-      "Exact equipment definitions and designs held in national stockpiles.",
-  },
-  production: {
-    eyebrow: "Industrial intelligence",
-    title: "Military production",
-    description:
-      "Current land and air production lines, factories, rates and resource constraints.",
-  },
-  "land-forces": {
-    eyebrow: "Army intelligence",
-    title: "Land forces",
-    description:
-      "Country command hierarchies and exact current division snapshots.",
-  },
+const ANALYZER_VIEW_KEY: Record<AnalysisView, string> = {
+  overview: "overview",
+  "war-casualties": "warCasualties",
+  "naval-losses": "navalLosses",
+  stockpile: "stockpile",
+  production: "production",
+  "land-forces": "landForces",
 };
 
 function AnalyzerViewContext({
@@ -149,17 +117,18 @@ function AnalyzerViewContext({
   gameDate: string;
   actions?: React.ReactNode;
 }) {
-  const copy = ANALYZER_VIEW_COPY[view];
+  const { t } = useAppTranslation();
+  const key = ANALYZER_VIEW_KEY[view];
   return (
     <section className="analyzer-view-context">
       <div>
-        <span>{copy.eyebrow}</span>
-        <h2>{copy.title}</h2>
-        <p>{copy.description}</p>
+        <span>{t(`analysis.views.${key}.eyebrow`)}</span>
+        <h2>{t(`analysis.views.${key}.title`)}</h2>
+        <p>{t(`analysis.views.${key}.description`)}</p>
       </div>
       <div className="analyzer-view-side">
         <div className="analyzer-view-date">
-          <span>Save date</span>
+          <span>{t("analysis.context.saveDate")}</span>
           <strong>{gameDate}</strong>
         </div>
         {actions}
@@ -179,6 +148,7 @@ function SaveBrowser({
   onBatchUpload: () => void;
   analyzing: boolean;
 }) {
+  const { t } = useAppTranslation();
   const fileInput = useRef<HTMLInputElement>(null);
   const [dir, setDir] = useState("");
   const [files, setFiles] = useState<SaveFile[]>([]);
@@ -206,13 +176,13 @@ function SaveBrowser({
     } catch {
       setLoadError(
         reachedService
-          ? "Could not load local saves. You can still choose a .hoi4 file from this device."
-          : ANALYZER_UNAVAILABLE_MESSAGE,
+          ? t("analysis.localLoadFailed")
+          : analyzerUnavailableMessage(),
       );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     loadDir();
@@ -231,29 +201,29 @@ function SaveBrowser({
     >
       <div className="panel-head analyzer-save-browser-head">
         <div className="analyzer-save-browser-copy">
-          <span className="batch-analysis-eyebrow">Single save analysis</span>
-          <h2>Analyze one save</h2>
-          <p>Inspect one HOI4 save in detail.</p>
+          <span className="batch-analysis-eyebrow">{t("analysis.singleEyebrow")}</span>
+          <h2>{t("analysis.singleTitle")}</h2>
+          <p>{t("analysis.singleBody")}</p>
         </div>
         <button
           className="button button-primary analyzer-save-action"
           disabled={analyzing}
           onClick={() => fileInput.current?.click()}
         >
-          Analyze Save
+          {t("analysis.analyzeSave")}
         </button>
         <button
           className="button button-secondary analyzer-save-action"
           disabled={analyzing}
           onClick={onBatchUpload}
         >
-          Import Campaign
+          {t("analysis.importCampaign")}
         </button>
         <input
           ref={fileInput}
           type="file"
           accept=".hoi4"
-          aria-label="Upload .hoi4 save"
+          aria-label={t("analysis.uploadAria")}
           disabled={analyzing}
           hidden
           onChange={(event) => {
@@ -267,12 +237,12 @@ function SaveBrowser({
           onClick={loadDir}
           disabled={loading}
         >
-          ↻ Refresh
+          ↻ {t("analysis.refresh")}
         </button>
       </div>
       <div className="analyzer-save-directory">
         <div className="analyzer-save-directory-label">
-          Local saves directory
+          {t("analysis.localDirectory")}
         </div>
         <div className="analyzer-save-directory-path">
           {dir || "…"}
@@ -286,23 +256,21 @@ function SaveBrowser({
             onClick={() => void loadDir()}
             disabled={loading}
           >
-            Try again
+            {t("common.retry")}
           </button>
         </div>
       )}
       {loading && files.length === 0 ? (
         <div className="micro-copy" style={{ padding: "16px 0" }}>
-          Scanning…
+          {t("analysis.scanning")}
         </div>
       ) : !loadError && !exists ? (
         <div className="micro-copy" style={{ padding: "16px 0" }}>
-          Local saves directory is unavailable.
-          <br />
-          You can still upload a .hoi4 save.
+          {t("analysis.localDirectoryUnavailable")}
         </div>
       ) : !loadError && files.length === 0 ? (
         <div className="micro-copy" style={{ padding: "16px 0" }}>
-          No .hoi4 files found.
+          {t("analysis.noLocalFiles")}
         </div>
       ) : files.length > 0 ? (
         <>
@@ -310,8 +278,7 @@ function SaveBrowser({
             <div />
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span className="micro-copy">
-                Page {page} of{" "}
-                {Math.max(1, Math.ceil(files.length / PAGE_SIZE))}
+                {t("analysis.page", { page, total: Math.max(1, Math.ceil(files.length / PAGE_SIZE)) })}
               </span>
               <button
                 className="button button-secondary"
@@ -319,7 +286,7 @@ function SaveBrowser({
                 disabled={page === 1}
                 style={{ padding: "6px 12px" }}
               >
-                ← Prev
+                ← {t("analysis.previous")}
               </button>
               <button
                 className="button button-secondary"
@@ -334,7 +301,7 @@ function SaveBrowser({
                 disabled={page >= Math.ceil(files.length / PAGE_SIZE)}
                 style={{ padding: "6px 12px" }}
               >
-                Next →
+                {t("analysis.next")} →
               </button>
             </div>
           </div>
@@ -342,9 +309,9 @@ function SaveBrowser({
             <table className="recent-table">
               <thead>
                 <tr>
-                  <th>Save file</th>
-                  <th style={{ textAlign: "right" }}>Size</th>
-                  <th style={{ textAlign: "right" }}>Last modified</th>
+                  <th>{t("analysis.saveFile")}</th>
+                  <th style={{ textAlign: "right" }}>{t("analysis.size")}</th>
+                  <th style={{ textAlign: "right" }}>{t("analysis.lastModified")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -406,6 +373,7 @@ export function AnalyzerTab({
     request: number;
   } | null;
 } = {}) {
+  const { t } = useAppTranslation();
   const readOnly = readOnlyResult !== undefined;
   const BASE = usePlotTheme();
   const [status, setStatus] = useState<{
@@ -606,7 +574,7 @@ export function AnalyzerTab({
     setOpenError("");
     setStatus({
       type: "loading",
-      msg: `${uploadedFile ? "Uploading and analyzing" : "Analyzing"} ${fileName}…${result ? " Previous results remain visible until the new analysis succeeds." : ""}`,
+      msg: `${t(uploadedFile ? "analysis.uploading" : "analysis.analyzing", { name: fileName })}${result ? t("analysis.previousSafe") : ""}`,
     });
     try {
       if (uploadedFile) {
@@ -642,7 +610,7 @@ export function AnalyzerTab({
       if (!isAnalyzeResult(data)) {
         setStatus({
           type: "error",
-          msg: "The analysis response could not be read. Your previous result is unchanged; try the analysis again.",
+          msg: t("analysis.responseUnreadable"),
           recovery: "retry",
         });
         return;
@@ -821,24 +789,24 @@ export function AnalyzerTab({
     if (!result) return [];
     const cards = [
       {
-        label: "Game date",
+        label: t("analysis.overview.gameDate"),
         value: result.game_date,
-        sub: `${result.file_size_mb} MB file`,
+        sub: t("analysis.overview.fileSize", { size: result.file_size_mb }),
       },
       {
-        label: "Active countries",
+        label: t("analysis.overview.activeCountries"),
         value: result.active_countries,
-        sub: "states with an owner",
+        sub: t("analysis.overview.statesOwned"),
       },
       {
-        label: "Total manpower",
+        label: t("analysis.overview.totalManpower"),
         value: fmtBig(result.totals.manpowerInField),
-        sub: `${result.totals.divisions.toLocaleString()} divisions`,
+        sub: t("analysis.overview.divisionsCount", { count: result.totals.divisions.toLocaleString() }),
       },
       {
-        label: "War industry",
+        label: t("analysis.overview.warIndustryCard"),
         value: result.totals.effectiveMilitaryFactories.toLocaleString(),
-        sub: `mil fac · ${result.totals.effectiveCivilianFactories} civ · ${result.totals.effectiveDockyards} dockyards`,
+        sub: t("analysis.overview.industrySummary", { mil: result.totals.effectiveMilitaryFactories, civ: result.totals.effectiveCivilianFactories, dockyards: result.totals.effectiveDockyards }),
       },
     ];
     if (diffTotals) {
@@ -866,7 +834,7 @@ export function AnalyzerTab({
       );
     }
     return cards;
-  }, [result, diffTotals]);
+  }, [result, diffTotals, t]);
 
   const eqCountries = useMemo(
     () =>
@@ -1002,8 +970,8 @@ export function AnalyzerTab({
                         }}
                       >
                         {status.recovery === "choose-file"
-                          ? "Choose another file"
-                          : "Retry analysis"}
+                          ? t("analysis.chooseAnother")
+                          : t("analysis.retryAnalysis")}
                       </button>
                     )}
                   </>
@@ -1035,7 +1003,7 @@ export function AnalyzerTab({
           <div
             className="tab-bar analyzer-view-tabs"
             role="tablist"
-            aria-label="Save analysis views"
+            aria-label={t("analysis.viewsLabel")}
           >
             <button
               className={`tab-btn${analysisView === "overview" ? " active" : ""}`}
@@ -1043,7 +1011,7 @@ export function AnalyzerTab({
               role="tab"
               aria-selected={analysisView === "overview"}
             >
-              Overview
+              {t("analysis.sections.overview")}
             </button>
             <button
               className={`tab-btn${analysisView === "war-casualties" ? " active" : ""}`}
@@ -1051,7 +1019,7 @@ export function AnalyzerTab({
               role="tab"
               aria-selected={analysisView === "war-casualties"}
             >
-              War Casualties
+              {t("analysis.sections.warCasualties")}
             </button>
             <button
               className={`tab-btn${analysisView === "naval-losses" ? " active" : ""}`}
@@ -1059,7 +1027,7 @@ export function AnalyzerTab({
               role="tab"
               aria-selected={analysisView === "naval-losses"}
             >
-              Naval Losses
+              {t("analysis.sections.navalLosses")}
             </button>
             <button
               className={`tab-btn${analysisView === "stockpile" ? " active" : ""}`}
@@ -1067,7 +1035,7 @@ export function AnalyzerTab({
               role="tab"
               aria-selected={analysisView === "stockpile"}
             >
-              Stockpile
+              {t("analysis.sections.stockpile")}
             </button>
             <button
               className={`tab-btn${analysisView === "production" ? " active" : ""}`}
@@ -1075,7 +1043,7 @@ export function AnalyzerTab({
               role="tab"
               aria-selected={analysisView === "production"}
             >
-              Production
+              {t("analysis.sections.production")}
             </button>
             <button
               className={`tab-btn${analysisView === "land-forces" ? " active" : ""}`}
@@ -1083,7 +1051,7 @@ export function AnalyzerTab({
               role="tab"
               aria-selected={analysisView === "land-forces"}
             >
-              Land Forces
+              {t("analysis.sections.landForces")}
             </button>
           </div>
 
@@ -1097,10 +1065,10 @@ export function AnalyzerTab({
                   className="button button-primary"
                   onClick={() => setReportOpen(true)}
                 >
-                  View Report
+                  {t("analysis.viewReport")}
                 </button>
                 <ExportControls
-                  label="Export current save analysis"
+                  label={t("analysis.exportCurrent")}
                   createCsv={() => ({
                     content: singleSaveCsv(result, resultSource),
                     filename: singleSaveExportFilename(result.game_date, "csv"),
@@ -1167,7 +1135,7 @@ export function AnalyzerTab({
           <div className="analyzer-charts-row">
             <section className="panel" style={{ flex: 2 }}>
               <div className="panel-head">
-                <h2>Manpower in Field</h2>
+                <h2>{t("analysis.overview.manpower")}</h2>
                 <div className="micro-copy">Top {mpRows.length}</div>
               </div>
               <Suspense
@@ -1213,7 +1181,7 @@ export function AnalyzerTab({
             </section>
             <section className="panel" style={{ flex: 1 }}>
               <div className="panel-head">
-                <h2>Navy &amp; Air Force</h2>
+                <h2>{t("analysis.overview.navyAir")}</h2>
               </div>
               <Suspense
                 fallback={<div style={{ minHeight: 520 }}>Loading…</div>}
@@ -1272,7 +1240,7 @@ export function AnalyzerTab({
           {/* Industry chart */}
           <section className="panel" style={{ marginTop: 18 }}>
             <div className="panel-head">
-              <h2>War Industry</h2>
+              <h2>{t("analysis.overview.warIndustry")}</h2>
               <div className="micro-copy">
                 Military / Civilian factories &amp; Dockyards
               </div>
@@ -1344,7 +1312,7 @@ export function AnalyzerTab({
           {/* Thematic top-10 overview */}
           <section className="panel" style={{ marginTop: 18 }}>
             <div className="panel-head">
-              <h2>Thematic Top 10</h2>
+              <h2>{t("analysis.overview.thematicTop")}</h2>
               <div className="micro-copy">
                 Industry, Navy, Air, Mobilization, Equipment leaders
               </div>
@@ -1355,8 +1323,8 @@ export function AnalyzerTab({
             >
               <section className="panel" style={{ flex: 1, minWidth: 280 }}>
                 <div className="panel-head">
-                  <h3>Industry</h3>
-                  <div className="micro-copy">Top 10 factories</div>
+                  <h3>{t("analysis.overview.industry")}</h3>
+                  <div className="micro-copy">{t("analysis.overview.topFactories")}</div>
                 </div>
                 <Suspense
                   fallback={<div style={{ minHeight: 260 }}>Loading…</div>}
@@ -1405,8 +1373,8 @@ export function AnalyzerTab({
 
               <section className="panel" style={{ flex: 1, minWidth: 280 }}>
                 <div className="panel-head">
-                  <h3>Navy</h3>
-                  <div className="micro-copy">Top 10 ship counts</div>
+                  <h3>{t("analysis.overview.navy")}</h3>
+                  <div className="micro-copy">{t("analysis.overview.topShips")}</div>
                 </div>
                 <Suspense
                   fallback={<div style={{ minHeight: 260 }}>Loading…</div>}
@@ -1446,8 +1414,8 @@ export function AnalyzerTab({
 
               <section className="panel" style={{ flex: 1, minWidth: 280 }}>
                 <div className="panel-head">
-                  <h3>Air</h3>
-                  <div className="micro-copy">Top 10 aircraft counts</div>
+                  <h3>{t("analysis.overview.air")}</h3>
+                  <div className="micro-copy">{t("analysis.overview.topAircraft")}</div>
                 </div>
                 <Suspense
                   fallback={<div style={{ minHeight: 260 }}>Loading…</div>}
@@ -1701,7 +1669,7 @@ export function AnalyzerTab({
 
           <section className="panel" style={{ marginTop: 18 }}>
             <div className="panel-head">
-              <h2>All Countries</h2>
+              <h2>{t("analysis.overview.allCountries")}</h2>
               <div className="analyzer-table-controls">
                 <input
                   type="text"

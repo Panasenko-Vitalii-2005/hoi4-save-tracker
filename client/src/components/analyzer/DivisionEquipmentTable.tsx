@@ -9,6 +9,7 @@ import {
   formatEquipmentDefinition,
   formatStockpileAmount,
 } from "@/lib/utils";
+import { useAppTranslation } from "@/i18n";
 
 export const DivisionEquipmentTable = memo(
   function DivisionEquipmentTable({
@@ -18,30 +19,31 @@ export const DivisionEquipmentTable = memo(
     equipment: DivisionEquipmentOccurrence[];
     equipmentByRef: ReadonlyMap<string, DivisionEquipmentCatalogEntry>;
   }) {
+    const { t } = useAppTranslation();
     return (
       <section className="land-forces-equipment-section">
         <div className="panel-head land-forces-section-head">
           <div>
-            <h3>Current equipment</h3>
+            <h3>{t("land.currentEquipment")}</h3>
             <div className="micro-copy">
-              {equipment.length.toLocaleString()} exact occurrences
+              {t("land.exactOccurrences", { count: equipment.length.toLocaleString() })}
             </div>
           </div>
         </div>
         {equipment.length === 0 ? (
           <div className="land-forces-inner-empty">
-            No equipment occurrences were recorded for this division.
+            {t("land.noEquipment")}
           </div>
         ) : (
           <div className="table-wrap">
             <table className="recent-table land-forces-equipment-table">
               <thead>
                 <tr>
-                  <th>Design</th>
-                  <th>Definition</th>
-                  <th className="numeric-cell">Amount</th>
-                  <th>Version</th>
-                  <th>Creator / origin</th>
+                  <th>{t("production.design")}</th>
+                  <th>{t("land.definition")}</th>
+                  <th className="numeric-cell">{t("stockpile.amount")}</th>
+                  <th>{t("stockpile.version")}</th>
+                  <th>{t("land.creatorOrigin")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -53,12 +55,12 @@ export const DivisionEquipmentTable = memo(
                       <td className="equipment-cell">
                         <strong>
                           {definition
-                            ? (definition.name ?? "Unnamed design")
-                            : "Unknown equipment"}
+                            ? (definition.name ?? t("production.unnamedDesign"))
+                            : t("land.unknownEquipment")}
                         </strong>
                         {definition?.obsolete && (
                           <span className="land-forces-muted-badge">
-                            Obsolete
+                            {t("common.obsolete")}
                           </span>
                         )}
                         {!definition && key && (

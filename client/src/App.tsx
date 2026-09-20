@@ -5,7 +5,9 @@ import { AuthGate } from "@/components/auth/AuthGate";
 import { CampaignTrends } from "@/components/chart/CampaignTrends";
 import { SoldiersTab } from "@/components/soldiers/SoldiersTab";
 import { TabBar } from "@/components/ui/TabBar";
+import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { useRecords } from "@/hooks/useRecords";
+import { useAppTranslation } from "@/i18n";
 import type { TabId } from "@/types";
 
 type Theme = "light" | "dark";
@@ -86,6 +88,7 @@ function sharedId(pathname: string): string | null {
 }
 
 export default function App() {
+  const { t } = useAppTranslation();
   const [theme, toggleTheme] = useTheme();
   const [pathname, setPathname] = useState(() => window.location.pathname);
   useEffect(() => {
@@ -100,13 +103,12 @@ export default function App() {
       <button
         className="theme-toggle"
         onClick={toggleTheme}
-        title={
-          theme === "light" ? "Switch to dark theme" : "Switch to light theme"
-        }
-        aria-label="Toggle theme"
+        title={theme === "light" ? t("common.switchDark") : t("common.switchLight")}
+        aria-label={t("common.toggleTheme")}
       >
         {theme === "light" ? "🌙" : "☀️"}
       </button>
+      <LanguageSwitcher />
       {publicId !== null ? (
         <SharedAnalysisPage publicId={publicId} />
       ) : (

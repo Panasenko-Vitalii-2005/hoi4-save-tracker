@@ -82,6 +82,43 @@
   border-color: var(--accent-2);
 }
 
+.language-switcher {
+  position: fixed;
+  top: 18px;
+  right: 74px;
+  z-index: 1000;
+}
+
+.language-switcher select {
+  min-width: 58px;
+  height: 42px;
+  padding: 0 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-strong);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  font: 600 13px/1 "IBM Plex Mono", monospace;
+  cursor: pointer;
+}
+
+.language-switcher select:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent-2) 45%, transparent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 * {
   box-sizing: border-box;
 }

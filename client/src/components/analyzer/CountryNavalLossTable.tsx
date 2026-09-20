@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { CountryNavalLossSummary } from "@/types";
 import { CountryDisplay } from "./CountryDisplay";
+import { useAppTranslation } from "@/i18n";
 
 interface Props {
   summaries: CountryNavalLossSummary[];
@@ -13,18 +14,19 @@ export const CountryNavalLossTable = memo(function CountryNavalLossTable({
   selectedTag,
   onSelect,
 }: Props) {
+  const { t } = useAppTranslation();
   return (
     <section className="panel naval-losses-ranking">
       <div className="panel-head">
-        <h2>Country ranking</h2>
-        <div className="micro-copy">{summaries.length} countries</div>
+        <h2>{t("naval.ranking")}</h2>
+        <div className="micro-copy">{t("common.countriesCount", { count: summaries.length })}</div>
       </div>
       <div className="table-wrap">
         <table className="recent-table naval-losses-table">
           <thead>
             <tr>
-              <th>Country</th>
-              <th className="numeric-cell">Ships lost</th>
+              <th>{t("common.country")}</th>
+              <th className="numeric-cell">{t("naval.shipsLost")}</th>
             </tr>
           </thead>
           <tbody>

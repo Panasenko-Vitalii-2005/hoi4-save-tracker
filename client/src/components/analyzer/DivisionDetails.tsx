@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   DivisionEquipmentCatalogEntry,
   DivisionSummary,
@@ -19,9 +20,9 @@ function valueText(value: number | null): string {
     : formatStockpileAmount(value);
 }
 
-function booleanText(value: boolean | null): string {
+function booleanText(value: boolean | null, yes: string, no: string): string {
   if (value === null) return "—";
-  return value ? "Yes" : "No";
+  return value ? yes : no;
 }
 
 export const DivisionDetails = memo(function DivisionDetails({
@@ -33,69 +34,70 @@ export const DivisionDetails = memo(function DivisionDetails({
   template: DivisionTemplateCatalogEntry | null;
   equipmentByRef: ReadonlyMap<string, DivisionEquipmentCatalogEntry>;
 }) {
+  const { t } = useTranslation();
   if (!division) {
     return (
       <section className="panel land-forces-division-details land-forces-empty">
-        Select a division to inspect its exact snapshot data.
+        {t("land.selectDivision")}
       </section>
     );
   }
 
-  const name = division.overrideName ?? template?.name ?? "Unnamed division";
+  const name = division.overrideName ?? template?.name ?? t("land.unnamedDivision");
   const provenance = [
-    ["Controller country", formatCountryDisplayName(division.countryTag)],
+    [t("land.controllerCountry"), formatCountryDisplayName(division.countryTag)],
     [
-      "Logical country",
+      t("land.logicalCountry"),
       division.logicalCountryTag &&
       division.logicalCountryTag !== division.countryTag
         ? formatCountryDisplayName(division.logicalCountryTag)
-        : "Same as controller",
+        : t("land.sameAsController"),
     ],
     [
-      "Expeditionary owner",
+      t("land.expeditionaryOwner"),
       formatCountryDisplayName(division.expeditionaryOwnerTag),
     ],
-    ["Template", template?.name],
-    ["Template role", template?.role],
+    [t("land.template"), template?.name],
+    [t("land.templateRole"), template?.role],
     [
-      "Current manpower source",
+      t("land.currentManpowerSource"),
       formatCountryDisplayName(division.currentManpowerTag),
     ],
     [
-      "Required manpower source",
+      t("land.requiredManpowerSource"),
       formatCountryDisplayName(division.requiredManpowerTag),
     ],
   ] as const;
   const manpower = [
-    ["Current manpower", valueText(division.currentManpower)],
-    ["Required manpower", valueText(division.requiredManpower)],
-    ["Missing manpower", valueText(division.missingManpower)],
-    ["Manpower completeness", formatDivisionRatio(division.manpowerCompleteness)],
+    [t("land.currentManpower"), valueText(division.currentManpower)],
+    [t("land.requiredManpower"), valueText(division.requiredManpower)],
+    [t("land.missingManpower"), valueText(division.missingManpower)],
+    [t("land.manpowerCompleteness"), formatDivisionRatio(division.manpowerCompleteness)],
   ] as const;
   const rawState = [
-    ["Strength (raw)", valueText(division.strength)],
-    ["Organization (raw)", valueText(division.organization)],
-    ["Experience (raw)", valueText(division.experience)],
-    ["Province ID", valueText(division.provinceId)],
-    ["Record status", division.complete ? "Complete" : "Partial"],
+    [t("land.strengthRaw"), valueText(division.strength)],
+    [t("land.organizationRaw"), valueText(division.organization)],
+    [t("land.experienceRaw"), valueText(division.experience)],
+    [t("land.provinceId"), valueText(division.provinceId)],
+    [t("land.recordStatus"), division.complete ? t("land.complete") : t("common.partial")],
   ] as const;
   const supply = [
-    ["Current supply", valueText(division.supply.current)],
-    ["Maximum supply", valueText(division.supply.max)],
-    ["Supply ratio", formatDivisionRatio(division.supplyRatio)],
-    ["Supply gain", valueText(division.supply.gain)],
-    ["Out-of-supply days", valueText(division.supply.outOfSupplyDays)],
-    ["Disrupted supply", valueText(division.supply.disrupted)],
-    ["Fuel", valueText(division.fuel)],
-    ["Fuel requested", valueText(division.fuelRequested)],
+    [t("land.currentSupply"), valueText(division.supply.current)],
+    [t("land.maximumSupply"), valueText(division.supply.max)],
+    [t("land.supplyRatio"), formatDivisionRatio(division.supplyRatio)],
+    [t("land.supplyGain"), valueText(division.supply.gain)],
+    [t("land.outOfSupplyDays"), valueText(division.supply.outOfSupplyDays)],
+    [t("land.disruptedSupply"), valueText(division.supply.disrupted)],
+    [t("land.fuel"), valueText(division.fuel)],
+    [t("land.fuelRequested"), valueText(division.fuelRequested)],
   ] as const;
   const status = [
     [
-      "Strategic redeployment",
-      booleanText(division.status.strategicRedeployment),
+      t("land.strategicRedeployment"),
+      booleanText(division.status.strategicRedeployment, t("common.yes"), t("common.no")),
     ],
-    ["Retreat", booleanText(division.status.retreat)],
-    ["Support attack", valueText(division.status.supportAttack)],
+    [t("land.retreat"), booleanText(division.status.retreat, t("common.yes"), t("common.no"))],
+    [t("land.supportAttack"), valueText(division.status.supportAttack)],
   ] as const;
 
   return (
@@ -104,12 +106,11 @@ export const DivisionDetails = memo(function DivisionDetails({
         <div>
           <h2>{name}</h2>
           <div className="micro-copy">
-            Division reference {equipmentReferenceKey(division.divisionRef) ?? "unavailable"}
+            {t("land.divisionReference", { reference: equipmentReferenceKey(division.divisionRef) ?? t("land.referenceUnavailable") })}
             {(division.nameType !== null || division.nameOrder !== null) && (
               <>
                 {" "}
-                · Name descriptor {division.nameType ?? "—"} /{" "}
-                {division.nameOrder ?? "—"}
+                · {t("land.nameDescriptor", { type: division.nameType ?? "—", order: division.nameOrder ?? "—" })}
               </>
             )}
           </div>
@@ -118,7 +119,7 @@ export const DivisionDetails = memo(function DivisionDetails({
 
       <div className="land-forces-details-sections">
         <section>
-          <h3>Identity and provenance</h3>
+          <h3>{t("land.identity")}</h3>
           <dl className="land-forces-detail-grid">
             {provenance.map(([label, value]) => (
               <div key={label}>
@@ -129,7 +130,7 @@ export const DivisionDetails = memo(function DivisionDetails({
           </dl>
         </section>
         <section>
-          <h3>Manpower</h3>
+          <h3>{t("land.manpower")}</h3>
           <dl className="land-forces-detail-grid">
             {manpower.map(([label, value]) => (
               <div key={label}>
@@ -140,7 +141,7 @@ export const DivisionDetails = memo(function DivisionDetails({
           </dl>
         </section>
         <section>
-          <h3>Raw state</h3>
+          <h3>{t("land.rawState")}</h3>
           <dl className="land-forces-detail-grid">
             {rawState.map(([label, value]) => (
               <div key={label}>
@@ -151,7 +152,7 @@ export const DivisionDetails = memo(function DivisionDetails({
           </dl>
         </section>
         <section>
-          <h3>Supply and fuel</h3>
+          <h3>{t("land.supplyFuel")}</h3>
           <dl className="land-forces-detail-grid">
             {supply.map(([label, value]) => (
               <div key={label}>
@@ -162,7 +163,7 @@ export const DivisionDetails = memo(function DivisionDetails({
           </dl>
         </section>
         <section>
-          <h3>Status</h3>
+          <h3>{t("land.status")}</h3>
           <dl className="land-forces-detail-grid">
             {status.map(([label, value]) => (
               <div key={label}>

@@ -3,6 +3,7 @@ import type { CountryMilitaryProductionSummary } from "@/types";
 import { resolvePreferredCountryTag } from "@/lib/utils";
 import { CountryProductionDetails } from "./CountryProductionDetails";
 import { CountryProductionTable } from "./CountryProductionTable";
+import { useAppTranslation } from "@/i18n";
 
 export function ProductionTab({
   summaries,
@@ -21,6 +22,7 @@ export function ProductionTab({
   onSelectedTagChange: (tag: string | null) => void;
   onSelectedDefinitionChange: (definition: string | null) => void;
 }) {
+  const { t } = useAppTranslation();
   const selectedCountry = useMemo(
     () =>
       summaries.find((country) => country.countryTag === selectedTag) ?? null,
@@ -87,7 +89,7 @@ export function ProductionTab({
   if (summaries.length === 0) {
     return (
       <section className="panel production-empty production-empty-save">
-        No current military production lines were found in this save.
+        {t("production.empty")}
       </section>
     );
   }
@@ -108,7 +110,7 @@ export function ProductionTab({
         />
       </div>
       <footer className="production-note">
-        <strong>Current military production snapshot.</strong>
+        <strong>{t("production.snapshot")}</strong>
         <span>
           Land and air production lines only; rates are current estimates from
           this save and do not represent production history or factory

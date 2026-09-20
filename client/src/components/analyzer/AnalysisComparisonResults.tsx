@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type {
   AnalysisComparisonDto,
   CountryComparison,
   NumericDiff,
 } from "@/types/analysis-comparison";
 import { countryFullName } from "@/lib/utils";
+import { appLocale } from "@/i18n";
 import { CountryDisplay } from "./CountryDisplay";
 import { ExportControls } from "@/components/ui/ExportControls";
 import {
@@ -24,60 +26,60 @@ type CountryScope = "changed" | "all";
 
 interface CountryColumn {
   key: CountryMetricKey;
-  label: string;
-  shortLabel: string;
+  labelKey: string;
+  shortLabelKey: string;
   compact?: boolean;
 }
 
 const COUNTRY_COLUMNS: readonly CountryColumn[] = [
   {
     key: "effectiveMilitaryFactories",
-    label: "Military factories",
-    shortLabel: "MIL",
+    labelKey: "compare.metrics.militaryFactories",
+    shortLabelKey: "compare.metrics.militaryFactories",
   },
   {
     key: "effectiveCivilianFactories",
-    label: "Civilian factories",
-    shortLabel: "CIV",
+    labelKey: "compare.metrics.civilianFactories",
+    shortLabelKey: "compare.metrics.civilianFactories",
   },
   {
     key: "effectiveDockyards",
-    label: "Dockyards",
-    shortLabel: "Docks",
+    labelKey: "compare.metrics.dockyards",
+    shortLabelKey: "compare.metrics.dockyards",
   },
-  { key: "divisions", label: "Divisions", shortLabel: "Divisions" },
+  { key: "divisions", labelKey: "compare.metrics.divisions", shortLabelKey: "compare.metrics.divisions" },
   {
     key: "manpowerInField",
-    label: "Manpower in field",
-    shortLabel: "Manpower",
+    labelKey: "compare.metrics.manpower",
+    shortLabelKey: "compare.metrics.manpower",
     compact: true,
   },
-  { key: "ships", label: "Ships", shortLabel: "Ships" },
+  { key: "ships", labelKey: "compare.metrics.ships", shortLabelKey: "compare.metrics.ships" },
   {
     key: "calculatedWarCasualtiesTotal",
-    label: "Calculated casualties",
-    shortLabel: "Casualties",
+    labelKey: "compare.metrics.calculatedCasualties",
+    shortLabelKey: "compare.metrics.calculatedCasualties",
     compact: true,
   },
 ];
 
 const GLOBAL_COLUMNS: readonly {
   key: keyof AnalysisComparisonDto["summary"];
-  label: string;
+  labelKey: string;
   compact?: boolean;
 }[] = [
-  { key: "activeCountries", label: "Active countries" },
-  { key: "divisions", label: "Divisions" },
-  { key: "manpowerInField", label: "Manpower in field", compact: true },
-  { key: "aircraft", label: "Aircraft", compact: true },
-  { key: "ships", label: "Ships" },
-  { key: "navalLossCount", label: "Recorded naval losses" },
+  { key: "activeCountries", labelKey: "compare.metrics.activeCountries" },
+  { key: "divisions", labelKey: "compare.metrics.divisions" },
+  { key: "manpowerInField", labelKey: "compare.metrics.manpower", compact: true },
+  { key: "aircraft", labelKey: "compare.metrics.aircraft", compact: true },
+  { key: "ships", labelKey: "compare.metrics.ships" },
+  { key: "navalLossCount", labelKey: "compare.metrics.navalLosses" },
 ];
 
-const exactNumber = (value: number | null) =>
+const exactNumber = (value: number | null, unavailable: string) =>
   value === null
-    ? "Unavailable"
-    : value.toLocaleString(undefined, { maximumFractionDigits: 15 });
+    ? unavailable
+    : value.toLocaleString(appLocale(), { maximumFractionDigits: 15 });
 
 function compactNumber(value: number): string {
   const absolute = Math.abs(value);
@@ -89,7 +91,7 @@ function compactNumber(value: number): string {
         : absolute >= 1_000
           ? [1_000, "k"]
           : [1, ""];
-  return `${(absolute / divisor).toLocaleString("en-US", {
+  return `${(absolute / divisor).toLocaleString(appLocale(), {
     maximumFractionDigits: divisor === 1 ? 15 : 2,
   })}${suffix}`;
 }
@@ -113,15 +115,16 @@ function DeltaValue({
   compact?: boolean;
   zero?: "dash" | "number";
 }) {
+  const { t } = useTranslation();
   if (diff.delta === null)
     return (
-      <span className="comparison-delta-value unavailable" aria-label="Unavailable">
-        N/A
+      <span className="comparison-delta-value unavailable" aria-label={t("compare.valueUnavailable")}>
+        {t("compare.unavailableValue")}
       </span>
     );
   if (diff.delta === 0)
     return (
-      <span className="comparison-delta-value no-change" aria-label="No change">
+      <span className="comparison-delta-value no-change" aria-label={t("compare.noChange")}>
         {zero === "number" ? "0" : "—"}
       </span>
     );
@@ -130,9 +133,9 @@ function DeltaValue({
       className={`comparison-delta-value ${
         diff.delta > 0 ? "increase" : "decrease"
       }`}
-      aria-label={`${
-        diff.delta > 0 ? "Target higher by" : "Target lower by"
-      } ${Math.abs(diff.delta).toLocaleString()}`}
+      aria-label={t(diff.delta > 0 ? "compare.targetHigherBy" : "compare.targetLowerBy", {
+        value: Math.abs(diff.delta).toLocaleString(appLocale()),
+      })}
     >
       {signedDelta(diff.delta, compact)}
     </span>
@@ -148,12 +151,13 @@ function SummaryCard({
   diff: NumericDiff;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="comparison-metric-card">
       <span className="comparison-metric-label">{label}</span>
       <span className="comparison-metric-range">
-        {exactNumber(diff.before)} <span aria-hidden="true">→</span>{" "}
-        {exactNumber(diff.after)}
+        {exactNumber(diff.before, t("compare.valueUnavailable"))} <span aria-hidden="true">→</span>{" "}
+        {exactNumber(diff.after, t("compare.valueUnavailable"))}
       </span>
       <DeltaValue diff={diff} compact={compact} zero="number" />
     </div>
@@ -185,6 +189,7 @@ export function AnalysisComparisonResults({
   showContext?: boolean;
   onViewReport: () => void;
 }) {
+  const { t } = useTranslation();
   const [scope, setScope] = useState<CountryScope>("changed");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("largest");
@@ -254,20 +259,20 @@ export function AnalysisComparisonResults({
   return (
     <section
       className="panel analysis-comparison-results"
-      aria-label="Comparison results"
+      aria-label={t("compare.results")}
     >
       <div className="comparison-results-heading">
         <div className="comparison-results-title">
-          <span className="eyebrow">Completed comparison</span>
+          <span className="eyebrow">{t("compare.completed")}</span>
           <button
             type="button"
             className="button button-primary"
             onClick={onViewReport}
           >
-            View Report
+            {t("compare.viewReport")}
           </button>
           <ExportControls
-            label="Export completed comparison"
+            label={t("compare.exportCompleted")}
             createCsv={() => ({
               content: comparisonCsv(data, { baseName, targetName }),
               filename: comparisonExportFilename(
@@ -288,69 +293,66 @@ export function AnalysisComparisonResults({
             })}
           />
         </div>
-        <div className="comparison-direction" aria-label="Comparison direction">
+        <div className="comparison-direction" aria-label={t("compare.direction")}>
           <div>
-            <span className="comparison-save-role">Base</span>
+            <span className="comparison-save-role">{t("compare.base")}</span>
             <strong>{baseName}</strong>
-            <span>{data.baseGameDate || "Unavailable"}</span>
+            <span>{data.baseGameDate || t("compare.valueUnavailable")}</span>
           </div>
           <span className="comparison-direction-arrow" aria-hidden="true">
             →
           </span>
           <div>
-            <span className="comparison-save-role">Target</span>
+            <span className="comparison-save-role">{t("compare.target")}</span>
             <strong>{targetName}</strong>
-            <span>{data.targetGameDate || "Unavailable"}</span>
+            <span>{data.targetGameDate || t("compare.valueUnavailable")}</span>
           </div>
         </div>
       </div>
       {showContext && (
-        <div className="comparison-context" aria-label="Comparison context">
+        <div className="comparison-context" aria-label={t("compare.context")}>
           {data.context.sameAnalysis ? (
             <p className="comparison-context-note">
-              Base and Target are the same saved analysis.
+              {t("compare.sameAnalysis")}
             </p>
           ) : data.context.chronology === "same_date" ? (
             <p className="comparison-context-note">
-              Base and Target have the same game date.
+              {t("compare.sameDate")}
             </p>
           ) : null}
           {data.context.chronology === "target_before_base" && (
             <p className="comparison-context-warning" role="status">
-              Target save is earlier than Base save. Changes are still calculated
-              as Target − Base.
+              {t("compare.targetEarlier")}
             </p>
           )}
           {data.context.campaignCompatibility === "same" ? (
-            <p className="comparison-context-note">Same campaign</p>
+            <p className="comparison-context-note">{t("compare.sameCampaign")}</p>
           ) : data.context.campaignCompatibility === "different" ? (
             <p className="comparison-context-warning" role="status">
-              These saves appear to belong to different campaigns. The comparison
-              is still a raw Target − Base snapshot difference.
+              {t("compare.differentCampaign")}
             </p>
           ) : (
             <p className="comparison-context-note muted">
-              Campaign relationship unknown
+              {t("compare.campaignUnknown")}
             </p>
           )}
           {data.context.gameVersionCompatibility === "different" && (
             <p className="comparison-context-warning" role="status">
-              These saves use different game versions. Snapshot differences remain
-              Target − Base.
+              {t("compare.differentVersion")}
             </p>
           )}
         </div>
       )}
       {!data.hasChanges && (
         <p className="comparison-no-differences" role="status">
-          No differences in compared metrics.
+          {t("compare.noDifferences")}
         </p>
       )}
-      <div className="comparison-summary" aria-label="Global change summary">
-        {GLOBAL_COLUMNS.map(({ key, label, compact }) => (
+      <div className="comparison-summary" aria-label={t("compare.globalSummary")}>
+        {GLOBAL_COLUMNS.map(({ key, labelKey, compact }) => (
           <SummaryCard
             key={key}
-            label={label}
+            label={t(labelKey)}
             diff={data.summary[key]}
             compact={compact}
           />
@@ -363,7 +365,7 @@ export function AnalysisComparisonResults({
             <div
               className="comparison-scope-tabs"
               role="group"
-              aria-label="Country change filter"
+              aria-label={t("compare.countryFilter")}
             >
               {(["changed", "all"] as const).map((value) => (
                 <button
@@ -372,7 +374,7 @@ export function AnalysisComparisonResults({
                   aria-pressed={scope === value}
                   onClick={() => setScope(value)}
                 >
-                  {value === "changed" ? "Changed only" : "All countries"}
+                  {value === "changed" ? t("compare.changedOnly") : t("compare.allCountries")}
                 </button>
               ))}
             </div>
@@ -380,28 +382,28 @@ export function AnalysisComparisonResults({
               <input
                 id="comparison-country-search"
                 type="search"
-                aria-label="Search countries"
+                aria-label={t("compare.searchCountries")}
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search countries..."
+                placeholder={t("compare.searchPlaceholder")}
               />
             </label>
             <div
               className="comparison-sort-cluster"
-              title="Metric sorts use the absolute size of each change."
+              title={t("compare.sortHint")}
             >
               <label className="comparison-sort" htmlFor="comparison-country-sort">
                 <select
                   id="comparison-country-sort"
-                  aria-label="Sort countries by"
+                  aria-label={t("compare.sortBy")}
                   value={sortKey}
                   onChange={(event) => changeSort(event.target.value as SortKey)}
                 >
-                  <option value="largest">Largest change</option>
-                  <option value="country">Country name</option>
-                  {COUNTRY_COLUMNS.map(({ key, label }) => (
+                  <option value="largest">{t("compare.largestChange")}</option>
+                  <option value="country">{t("compare.countryName")}</option>
+                  {COUNTRY_COLUMNS.map(({ key, labelKey }) => (
                     <option key={key} value={key}>
-                      {label}
+                      {t(labelKey)}
                     </option>
                   ))}
                 </select>
@@ -411,11 +413,11 @@ export function AnalysisComparisonResults({
                 aria-label={
                   sortKey === "country"
                     ? descending
-                      ? "Current order Z to A; sort country names A to Z"
-                      : "Current order A to Z; sort country names Z to A"
+                      ? t("compare.sortCountryAsc")
+                      : t("compare.sortCountryDesc")
                     : descending
-                      ? "Current order largest first; sort smallest absolute changes first"
-                      : "Current order smallest first; sort largest absolute changes first"
+                      ? t("compare.sortSmallest")
+                      : t("compare.sortLargest")
                 }
                 title={
                   sortKey === "country"
@@ -423,8 +425,8 @@ export function AnalysisComparisonResults({
                       ? "Z → A"
                       : "A → Z"
                     : descending
-                      ? "Largest first"
-                      : "Smallest first"
+                      ? t("compare.largestFirst")
+                      : t("compare.smallestFirst")
                 }
                 onClick={() => setDescending((value) => !value)}
               >
@@ -435,28 +437,28 @@ export function AnalysisComparisonResults({
 
           {countries.length === 0 ? (
             <p className="comparison-empty micro-copy">
-              No countries match these filters.
+              {t("compare.noCountries")}
             </p>
           ) : (
             <div
               className="table-wrap comparison-table-scroll"
               role="region"
-              aria-label="Country comparison table"
+              aria-label={t("compare.countryTable")}
               tabIndex={0}
             >
               <table className="recent-table comparison-country-table">
                 <thead>
                   <tr>
-                    <th>Country</th>
-                    <th>Tag</th>
-                    {COUNTRY_COLUMNS.map(({ key, label, shortLabel }) => (
-                      <th className="numeric-cell" key={key} title={label}>
+                    <th>{t("common.country")}</th>
+                    <th>{t("compare.tag")}</th>
+                    {COUNTRY_COLUMNS.map(({ key, labelKey, shortLabelKey }) => (
+                      <th className="numeric-cell" key={key} title={t(labelKey)}>
                         <button
                           className="comparison-column-sort"
-                          aria-label={`Sort by ${label}`}
+                          aria-label={t("compare.sortMetric", { metric: t(labelKey) })}
                           onClick={() => changeSort(key)}
                         >
-                          {shortLabel}
+                          {t(shortLabelKey)}
                         </button>
                       </th>
                     ))}
@@ -486,8 +488,8 @@ export function AnalysisComparisonResults({
                             className={`comparison-country-status ${country.status}`}
                           >
                             {country.status === "added"
-                              ? "Target only"
-                              : "Base only"}
+                              ? t("compare.targetOnly")
+                              : t("compare.baseOnly")}
                           </span>
                         )}
                       </td>
@@ -506,8 +508,8 @@ export function AnalysisComparisonResults({
         </div>
 
         <aside className="comparison-sidebar">
-          <section className="comparison-detail" aria-label="Country detail">
-            <span className="eyebrow">Country Detail</span>
+          <section className="comparison-detail" aria-label={t("compare.countryDetail")}>
+            <span className="eyebrow">{t("compare.countryDetail")}</span>
             {selected ? (
               <>
                 <h3>
@@ -516,35 +518,35 @@ export function AnalysisComparisonResults({
                 {selected.status !== "unchanged" && (
                   <p className={`comparison-detail-status ${selected.status}`}>
                     {selected.status === "added"
-                      ? "Present only in Target"
-                      : "Present only in Base"}
+                      ? t("compare.presentTarget")
+                      : t("compare.presentBase")}
                   </p>
                 )}
                 <div className="comparison-detail-summary">
-                  {COUNTRY_COLUMNS.map(({ key, shortLabel, compact }) => (
+                  {COUNTRY_COLUMNS.map(({ key, shortLabelKey, compact }) => (
                     <div key={key}>
-                      <span>{shortLabel}</span>
+                      <span>{t(shortLabelKey)}</span>
                       <DeltaValue diff={selected[key]} compact={compact} />
                     </div>
                   ))}
                 </div>
-                <h4>Detailed breakdown</h4>
+                <h4>{t("compare.breakdown")}</h4>
                 <div className="table-wrap comparison-detail-scroll">
                   <table className="comparison-detail-table">
                     <thead>
                       <tr>
-                        <th>Metric</th>
-                        <th>Base</th>
-                        <th>Target</th>
-                        <th>Change</th>
+                        <th>{t("compare.metric")}</th>
+                        <th>{t("compare.base")}</th>
+                        <th>{t("compare.target")}</th>
+                        <th>{t("compare.change")}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {COUNTRY_COLUMNS.map(({ key, label }) => (
+                      {COUNTRY_COLUMNS.map(({ key, labelKey }) => (
                         <tr key={key}>
-                          <th scope="row">{label}</th>
-                          <td>{exactNumber(selected[key].before)}</td>
-                          <td>{exactNumber(selected[key].after)}</td>
+                          <th scope="row">{t(labelKey)}</th>
+                          <td>{exactNumber(selected[key].before, t("compare.valueUnavailable"))}</td>
+                          <td>{exactNumber(selected[key].after, t("compare.valueUnavailable"))}</td>
                           <td>
                             <DeltaValue diff={selected[key]} />
                           </td>
@@ -555,36 +557,33 @@ export function AnalysisComparisonResults({
                 </div>
               </>
             ) : (
-              <p className="micro-copy">Select a country to inspect changes.</p>
+              <p className="micro-copy">{t("compare.selectCountryChanges")}</p>
             )}
           </section>
 
-          <section className="comparison-about" aria-label="About changes">
-            <h3>About changes</h3>
-            <p>Values show Target − Base snapshot differences.</p>
+          <section className="comparison-about" aria-label={t("compare.about")}>
+            <h3>{t("compare.about")}</h3>
+            <p>{t("compare.valuesSemantics")}</p>
             <dl>
               <div>
-                <dt>Positive</dt>
-                <dd>Target higher</dd>
+                <dt>{t("compare.positive")}</dt>
+                <dd>{t("compare.targetHigher")}</dd>
               </div>
               <div>
-                <dt>Negative</dt>
-                <dd>Target lower</dd>
+                <dt>{t("compare.negative")}</dt>
+                <dd>{t("compare.targetLower")}</dd>
               </div>
               <div>
                 <dt>—</dt>
-                <dd>No change</dd>
+                <dd>{t("compare.noChange")}</dd>
               </div>
               <div>
-                <dt>N/A</dt>
-                <dd>Unavailable</dd>
+                <dt>{t("compare.unavailableValue")}</dt>
+                <dd>{t("compare.valueUnavailable")}</dd>
               </div>
             </dl>
             <p className="micro-copy">
-              Calculated casualty changes compare cumulative snapshot values; they
-              do not prove casualties occurred during the selected interval.
-              Recorded naval losses are event-count snapshot differences and do
-              not prove those losses occurred strictly between the selected saves.
+              {t("compare.casualtyCaveat")}
             </p>
           </section>
         </aside>

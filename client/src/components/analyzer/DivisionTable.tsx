@@ -8,6 +8,7 @@ import {
   formatCountryDisplayName,
   formatDivisionRatio,
 } from "@/lib/utils";
+import { useAppTranslation } from "@/i18n";
 
 interface Props {
   divisions: DivisionSummary[];
@@ -37,6 +38,7 @@ export const DivisionTable = memo(function DivisionTable({
   selectedDivisionKey,
   onSelectDivision,
 }: Props) {
+  const { t } = useAppTranslation();
   const [search, setSearch] = useState("");
   const [role, setRole] = useState("all");
   const [manpower, setManpower] = useState("all");
@@ -126,7 +128,7 @@ export const DivisionTable = memo(function DivisionTable({
     <section className="land-forces-division-browser">
       <div className="land-forces-filter-bar">
         <label className="land-forces-search">
-          <span>Search divisions</span>
+          <span>{t("land.searchDivisions")}</span>
           <input
             type="search"
             value={search}
@@ -135,9 +137,9 @@ export const DivisionTable = memo(function DivisionTable({
           />
         </label>
         <label>
-          <span>Role</span>
+          <span>{t("land.role")}</span>
           <select value={role} onChange={(event) => setRole(event.target.value)}>
-            <option value="all">All roles</option>
+            <option value="all">{t("land.allRoles")}</option>
             {roles.map((value) => (
               <option value={value} key={value}>
                 {value}
@@ -146,36 +148,36 @@ export const DivisionTable = memo(function DivisionTable({
           </select>
         </label>
         <label>
-          <span>Manpower</span>
+          <span>{t("land.manpower")}</span>
           <select
             value={manpower}
             onChange={(event) => setManpower(event.target.value)}
           >
-            <option value="all">All</option>
-            <option value="full">Full</option>
-            <option value="under">Under manpower</option>
+            <option value="all">{t("land.all")}</option>
+            <option value="full">{t("land.full")}</option>
+            <option value="under">{t("land.under")}</option>
           </select>
         </label>
         <label>
-          <span>Provenance</span>
+          <span>{t("land.provenance")}</span>
           <select
             value={expeditionary}
             onChange={(event) => setExpeditionary(event.target.value)}
           >
-            <option value="all">All</option>
-            <option value="yes">Expeditionary</option>
-            <option value="no">Non-expeditionary</option>
+            <option value="all">{t("land.all")}</option>
+            <option value="yes">{t("land.expeditionary")}</option>
+            <option value="no">{t("land.nonExpeditionary")}</option>
           </select>
         </label>
         <label>
-          <span>Assignment</span>
+          <span>{t("land.assignment")}</span>
           <select
             value={assignment}
             onChange={(event) => setAssignment(event.target.value)}
           >
-            <option value="all">All</option>
-            <option value="assigned">Assigned</option>
-            <option value="unassigned">Unassigned</option>
+            <option value="all">{t("land.all")}</option>
+            <option value="assigned">{t("land.assigned")}</option>
+            <option value="unassigned">{t("land.unassigned")}</option>
           </select>
         </label>
       </div>
@@ -188,14 +190,14 @@ export const DivisionTable = memo(function DivisionTable({
         <table className="recent-table land-forces-division-table">
           <thead>
             <tr>
-              <th>Division</th>
-              <th>Template</th>
-              <th>Role</th>
-              <th className="numeric-cell">Manpower</th>
-              <th className="numeric-cell">Missing</th>
-              <th className="numeric-cell">Province</th>
-              <th className="numeric-cell">Supply</th>
-              <th>Expeditionary owner</th>
+              <th>{t("land.division")}</th>
+              <th>{t("land.template")}</th>
+              <th>{t("land.role")}</th>
+              <th className="numeric-cell">{t("land.manpower")}</th>
+              <th className="numeric-cell">{t("land.missing")}</th>
+              <th className="numeric-cell">{t("land.province")}</th>
+              <th className="numeric-cell">{t("land.supply")}</th>
+              <th>{t("land.expeditionaryOwner")}</th>
             </tr>
           </thead>
           <tbody>
@@ -207,7 +209,7 @@ export const DivisionTable = memo(function DivisionTable({
                 ? templateByRef.get(templateKey)
                 : undefined;
               const name =
-                division.overrideName ?? template?.name ?? "Unnamed division";
+                division.overrideName ?? template?.name ?? t("land.unnamedDivision");
               const selected = selectedDivisionKey === key;
               return (
                 <tr
@@ -227,11 +229,11 @@ export const DivisionTable = memo(function DivisionTable({
                   <td className="division-cell">
                     <strong>{name}</strong>
                     {!division.complete && (
-                      <span className="land-forces-muted-badge">Partial</span>
+                      <span className="land-forces-muted-badge">{t("common.partial")}</span>
                     )}
                   </td>
                   <td className="template-cell">
-                    {template?.name ?? "Template unavailable"}
+                    {template?.name ?? t("land.templateUnavailable")}
                   </td>
                   <td>{template?.role ?? "—"}</td>
                   <td className="numeric-cell">

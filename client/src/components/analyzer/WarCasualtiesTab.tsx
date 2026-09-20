@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CountryStats } from "@/types";
 import { CountryCasualtiesTable } from "./CountryCasualtiesTable";
 import { CountryWarDetails } from "./CountryWarDetails";
+import { useAppTranslation } from "@/i18n";
 
 export function WarCasualtiesTab({ countries }: { countries: CountryStats[] }) {
+  const { t } = useAppTranslation();
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   const sortedCountries = useMemo(
@@ -35,8 +37,8 @@ export function WarCasualtiesTab({ countries }: { countries: CountryStats[] }) {
         <CountryWarDetails country={selectedCountry} />
       </div>
       <footer className="war-casualties-note">
-        <strong>Calculated value.</strong>
-        <span>This number is the sum of bilateral war_relation records extracted from the save file.</span>
+        <strong>{t("casualties.noteTitle")}</strong>
+        <span>{t("casualties.note")}</span>
       </footer>
     </>
   );

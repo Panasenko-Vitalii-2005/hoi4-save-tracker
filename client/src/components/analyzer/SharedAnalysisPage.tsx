@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import type { AnalyzeResult } from "@/types";
 import { isAnalyzeResult } from "@/lib/analyze-result";
-import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
+import { analyzerUnavailableMessage } from "@/lib/analysis-error";
 import { apiFetch } from "@/lib/api-client";
 import { sharedAnalysisTelemetryHeaders } from "@/lib/product-telemetry";
 import { AnalyzerTab } from "./AnalyzerTab";
+import { useAppTranslation } from "@/i18n";
 
 const PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
 
 export function SharedAnalysisPage({ publicId }: { publicId: string }) {
+  const { t } = useAppTranslation();
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState("");
@@ -18,16 +20,16 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
     const previousTitle = document.title;
     document.title = result
       ? `HoI4 Save Analysis — ${result.game_date}`
-      : "HoI4 Save Analysis";
+      : t("share.pageTitle");
     return () => {
       document.title = previousTitle;
     };
-  }, [result]);
+  }, [result, t]);
 
   useEffect(() => {
     if (!PUBLIC_ID.test(publicId)) {
       setResult(null);
-      setFailure("This shared-analysis link is invalid.");
+      setFailure(t("share.invalid"));
       setLoading(false);
       return;
     }
@@ -49,14 +51,14 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
         if (response.status === 404 || response.status === 410) {
           if (active)
             setFailure(
-              "This link is invalid, revoked, or its saved result is no longer available.",
+              t("share.invalidOrRevoked"),
             );
           return;
         }
         if (!response.ok) {
           if (active)
             setFailure(
-              "The shared analysis is temporarily unavailable. Try again.",
+              t("share.temporarilyUnavailable"),
             );
           return;
         }
@@ -64,7 +66,7 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
         if (!isAnalyzeResult(data)) {
           if (active)
             setFailure(
-              "This shared analysis cannot be read. Ask its owner to create a new share link.",
+              t("share.unreadable"),
             );
           return;
         }
@@ -75,7 +77,7 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
       } catch {
         if (active) {
           setResult(null);
-          setFailure(ANALYZER_UNAVAILABLE_MESSAGE);
+          setFailure(analyzerUnavailableMessage());
         }
       } finally {
         if (active) setLoading(false);
@@ -85,38 +87,37 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
       active = false;
       controller.abort();
     };
-  }, [publicId, retry]);
+  }, [publicId, retry, t]);
 
   return (
     <main className="page-shell shared-analysis-page">
       <header className="hero shared-analysis-hero">
         <div className="hero-copy">
-          <div className="eyebrow">Public read-only analysis</div>
-          <h1>HoI4 Save Analysis</h1>
+          <div className="eyebrow">{t("share.publicReadOnly")}</div>
+          <h1>{t("share.pageTitle")}</h1>
           <p>
             {result
-              ? `Campaign snapshot · Save date ${result.game_date}`
-              : "A shared Hearts of Iron IV campaign snapshot."}
+              ? t("share.snapshot", { date: result.game_date })
+              : t("share.snapshotFallback")}
           </p>
         </div>
       </header>
 
       {loading ? (
         <section className="panel shared-analysis-state" role="status">
-          <span className="spinner" aria-hidden="true" /> Loading shared
-          analysis…
+          <span className="spinner" aria-hidden="true" /> {t("share.loading")}
         </section>
       ) : result ? (
         <AnalyzerTab readOnlyResult={result} />
       ) : (
         <section className="panel shared-analysis-state" role="alert">
-          <h2>Shared analysis unavailable</h2>
+          <h2>{t("share.unavailableTitle")}</h2>
           <p>{failure}</p>
           <button
             className="button button-secondary"
             onClick={() => setRetry((value) => value + 1)}
           >
-            Try again
+            {t("common.retry")}
           </button>
         </section>
       )}

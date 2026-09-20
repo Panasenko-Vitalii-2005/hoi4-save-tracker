@@ -11,6 +11,7 @@ import {
   formatProductionRate,
   formatProductionValue,
 } from "@/lib/utils";
+import { useAppTranslation } from "@/i18n";
 
 function lineKey(line: MilitaryProductionLineSummary, index: number): string {
   const lineReference = line.lineRef
@@ -37,16 +38,17 @@ function DesignCell({
   unresolved: boolean;
   index: number;
 }) {
+  const { t } = useAppTranslation();
   return (
     <td className="design-cell">
       <strong>
         {unresolved
           ? `Unresolved production line ${index + 1}`
-          : line.variantName?.trim() || "Unnamed design"}
+          : line.variantName?.trim() || t("production.unnamedDesign")}
       </strong>
-      {line.obsolete && <span className="production-obsolete">Obsolete</span>}
+      {line.obsolete && <span className="production-obsolete">{t("common.obsolete")}</span>}
       {!line.complete && (
-        <span className="production-partial">Partial data</span>
+        <span className="production-partial">{t("production.partialData")}</span>
       )}
       {!unresolved && (
         <span className="production-line-meta">
@@ -112,8 +114,9 @@ function EfficiencyCell({ line }: { line: MilitaryProductionLineSummary }) {
 }
 
 function ResourceCell({ line }: { line: MilitaryProductionLineSummary }) {
+  const { t } = useAppTranslation();
   if (!line.hasResourceShortage) {
-    return <td className="production-resource-none">None</td>;
+    return <td className="production-resource-none">{t("common.none")}</td>;
   }
 
   return (
@@ -141,17 +144,18 @@ function LinesTable({
   lines: MilitaryProductionLineSummary[];
   unresolved?: boolean;
 }) {
+  const { t } = useAppTranslation();
   return (
     <div className="table-wrap">
       <table className="recent-table production-line-table">
         <thead>
           <tr>
-            <th>Design</th>
-            <th className="numeric-cell">Active / requested</th>
-            <th className="numeric-cell">Current rate</th>
-            <th className="numeric-cell">Progress</th>
-            <th className="numeric-cell">Efficiency</th>
-            <th>Resources</th>
+            <th>{t("production.design")}</th>
+            <th className="numeric-cell">{t("production.activeRequested")}</th>
+            <th className="numeric-cell">{t("production.currentRate")}</th>
+            <th className="numeric-cell">{t("production.progress")}</th>
+            <th className="numeric-cell">{t("production.efficiency")}</th>
+            <th>{t("production.resources")}</th>
           </tr>
         </thead>
         <tbody>
@@ -162,7 +166,7 @@ function LinesTable({
               <td className="numeric-cell">
                 {line.currentItemsPerDay === null
                   ? "—"
-                  : `${formatProductionRate(line.currentItemsPerDay)} / day`}
+                  : t("production.perDay", { value: formatProductionRate(line.currentItemsPerDay) })}
               </td>
               <td
                 className="numeric-cell"
@@ -187,6 +191,7 @@ export const ProductionLineTable = memo(function ProductionLineTable({
   definition: MilitaryProductionDefinitionSummary | null;
   unresolvedLines: MilitaryProductionLineSummary[];
 }) {
+  const { t } = useAppTranslation();
   return (
     <>
       <section className="panel production-line-panel">
@@ -198,7 +203,7 @@ export const ProductionLineTable = memo(function ProductionLineTable({
           <>
             <div className="panel-head production-line-head">
               <div>
-                <h2>Current production lines</h2>
+                <h2>{t("production.currentLines")}</h2>
                 <div className="micro-copy">
                   {formatEquipmentDefinition(definition.equipmentDefinition)}
                 </div>
@@ -216,7 +221,7 @@ export const ProductionLineTable = memo(function ProductionLineTable({
         <section className="panel production-unresolved-panel">
           <div className="panel-head">
             <div>
-              <h2>Unresolved production lines</h2>
+              <h2>{t("production.unresolvedLines")}</h2>
               <div className="micro-copy">
                 Equipment definition metadata is unavailable. Raw identifiers
                 are intentionally hidden.

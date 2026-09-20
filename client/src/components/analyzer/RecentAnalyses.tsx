@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RecentAnalysis } from "@/types";
-import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
+import { analyzerUnavailableMessage } from "@/lib/analysis-error";
 import { apiFetch } from "@/lib/api-client";
+import { appLocale, useAppTranslation } from "@/i18n";
 import { AnalysisComparison } from "./AnalysisComparison";
 import {
   ShareAnalysisDialog,
@@ -45,10 +46,10 @@ function compareDates(
   return ascending ? a - b : b - a;
 }
 
-function fileSize(bytes: number): string {
+function fileSize(bytes: number, locale: string): string {
   const unit = bytes >= 1024 ** 2 ? "MiB" : bytes >= 1024 ? "KiB" : "B";
   const divisor = unit === "MiB" ? 1024 ** 2 : unit === "KiB" ? 1024 : 1;
-  return `${(bytes / divisor).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit}`;
+  return `${(bytes / divisor).toLocaleString(locale, { maximumFractionDigits: 1 })} ${unit}`;
 }
 
 type RecentIconName =
@@ -159,16 +160,16 @@ function recentCount(value: number | null | undefined): string {
     : "—";
 }
 
-function analyzedDate(value: string): { date: string; time: string } {
+function analyzedDate(value: string, locale: string): { date: string; time: string } {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return { date: "—", time: "" };
   return {
-    date: date.toLocaleDateString(undefined, {
+    date: date.toLocaleDateString(locale, {
       year: "numeric",
       month: "short",
       day: "numeric",
     }),
-    time: date.toLocaleTimeString(undefined, {
+    time: date.toLocaleTimeString(locale, {
       hour: "2-digit",
       minute: "2-digit",
     }),
@@ -192,6 +193,8 @@ export function RecentAnalyses({
   onAnalyzeSave?: () => void;
   onImportCampaign?: () => void;
 }) {
+  const { t, i18n } = useAppTranslation();
+  const locale = appLocale(i18n.resolvedLanguage);
   const [items, setItems] = useState<RecentAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -246,7 +249,7 @@ export function RecentAnalyses({
           setFailureMessage(
             reachedService
               ? "Recent analyses could not be loaded. Check the analyzer storage and try again."
-              : ANALYZER_UNAVAILABLE_MESSAGE,
+              : analyzerUnavailableMessage(),
           );
         }
       } finally {
@@ -306,7 +309,7 @@ export function RecentAnalyses({
     if (
       action === "delete" &&
       !window.confirm(
-        `Delete the saved analysis for "${item.fileName}"? The original save and any currently displayed result will remain unchanged. An active public link will remain available until it is revoked.`,
+        t("history.deleteConfirm", { name: item.fileName }),
       )
     )
       return;
@@ -357,7 +360,7 @@ export function RecentAnalyses({
       <section
         id="recent-analyses"
         className="panel analyzer-recent"
-        aria-label="Recent Analyses"
+        aria-label={t("history.title")}
         aria-busy={loading || mutation !== null || storageBusy}
       >
         <div className="analyzer-recent-header">
@@ -366,12 +369,8 @@ export function RecentAnalyses({
               <RecentIcon name="history" />
             </span>
             <div>
-              <h2>Recent Analyses</h2>
-              <p className="micro-copy">
-                Reopen a saved analysis without uploading again.
-                <br />
-                Original save files are not stored.
-              </p>
+              <h2>{t("history.title")}</h2>
+              <p className="micro-copy">{t("history.reopenBody")}</p>
             </div>
           </div>
         </div>
@@ -411,7 +410,7 @@ export function RecentAnalyses({
               onClick={() => setRetry((value) => value + 1)}
               disabled={loading}
             >
-              Try again
+              {t("common.retry")}
             </button>
           </div>
         )}
@@ -419,7 +418,7 @@ export function RecentAnalyses({
           <>
             <div className="analyzer-recent-controls">
               <label htmlFor="recent-analysis-search">
-                Search analyses
+                {t("history.searchLabel")}
                 <span className="analyzer-recent-control">
                   <RecentIcon name="search" />
                   <input
@@ -427,12 +426,12 @@ export function RecentAnalyses({
                     type="search"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Filename or game date"
+                    placeholder={t("history.searchHint")}
                   />
                 </span>
               </label>
               <label htmlFor="recent-analysis-sort">
-                Sort analyses
+                {t("history.sort")}
                 <select
                   id="recent-analysis-sort"
                   value={sortOrder}
@@ -440,46 +439,45 @@ export function RecentAnalyses({
                     setSortOrder(event.target.value as SortOrder)
                   }
                 >
-                  <option value="newest">Newest analyzed</option>
-                  <option value="oldest">Oldest analyzed</option>
-                  <option value="name-asc">Filename A–Z</option>
-                  <option value="name-desc">Filename Z–A</option>
-                  <option value="game-newest">Game date newest</option>
-                  <option value="game-oldest">Game date oldest</option>
+                  <option value="newest">{t("history.newest")}</option>
+                  <option value="oldest">{t("history.oldest")}</option>
+                  <option value="name-asc">{t("history.filenameAsc")}</option>
+                  <option value="name-desc">{t("history.filenameDesc")}</option>
+                  <option value="game-newest">{t("history.gameNewest")}</option>
+                  <option value="game-oldest">{t("history.gameOldest")}</option>
                 </select>
               </label>
             </div>
             <p className="micro-copy">
-              Pinned analyses appear first. Pins are retained when possible,
-              within history limits.
+              {t("history.pinnedFirst")}
             </p>
           </>
         )}
         <div className="analyzer-recent-statuses">
           <div className="micro-copy" role="status" aria-live="polite">
             {loading
-              ? "Loading recent analyses…"
+              ? t("history.loading")
               : items.length === 0
                 ? ""
                 : visibleItems.length === 0
-                  ? "No analyses found."
-                  : `Showing ${visibleItems.length} of ${items.length} analyses.`}
+                  ? t("history.noMatches")
+                  : t("history.showing", { shown: visibleItems.length, total: items.length })}
           </div>
           <div className="micro-copy" role="status" aria-live="polite">
-            {openingHash ? "Opening saved analysis…" : ""}
+            {openingHash ? t("history.opening") : ""}
           </div>
           <div className="micro-copy" role="status" aria-live="polite">
             {mutation
               ? mutation.action === "delete"
-                ? "Deleting saved analysis…"
-                : "Updating pin…"
+                ? t("history.deleting")
+                : t("history.updatingPin")
               : actionMessage}
           </div>
         </div>
         {openError && (
           <div className="recovery-notice" role="alert">
             <div>
-              <strong>Saved analysis unavailable</strong>
+              <strong>{t("history.savedUnavailable")}</strong>
               <span>{openError}</span>
             </div>
             {onAnalyzeSave && (
@@ -488,7 +486,7 @@ export function RecentAnalyses({
                 onClick={onAnalyzeSave}
                 disabled={analyzing || openingHash !== null}
               >
-                Analyze save again
+                {t("history.analyzeAgain")}
               </button>
             )}
           </div>
@@ -496,11 +494,8 @@ export function RecentAnalyses({
         {!loading && !failed && items.length === 0 && (
           <div className="product-empty-state">
             <div>
-              <h3>No analyses yet</h3>
-              <p>
-                Completed save analyses appear here, ready to reopen without
-                uploading the save again.
-              </p>
+              <h3>{t("history.emptyTitle")}</h3>
+              <p>{t("history.emptyBody")}</p>
             </div>
             {(onAnalyzeSave || onImportCampaign) && (
               <div className="product-empty-actions">
@@ -509,7 +504,7 @@ export function RecentAnalyses({
                     className="button button-primary"
                     onClick={onAnalyzeSave}
                   >
-                    Analyze Save
+                    {t("analysis.analyzeSave")}
                   </button>
                 )}
                 {onImportCampaign && (
@@ -517,7 +512,7 @@ export function RecentAnalyses({
                     className="button button-secondary"
                     onClick={onImportCampaign}
                   >
-                    Import Campaign
+                    {t("analysis.importCampaign")}
                   </button>
                 )}
               </div>
@@ -528,24 +523,24 @@ export function RecentAnalyses({
           <div
             className="table-wrap analyzer-recent-scroll"
             role="region"
-            aria-label="Recent analyses table"
+            aria-label={t("history.tableLabel")}
             tabIndex={0}
           >
             <table className="recent-table analyzer-recent-table">
               <thead>
                 <tr>
-                  <th>Save file</th>
-                  <th>Game date</th>
-                  <th>Analyzed</th>
-                  <th className="numeric-cell">Manpower in field</th>
-                  <th className="numeric-cell">Aircraft</th>
-                  <th>Result</th>
-                  <th className="analyzer-recent-action">Actions</th>
+                  <th>{t("history.saveFile")}</th>
+                  <th>{t("common.gameDate")}</th>
+                  <th>{t("common.analyzed")}</th>
+                  <th className="numeric-cell">{t("history.manpower")}</th>
+                  <th className="numeric-cell">{t("history.aircraft")}</th>
+                  <th>{t("common.result")}</th>
+                  <th className="analyzer-recent-action">{t("common.actions")}</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleItems.map((item) => {
-                  const analyzed = analyzedDate(item.analyzedAt);
+                  const analyzed = analyzedDate(item.analyzedAt, locale);
                   return (
                     <tr
                       key={item.hash}
@@ -570,7 +565,7 @@ export function RecentAnalyses({
                           )}
                         </div>
                         <div className="micro-copy">
-                          {fileSize(item.fileSizeBytes)}
+                          {fileSize(item.fileSizeBytes, locale)}
                         </div>
                       </td>
                       <td>
@@ -625,8 +620,8 @@ export function RecentAnalyses({
                             }
                           />
                           {item.hasPersistedResult
-                            ? "Available"
-                            : "Unavailable"}
+                            ? t("common.available")
+                            : t("common.unavailable")}
                         </span>
                       </td>
                       <td className="analyzer-recent-action">
@@ -649,8 +644,8 @@ export function RecentAnalyses({
                               >
                                 <RecentIcon name="open" />
                                 {openingHash === item.hash
-                                  ? "Opening…"
-                                  : "Open result"}
+                                  ? t("history.openingShort")
+                                  : t("history.openResult")}
                               </button>
                               <button
                                 className="button button-secondary"
@@ -665,7 +660,7 @@ export function RecentAnalyses({
                                 onClick={() => setShareItem(item)}
                               >
                                 <RecentIcon name="share" />
-                                Share
+                                {t("common.share")}
                               </button>
                             </>
                           ) : null}
@@ -684,10 +679,10 @@ export function RecentAnalyses({
                             <RecentIcon name="pin" />
                             {mutation?.hash === item.hash &&
                             mutation.action === "pin"
-                              ? "Updating…"
+                              ? t("history.updating")
                               : item.pinned
-                                ? "Unpin"
-                                : "Pin"}
+                                ? t("history.unpinShort")
+                                : t("history.pinShort")}
                           </button>
                           <button
                             className="button button-secondary analyzer-recent-delete"
@@ -703,8 +698,8 @@ export function RecentAnalyses({
                             <RecentIcon name="delete" />
                             {mutation?.hash === item.hash &&
                             mutation.action === "delete"
-                              ? "Deleting…"
-                              : "Delete"}
+                              ? t("history.deleting")
+                              : t("common.delete")}
                           </button>
                         </div>
                       </td>

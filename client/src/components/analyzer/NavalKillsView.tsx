@@ -6,6 +6,7 @@ import type {
 import { CountryNavalKillDetails } from "./CountryNavalKillDetails";
 import { CountryNavalKillTable } from "./CountryNavalKillTable";
 import { NavalKillerShipsTable } from "./NavalKillerShipsTable";
+import { useAppTranslation } from "@/i18n";
 
 export function NavalKillsView({
   summaries,
@@ -18,6 +19,7 @@ export function NavalKillsView({
   selectedTag: string | undefined;
   onSelect: (tag: string | undefined) => void;
 }) {
+  const { t } = useAppTranslation();
   const resolvedSelectedTag = useMemo(
     () =>
       selectedTag !== undefined &&
@@ -54,7 +56,7 @@ export function NavalKillsView({
   if (summaries.length === 0) {
     return (
       <section className="panel naval-kills-empty">
-        No credited naval kills could be resolved from this save.
+        {t("naval.noKills")}
       </section>
     );
   }

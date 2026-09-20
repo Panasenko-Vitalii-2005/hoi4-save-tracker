@@ -3,6 +3,7 @@ import type { CountryStockpileSummary } from "@/types";
 import { resolvePreferredCountryTag } from "@/lib/utils";
 import { CountryStockpileDetails } from "./CountryStockpileDetails";
 import { CountryStockpileTable } from "./CountryStockpileTable";
+import { useAppTranslation } from "@/i18n";
 
 export function StockpileTab({
   summaries,
@@ -11,6 +12,7 @@ export function StockpileTab({
   summaries: CountryStockpileSummary[];
   preferredCountryTag?: string | null;
 }) {
+  const { t } = useAppTranslation();
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedDefinitionName, setSelectedDefinitionName] = useState<
     string | null
@@ -69,7 +71,7 @@ export function StockpileTab({
   if (summaries.length === 0) {
     return (
       <section className="panel stockpile-empty stockpile-empty-save">
-        No national stockpile data was found in this save.
+        {t("stockpile.empty")}
       </section>
     );
   }
@@ -89,7 +91,7 @@ export function StockpileTab({
         />
       </div>
       <footer className="stockpile-note">
-        <strong>National stockpile balances.</strong>
+        <strong>{t("stockpile.snapshot")}</strong>
         <span>
           Values may be fractional or negative because HOI4 stores internal
           equipment accounting as signed decimals.

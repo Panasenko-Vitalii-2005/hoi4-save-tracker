@@ -4,6 +4,7 @@ import {
   CSRF_REJECTED_EVENT,
   SESSION_EXPIRED_EVENT,
 } from "@/lib/api-client";
+import { useAppTranslation } from "@/i18n";
 import "./auth.css";
 
 interface AuthUser {
@@ -37,6 +38,7 @@ function AuthForm({
   expired: boolean;
   onAuthenticated: (user: AuthUser) => void;
 }) {
+  const { t } = useAppTranslation();
   const [register, setRegister] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -53,7 +55,7 @@ function AuthForm({
       password.length < 12 ||
       password.length > 128
     ) {
-      setError("Enter an email and a password of 12–128 characters.");
+      setError(t("auth.validation"));
       return;
     }
     setBusy(true);
@@ -71,14 +73,14 @@ function AuthForm({
       if (!response.ok) {
         setError(
           response.status === 409 && register
-            ? "An account with this email already exists. Sign in instead."
+            ? t("auth.conflict")
             : response.status === 401
-              ? "The email or password is incorrect."
+              ? t("auth.invalid")
               : response.status === 400
-                ? "Check your email and password. Passwords must contain 12–128 characters."
+                ? t("auth.invalidInput")
                 : response.status === 403
-                  ? "Your security token could not be verified. Reload this page and try again."
-                  : "Sign-in is temporarily unavailable. Please try again.",
+                  ? t("auth.csrf")
+                  : t("auth.unavailable"),
         );
         return;
       }
@@ -86,9 +88,7 @@ function AuthForm({
       form.reset();
       onAuthenticated(user);
     } catch {
-      setError(
-        "Cannot reach the sign-in service. Check your connection and try again.",
-      );
+      setError(t("auth.network"));
     } finally {
       setBusy(false);
     }
@@ -97,14 +97,14 @@ function AuthForm({
     <main className="auth-page">
       <section className="panel auth-panel" aria-labelledby="auth-title">
         <div className="eyebrow">HoI4 Save Tracker</div>
-        <h1 id="auth-title">{register ? "Create an account" : "Sign in"}</h1>
+        <h1 id="auth-title">{register ? t("auth.createTitle") : t("auth.signInTitle")}</h1>
         <p>
           {expired
-            ? "Your session ended. Sign in again to continue."
-            : "Sign in to analyze saves and explore stored campaign snapshots."}
+            ? t("auth.expired")
+            : t("auth.intro")}
         </p>
         <form onSubmit={submit} aria-busy={busy}>
-          <label htmlFor="auth-email">Email</label>
+          <label htmlFor="auth-email">{t("auth.email")}</label>
           <input
             id="auth-email"
             name="email"
@@ -114,7 +114,7 @@ function AuthForm({
             required
             disabled={busy}
           />
-          <label htmlFor="auth-password">Password</label>
+          <label htmlFor="auth-password">{t("auth.password")}</label>
           <input
             id="auth-password"
             name="password"
@@ -126,7 +126,7 @@ function AuthForm({
             disabled={busy}
             aria-describedby="auth-password-hint"
           />
-          <small id="auth-password-hint">12–128 characters</small>
+          <small id="auth-password-hint">{t("auth.passwordHint")}</small>
           {error && (
             <p className="auth-message" role="alert">
               {error}
@@ -137,7 +137,7 @@ function AuthForm({
             disabled={busy}
             type="submit"
           >
-            {busy ? "Please wait…" : register ? "Create account" : "Sign in"}
+            {busy ? t("auth.wait") : register ? t("auth.create") : t("auth.signIn")}
           </button>
         </form>
         <button
@@ -149,8 +149,8 @@ function AuthForm({
           }}
         >
           {register
-            ? "Already have an account? Sign in"
-            : "New here? Create an account"}
+            ? t("auth.existing")
+            : t("auth.newHere")}
         </button>
       </section>
     </main>
@@ -158,6 +158,7 @@ function AuthForm({
 }
 
 export function AuthGate({ children }: { children: ReactNode }) {
+  const { t } = useAppTranslation();
   const [status, setStatus] = useState<
     "loading" | "ready" | "signed-out" | "unavailable"
   >("loading");
@@ -204,16 +205,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setMessage("");
     };
     const csrfFailure = () =>
-      setMessage(
-        "Your security token could not be verified. Reload this page before trying the action again.",
-      );
+      setMessage(t("auth.csrf"));
     window.addEventListener(SESSION_EXPIRED_EVENT, endSession);
     window.addEventListener(CSRF_REJECTED_EVENT, csrfFailure);
     return () => {
       window.removeEventListener(SESSION_EXPIRED_EVENT, endSession);
       window.removeEventListener(CSRF_REJECTED_EVENT, csrfFailure);
     };
-  }, []);
+  }, [t]);
 
   const logout = async () => {
     if (loggingOut) return;
@@ -230,7 +229,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setExpired(false);
       setStatus("signed-out");
     } catch {
-      setMessage("Could not sign out. Please try again.");
+      setMessage(t("auth.signOutFailed"));
     } finally {
       setLoggingOut(false);
     }
@@ -241,18 +240,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
       {status === "loading" && (
         <main className="auth-page">
           <section className="panel auth-panel" role="status">
-            Checking your session…
+            {t("auth.checking")}
           </section>
         </main>
       )}
       {status === "unavailable" && (
         <main className="auth-page">
           <section className="panel auth-panel" role="alert">
-            <h1>Sign-in unavailable</h1>
-            <p>
-              Cannot check your session. Check that the service is running and
-              try again.
-            </p>
+            <h1>{t("auth.unavailableTitle")}</h1>
+            <p>{t("auth.unavailableBody")}</p>
             <button
               className="button button-secondary"
               onClick={() => {
@@ -260,7 +256,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
                 setRetry((value) => value + 1);
               }}
             >
-              Try again
+              {t("common.retry")}
             </button>
           </section>
         </main>
@@ -286,14 +282,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
         >
           <div className="auth-account">
             <span>
-              Signed in as <strong>{user.email}</strong>
+              {t("auth.signedInAs", { email: user.email })}
             </span>
             <button
               className="button button-secondary"
               disabled={loggingOut}
               onClick={logout}
             >
-              {loggingOut ? "Signing out…" : "Sign out"}
+              {loggingOut ? t("auth.signingOut") : t("auth.signOut")}
             </button>
             {message && <p role="alert">{message}</p>}
           </div>

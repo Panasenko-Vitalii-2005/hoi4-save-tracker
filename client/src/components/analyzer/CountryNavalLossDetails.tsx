@@ -2,17 +2,19 @@ import { memo } from "react";
 import type { CountryNavalLossSummary } from "@/types";
 import { navalShipTypeLabel } from "@/lib/utils";
 import { CountryDisplay } from "./CountryDisplay";
+import { useAppTranslation } from "@/i18n";
 
 export const CountryNavalLossDetails = memo(function CountryNavalLossDetails({
   summary,
 }: {
   summary: CountryNavalLossSummary | null;
 }) {
+  const { t } = useAppTranslation();
   return (
     <section className="panel naval-losses-details">
       {!summary ? (
         <div className="naval-losses-empty">
-          Select a country to inspect its naval losses.
+          {t("naval.selectLoss")}
         </div>
       ) : (
         <>
@@ -22,15 +24,15 @@ export const CountryNavalLossDetails = memo(function CountryNavalLossDetails({
             </h2>
             <div className="naval-losses-total">
               <strong>{summary.totalLost.toLocaleString()}</strong>
-              <span>recoverable detailed naval losses</span>
+              <span>{t("naval.recoverable")}</span>
             </div>
           </div>
           <div className="table-wrap">
             <table className="recent-table naval-losses-table naval-losses-type-table">
               <thead>
                 <tr>
-                  <th>Type</th>
-                  <th className="numeric-cell">Ships lost</th>
+                  <th>{t("naval.type")}</th>
+                  <th className="numeric-cell">{t("naval.shipsLost")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -48,7 +50,7 @@ export const CountryNavalLossDetails = memo(function CountryNavalLossDetails({
             </table>
           </div>
           <p className="naval-losses-note">
-            Detailed naval losses recoverable from the current save.
+            {t("naval.recoverableNote")}
           </p>
         </>
       )}

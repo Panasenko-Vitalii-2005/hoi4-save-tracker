@@ -514,7 +514,7 @@ describe("Save comparison UI", () => {
     ).toContain("+182k");
     expect(countryRow("GER").textContent).toContain("+1.28M");
     await act(async () => countryRow("GER").click());
-    const detail = results().querySelector('[aria-label="Country detail"]')!;
+    const detail = results().querySelector(".comparison-detail")!;
     expect(detail.textContent).toMatch(/1\D000\D000/);
     expect(detail.textContent).toMatch(/2\D276\D500/);
     expect(detail.textContent).toMatch(/\+1\D276\D500/);
@@ -528,7 +528,7 @@ describe("Save comparison UI", () => {
     const england = countryRow("ENG") as HTMLTableRowElement;
     await act(async () => england.click());
     expect(england.getAttribute("aria-selected")).toBe("true");
-    expect(results().querySelector('[aria-label="Country detail"]')?.textContent).toContain(
+    expect(results().querySelector(".comparison-detail")?.textContent).toContain(
       "United Kingdom",
     );
     expect(results().textContent).toContain("Present only in Base");
@@ -541,7 +541,7 @@ describe("Save comparison UI", () => {
       ),
     );
     expect(added.getAttribute("aria-selected")).toBe("true");
-    expect(results().querySelector('[aria-label="Country detail"]')?.textContent).toContain(
+    expect(results().querySelector(".comparison-detail")?.textContent).toContain(
       "Present only in Target",
     );
   });

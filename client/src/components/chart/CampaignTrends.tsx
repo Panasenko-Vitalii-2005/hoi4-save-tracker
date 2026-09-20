@@ -32,7 +32,8 @@ import {
   formatEquipmentDefinition,
   resolvePreferredCountryTag,
 } from "@/lib/utils";
-import { ANALYZER_UNAVAILABLE_MESSAGE } from "@/lib/analysis-error";
+import { analyzerUnavailableMessage } from "@/lib/analysis-error";
+import { appLocale, i18n, useAppTranslation } from "@/i18n";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -168,11 +169,16 @@ const DEFAULT_SETTINGS: TrendSettings = {
 };
 
 const SETTINGS_KEY = "hoi4-campaign-trends-v1";
-const NUMBER = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
-const DATE_TIME = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
+function formatTrendNumber(value: number): string {
+  return new Intl.NumberFormat(appLocale(), { maximumFractionDigits: 2 }).format(value);
+}
+
+function formatTrendDateTime(value: string): string {
+  return new Intl.DateTimeFormat(appLocale(), {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
 
 const EQUIPMENT_METRICS: Record<
   EquipmentTrendMetric,
@@ -252,22 +258,18 @@ function shortCampaignId(value: string): string {
   return `${value.slice(0, 8)}…${value.slice(-4)}`;
 }
 
-function campaignLabel(campaign: CampaignTrend): string {
-  if (campaign.playerCountryTag)
-    return countryFullName(campaign.playerCountryTag);
-  return campaign.campaignId ? "Known campaign" : "Legacy campaign";
-}
-
 function campaignDateRange(campaign: CampaignTrend): string {
-  const first = campaign.firstGameDate ?? "Unknown date";
-  const latest = campaign.latestGameDate ?? "Unknown date";
+  const first = campaign.firstGameDate ?? i18n.t("common.unknown");
+  const latest = campaign.latestGameDate ?? i18n.t("common.unknown");
   return `${first} → ${latest}`;
 }
 
 function campaignOptionLabel(campaign: CampaignTrend): string {
   const saves = `save${campaign.snapshotCount === 1 ? "" : "s"}`;
   return [
-    campaignLabel(campaign),
+    campaign.playerCountryTag
+      ? countryFullName(campaign.playerCountryTag)
+      : i18n.t(campaign.campaignId ? "campaign.known" : "campaign.legacy"),
     campaignDateRange(campaign),
     `${campaign.snapshotCount} ${saves}`,
   ].join(" · ");
@@ -365,7 +367,7 @@ function average(
 function formatValue(value: number | null | undefined): string {
   return value === null || value === undefined || !Number.isFinite(value)
     ? "—"
-    : NUMBER.format(value);
+    : formatTrendNumber(value);
 }
 
 function activateRow(
@@ -404,6 +406,7 @@ export function CampaignTrends({
   onAnalyzeSave?: () => void;
   onImportCampaign?: () => void;
 }) {
+  const { t } = useAppTranslation();
   const plotTheme = usePlotTheme();
   const request = useRef<AbortController | null>(null);
   const equipmentRequest = useRef<AbortController | null>(null);
@@ -461,8 +464,8 @@ export function CampaignTrends({
       if ((failure as DOMException).name !== "AbortError")
         setError(
           reachedService
-            ? "Campaign trend data could not be loaded. Try again."
-            : `Campaign trends are temporarily unavailable. ${ANALYZER_UNAVAILABLE_MESSAGE}`,
+            ? t("campaign.loadFailed")
+            : t("campaign.temporarilyUnavailable", { detail: analyzerUnavailableMessage() }),
         );
     } finally {
       if (request.current === controller) {
@@ -470,7 +473,7 @@ export function CampaignTrends({
         setLoading(false);
       }
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -876,9 +879,9 @@ export function CampaignTrends({
     <main className="campaign-trends" aria-busy={loading}>
       <header className="campaign-trends-header">
         <div>
-          <span className="eyebrow">Campaign analytics</span>
-          <h1>Campaign Trends</h1>
-          <p>Track campaign development across analyzed saves.</p>
+          <span className="eyebrow">{t("campaign.eyebrow")}</span>
+          <h1>{t("campaign.title")}</h1>
+          <p>{t("campaign.subtitle")}</p>
         </div>
         <div className="campaign-header-context">
           {campaign && (
@@ -886,10 +889,9 @@ export function CampaignTrends({
               className="campaign-range"
               aria-label="Selected campaign range"
             >
-              <strong>{campaignLabel(campaign)}</strong>
+              <strong>{campaign.playerCountryTag ? countryFullName(campaign.playerCountryTag) : t(campaign.campaignId ? "campaign.known" : "campaign.legacy")}</strong>
               <span>
-                {campaignDateRange(campaign)} · {campaign.snapshotCount} save
-                {campaign.snapshotCount === 1 ? "" : "s"}
+                {campaignDateRange(campaign)} · {t("campaign.snapshots", { count: campaign.snapshotCount })}
               </span>
             </div>
           )}
@@ -899,12 +901,12 @@ export function CampaignTrends({
               className="button button-primary"
               onClick={() => setReportOpen(true)}
             >
-              View Report
+              {t("analysis.viewReport")}
             </button>
           )}
           {campaign && (
             <ExportControls
-              label="Export selected campaign trends"
+              label={t("campaign.export")}
               createCsv={() => ({
                 content: campaignCsv(campaign, {
                   scope: settings.scope,
@@ -937,7 +939,7 @@ export function CampaignTrends({
       {error && data && (
         <div className="recovery-notice campaign-message warning" role="alert">
           <div>
-            <strong>Could not refresh campaign trends</strong>
+            <strong>{t("campaign.refreshFailed")}</strong>
             <span>{error} The existing campaign view remains available.</span>
           </div>
           <button
@@ -951,13 +953,13 @@ export function CampaignTrends({
       )}
       {loading && !data && (
         <section className="panel campaign-state" role="status">
-          <h2>Loading campaign trends…</h2>
-          <p>Reading saved analysis summaries.</p>
+          <h2>{t("campaign.loadingTitle")}</h2>
+          <p>{t("campaign.loadingBody")}</p>
         </section>
       )}
       {!loading && error && !data && (
         <section className="panel campaign-state" role="alert">
-          <h2>Campaign trends unavailable</h2>
+          <h2>{t("campaign.unavailableTitle")}</h2>
           <p>{error}</p>
           <button
             className="button button-secondary"
@@ -972,7 +974,7 @@ export function CampaignTrends({
           className="panel campaign-state"
           aria-labelledby="campaign-empty-title"
         >
-          <h2 id="campaign-empty-title">No campaign trend data yet</h2>
+          <h2 id="campaign-empty-title">{t("campaign.emptyTitle")}</h2>
           <p>
             Campaign Trends needs multiple analyzed saves from the same
             campaign. Import a group of .hoi4 saves to build its history.
@@ -1008,7 +1010,7 @@ export function CampaignTrends({
               aria-label="Campaign selection"
             >
               <label className="field compact-field">
-                <span>Campaign</span>
+                <span>{t("campaign.campaign")}</span>
                 <select
                   value={campaign.key}
                   onChange={(event) => {
@@ -1038,7 +1040,7 @@ export function CampaignTrends({
             aria-label="Campaign summary"
           >
             <article>
-              <span>Analyzed saves</span>
+              <span>{t("campaign.analyzedSaves")}</span>
               <strong>{campaign.snapshotCount}</strong>
               <small title={campaign.campaignId ?? undefined}>
                 {campaign.campaignId
@@ -1047,23 +1049,23 @@ export function CampaignTrends({
               </small>
             </article>
             <article>
-              <span>First game date</span>
+              <span>{t("campaign.firstDate")}</span>
               <strong>{campaign.firstGameDate ?? "—"}</strong>
-              <small>Earliest valid snapshot</small>
+              <small>{t("campaign.earliestSnapshot")}</small>
             </article>
             <article>
-              <span>Latest game date</span>
+              <span>{t("campaign.latestDate")}</span>
               <strong>{campaign.latestGameDate ?? "—"}</strong>
-              <small>Latest valid snapshot</small>
+              <small>{t("campaign.latestSnapshot")}</small>
             </article>
             <article>
-              <span>Campaign span</span>
+              <span>{t("campaign.span")}</span>
               <strong className="campaign-span-value">
                 {campaign.firstGameDate && campaign.latestGameDate
                   ? `${campaign.firstGameDate} → ${campaign.latestGameDate}`
                   : "—"}
               </strong>
-              <small>Exact save dates</small>
+              <small>{t("campaign.exactDates")}</small>
             </article>
           </section>
 
@@ -1071,7 +1073,7 @@ export function CampaignTrends({
             <div className="campaign-toolbar" aria-label="Trend chart controls">
               {trendMode === "overview" && (
                 <label className="field compact-field">
-                  <span>Preset</span>
+                  <span>{t("campaign.preset")}</span>
                   <select
                     value={settings.preset}
                     onChange={(event) => {
@@ -1082,7 +1084,7 @@ export function CampaignTrends({
                     {Object.keys(PRESETS).map((preset) => (
                       <option key={preset}>{preset}</option>
                     ))}
-                    <option>Custom</option>
+                    <option>{t("campaign.custom")}</option>
                   </select>
                 </label>
               )}
@@ -1136,7 +1138,7 @@ export function CampaignTrends({
               </div>
               {(settings.scope === "country" || trendMode === "equipment") && (
                 <label className="field compact-field campaign-country-field">
-                  <span>Country</span>
+                  <span>{t("campaign.country")}</span>
                   <select
                     value={countryTag}
                     onChange={(event) => {
@@ -1156,7 +1158,7 @@ export function CampaignTrends({
               {trendMode === "equipment" ? (
                 <>
                   <label className="field compact-field campaign-equipment-field">
-                    <span>Exact equipment definition</span>
+                    <span>{t("campaign.exactEquipment")}</span>
                     <select
                       value={equipmentDefinitionKey}
                       onChange={(event) =>
@@ -1180,7 +1182,7 @@ export function CampaignTrends({
                     </select>
                   </label>
                   <label className="field compact-field campaign-equipment-metric-field">
-                    <span>Equipment metric</span>
+                    <span>{t("campaign.equipmentMetric")}</span>
                     <select
                       value={equipmentMetric}
                       onChange={(event) =>
@@ -1225,15 +1227,15 @@ export function CampaignTrends({
                 </details>
               )}
               <label className="field compact-field">
-                <span>X-axis</span>
+                <span>{t("campaign.xAxis")}</span>
                 <select
                   value={settings.xMode}
                   onChange={(event) =>
                     updateSettings({ xMode: event.target.value as XMode })
                   }
                 >
-                  <option value="game_date">Game date</option>
-                  <option value="sequence">Save sequence</option>
+                  <option value="game_date">{t("campaign.gameDate")}</option>
+                  <option value="sequence">{t("campaign.saveSequence")}</option>
                 </select>
               </label>
               {trendMode === "overview" && (
@@ -1248,11 +1250,11 @@ export function CampaignTrends({
                       updateSettings({ normalize: event.target.checked })
                     }
                   />
-                  <span>Normalize</span>
+                  <span>{t("campaign.normalize")}</span>
                 </label>
               )}
               <label className="field compact-field">
-                <span>Moving average</span>
+                <span>{t("campaign.movingAverage")}</span>
                 <select
                   value={settings.movingAverage}
                   onChange={(event) =>
@@ -1262,14 +1264,14 @@ export function CampaignTrends({
                     })
                   }
                 >
-                  <option value={1}>Off</option>
+                  <option value={1}>{t("campaign.off")}</option>
                   <option value={3}>3 saves</option>
                   <option value={5}>5 saves</option>
                   <option value={10}>10 saves</option>
                 </select>
               </label>
               <details className="campaign-control-menu campaign-options">
-                <summary>Options</summary>
+                <summary>{t("campaign.options")}</summary>
                 <div className="campaign-metric-menu">
                   <label>
                     <input
@@ -1279,7 +1281,7 @@ export function CampaignTrends({
                         updateSettings({ onePerGameDate: event.target.checked })
                       }
                     />
-                    <span>One snapshot per game date</span>
+                    <span>{t("campaign.onePerDate")}</span>
                   </label>
                   <p>
                     When enabled, the latest analyzed snapshot for each game
@@ -1305,7 +1307,7 @@ export function CampaignTrends({
                           })
                         }
                       />
-                      <span>Separate Y scales</span>
+                      <span>{t("campaign.separateScales")}</span>
                     </label>
                   )}
                 </div>
@@ -1314,7 +1316,7 @@ export function CampaignTrends({
 
             <div className="campaign-chart-heading">
               <div>
-                <span className="eyebrow">Historical snapshots</span>
+                <span className="eyebrow">{t("campaign.historical")}</span>
                 <h2>
                   {trendMode === "equipment"
                     ? selectedEquipmentDefinition
@@ -1370,17 +1372,17 @@ export function CampaignTrends({
 
             {trendMode === "equipment" && !countryTag ? (
               <div className="campaign-state single-save" role="status">
-                <h3>No country available</h3>
-                <p>No country snapshot data is available for this campaign.</p>
+                <h3>{t("campaign.noCountry")}</h3>
+                <p>{t("campaign.noCountryBody")}</p>
               </div>
             ) : trendMode === "equipment" && equipmentLoading ? (
               <div className="campaign-state single-save" role="status">
-                <h3>Loading equipment trends…</h3>
-                <p>Reading compact equipment snapshots for this country.</p>
+                <h3>{t("campaign.loadingEquipment")}</h3>
+                <p>{t("campaign.loadingEquipmentBody")}</p>
               </div>
             ) : trendMode === "equipment" && equipmentError ? (
               <div className="campaign-state single-save" role="alert">
-                <h3>Equipment trends unavailable</h3>
+                <h3>{t("campaign.equipmentUnavailable")}</h3>
                 <p>{equipmentError}</p>
                 <button
                   className="button button-secondary"
@@ -1398,7 +1400,7 @@ export function CampaignTrends({
               equipmentData &&
               equipmentData.definitions.length === 0 ? (
               <div className="campaign-state single-save" role="status">
-                <h3>No equipment definitions found</h3>
+                <h3>{t("campaign.noEquipment")}</h3>
                 <p>
                   This country has no stockpile or current land/air production
                   definitions in the available campaign snapshots.
@@ -1406,7 +1408,7 @@ export function CampaignTrends({
               </div>
             ) : campaign.snapshotCount === 1 ? (
               <div className="campaign-state single-save" role="status">
-                <h3>One campaign snapshot available</h3>
+                <h3>{t("campaign.oneSnapshot")}</h3>
                 <p>
                   Analyze at least one more save from this campaign to reveal a
                   trend.
@@ -1446,7 +1448,7 @@ export function CampaignTrends({
               >
                 <Suspense
                   fallback={
-                    <div className="campaign-chart-loading">Loading chart…</div>
+                    <div className="campaign-chart-loading">{t("campaign.loadingChart")}</div>
                   }
                 >
                   <Plot
@@ -1471,8 +1473,8 @@ export function CampaignTrends({
           >
             <div className="campaign-section-heading">
               <div>
-                <span className="eyebrow">Campaign timeline</span>
-                <h2>Save History</h2>
+                <span className="eyebrow">{t("campaign.timeline")}</span>
+                <h2>{t("campaign.saveHistory")}</h2>
               </div>
               <p>{snapshots.length} visible snapshots</p>
             </div>
@@ -1480,9 +1482,9 @@ export function CampaignTrends({
               <table className="recent-table">
                 <thead>
                   <tr>
-                    <th>Game date</th>
-                    <th>Save</th>
-                    <th>Analyzed</th>
+                    <th>{t("common.gameDate")}</th>
+                    <th>{t("campaign.save")}</th>
+                    <th>{t("common.analyzed")}</th>
                     {trendMode === "equipment" ? (
                       <th className="num">
                         {EQUIPMENT_METRICS[equipmentMetric].shortLabel}
@@ -1494,7 +1496,7 @@ export function CampaignTrends({
                         </th>
                       ))
                     )}
-                    <th>Context</th>
+                    <th>{t("campaign.context")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1521,7 +1523,7 @@ export function CampaignTrends({
                         </td>
                         <td>
                           <time dateTime={snapshot.analyzedAt}>
-                            {DATE_TIME.format(new Date(snapshot.analyzedAt))}
+                            {formatTrendDateTime(snapshot.analyzedAt)}
                           </time>
                         </td>
                         {trendMode === "equipment" ? (

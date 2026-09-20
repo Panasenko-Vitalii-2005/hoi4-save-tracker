@@ -9,6 +9,7 @@ import { CountryNavalLossDetails } from "./CountryNavalLossDetails";
 import { CountryNavalLossEvents } from "./CountryNavalLossEvents";
 import { CountryNavalLossTable } from "./CountryNavalLossTable";
 import { NavalKillsView } from "./NavalKillsView";
+import { useAppTranslation } from "@/i18n";
 
 export function NavalLossesTab({
   summaries,
@@ -29,6 +30,7 @@ export function NavalLossesTab({
   selectedKillTag: string | undefined;
   onSelectKill: (tag: string | undefined) => void;
 }) {
+  const { t } = useAppTranslation();
   const [mode, setMode] = useState<"losses" | "kills">("losses");
 
   const resolvedSelectedTag = useMemo(
@@ -67,7 +69,7 @@ export function NavalLossesTab({
           aria-selected={mode === "losses"}
           onClick={() => setMode("losses")}
         >
-          Losses
+          {t("naval.losses")}
         </button>
         <button
           className={`tab-btn${mode === "kills" ? " active" : ""}`}
@@ -76,7 +78,7 @@ export function NavalLossesTab({
           aria-selected={mode === "kills"}
           onClick={() => setMode("kills")}
         >
-          Kills
+          {t("naval.kills")}
         </button>
       </div>
 
@@ -89,7 +91,7 @@ export function NavalLossesTab({
         />
       ) : summaries.length === 0 ? (
         <section className="panel naval-losses-empty">
-          No detailed naval losses were found in this save.
+          {t("naval.noLosses")}
         </section>
       ) : (
         <div className="naval-losses-layout">

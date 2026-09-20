@@ -1,8 +1,9 @@
 import type { TabId } from "@/types";
+import { useAppTranslation } from "@/i18n";
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: "chart", label: "Campaign Trends" },
-  { id: "analyzer", label: "Save Analyzer" },
+const TABS: { id: TabId; labelKey: "nav.campaignTrends" | "nav.saveAnalyzer" }[] = [
+  { id: "chart", labelKey: "nav.campaignTrends" },
+  { id: "analyzer", labelKey: "nav.saveAnalyzer" },
 ];
 
 export function TabBar({
@@ -12,16 +13,17 @@ export function TabBar({
   active: TabId;
   onChange: (t: TabId) => void;
 }) {
+  const { t } = useAppTranslation();
   return (
     <div className="tab-bar">
-      {TABS.map((t) => (
+      {TABS.map((tab) => (
         <button
-          key={t.id}
-          className={`tab-btn${active === t.id ? " active" : ""}`}
-          aria-current={active === t.id ? "page" : undefined}
-          onClick={() => onChange(t.id)}
+          key={tab.id}
+          className={`tab-btn${active === tab.id ? " active" : ""}`}
+          aria-current={active === tab.id ? "page" : undefined}
+          onClick={() => onChange(tab.id)}
         >
-          {t.label}
+          {t(tab.labelKey)}
         </button>
       ))}
     </div>

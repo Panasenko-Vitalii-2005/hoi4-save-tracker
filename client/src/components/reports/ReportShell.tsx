@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ExportControls } from "@/components/ui/ExportControls";
+import { useAppTranslation } from "@/i18n";
 
 interface ReportFile {
   content: string;
@@ -25,6 +26,7 @@ export function ReportShell({
   createJson: () => ReportFile;
   children: ReactNode;
 }) {
+  const { t } = useAppTranslation();
   return (
     <main className="analysis-report" aria-labelledby="report-title">
       <header className="report-header">
@@ -34,23 +36,23 @@ export function ReportShell({
           <p>{subtitle}</p>
           {metadata && <div className="report-header-meta">{metadata}</div>}
         </div>
-        <div className="report-actions" aria-label="Report actions">
+        <div className="report-actions" aria-label={t("report.actions")}>
           <button
             type="button"
             className="button button-secondary"
             onClick={onBack}
           >
-            ← Back
+            ← {t("report.back")}
           </button>
           <button
             type="button"
             className="button button-secondary"
             onClick={() => window.print()}
           >
-            Print
+            {t("report.print")}
           </button>
           <ExportControls
-            label="Export report data"
+            label={t("report.export")}
             createCsv={createCsv}
             createJson={createJson}
           />
@@ -58,8 +60,7 @@ export function ReportShell({
       </header>
       <div className="report-body">{children}</div>
       <footer className="report-footer">
-        Generated from stored HOI4 save-analysis data. Missing values remain
-        unavailable rather than being treated as zero.
+        {t("report.footer")}
       </footer>
     </main>
   );
@@ -73,11 +74,12 @@ export function ReportMetric({
   value: string;
   exact?: string;
 }) {
+  const { t } = useAppTranslation();
   return (
     <article className="report-metric">
       <span>{label}</span>
       <strong title={exact}>{value}</strong>
-      {exact && exact !== value && <small>Exact: {exact}</small>}
+      {exact && exact !== value && <small>{t("report.exact", { value: exact })}</small>}
     </article>
   );
 }

@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { CountryStockpileSummary } from "@/types";
 import { countryFullName } from "@/lib/utils";
 import { CountryDisplay } from "./CountryDisplay";
+import { useAppTranslation } from "@/i18n";
 
 interface Props {
   countries: CountryStockpileSummary[];
@@ -14,19 +15,20 @@ export const CountryStockpileTable = memo(function CountryStockpileTable({
   selectedTag,
   onSelect,
 }: Props) {
+  const { t } = useAppTranslation();
   return (
     <section className="panel stockpile-country-panel">
       <div className="panel-head">
-        <h2>Countries</h2>
+        <h2>{t("stockpile.countries")}</h2>
         <div className="micro-copy">{countries.length} with stockpile data</div>
       </div>
       <div className="table-wrap">
         <table className="recent-table stockpile-country-table">
           <thead>
             <tr>
-              <th>Country</th>
-              <th className="numeric-cell">Definitions</th>
-              <th className="numeric-cell">Designs</th>
+              <th>{t("common.country")}</th>
+              <th className="numeric-cell">{t("stockpile.definitions")}</th>
+              <th className="numeric-cell">{t("stockpile.designs")}</th>
             </tr>
           </thead>
           <tbody>

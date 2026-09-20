@@ -12,6 +12,7 @@ import {
 } from "@/lib/utils";
 import { CountryDivisionTable } from "./CountryDivisionTable";
 import { CountryLandForcesDetails } from "./CountryLandForcesDetails";
+import { useAppTranslation } from "@/i18n";
 
 interface Props {
   summaries: CountryDivisionSummary[];
@@ -36,6 +37,7 @@ export function LandForcesTab({
   onSelectedTagChange,
   onSelectedDivisionKeyChange,
 }: Props) {
+  const { t } = useAppTranslation();
   const templateByRef = useMemo(
     () =>
       new Map(
@@ -160,7 +162,7 @@ export function LandForcesTab({
   if (summaries.length === 0) {
     return (
       <section className="panel land-forces-empty land-forces-empty-save">
-        No land-force divisions were found in this save.
+        {t("land.empty")}
       </section>
     );
   }
@@ -189,12 +191,12 @@ export function LandForcesTab({
           />
         ) : (
           <section className="panel land-forces-empty">
-            Select a country to inspect its land forces.
+            {t("land.selectCountry")}
           </section>
         )}
       </div>
       <footer className="land-forces-note">
-        <strong>Current land-force snapshot.</strong>
+        <strong>{t("land.snapshot")}</strong>
         <span>
           Manpower completeness uses the backend ratio; strength,
           organization and experience remain raw HOI4 values.
