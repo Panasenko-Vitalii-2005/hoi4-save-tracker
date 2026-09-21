@@ -4,9 +4,18 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AnalyzerTab } from "../src/components/analyzer/AnalyzerTab";
 import App from "../src/App";
 import { seedCsrfCookie } from "./auth-fixture";
+import { i18n } from "../src/i18n";
 
 // Test the actual request UI; plotting and the unrelated telemetry request are not needed.
-vi.mock("react-plotly.js", () => ({ default: () => null }));
+vi.mock("react-plotly.js", () => ({
+  default: ({ data, layout }: { data: unknown[]; layout: unknown }) => (
+    <div
+      data-testid="overview-plot"
+      data-traces={JSON.stringify(data)}
+      data-layout={JSON.stringify(layout)}
+    />
+  ),
+}));
 vi.mock("@/hooks/useRecords", () => ({
   useRecords: () => ({
     records: [],
@@ -59,7 +68,8 @@ describe("analysis request lifecycle", () => {
   let telemetryRequests: RequestInit[];
   let telemetryStatus: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
     seedCsrfCookie();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     requests = [];
@@ -115,6 +125,7 @@ describe("analysis request lifecycle", () => {
     await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+    await i18n.changeLanguage("en");
   });
 
   const render = async (app = false) => {
@@ -178,6 +189,49 @@ describe("analysis request lifecycle", () => {
       ),
     ).toEqual(["Campaign Trends", "Save Analyzer"]);
     expect(container.textContent).not.toContain("Soldiers by Country");
+  });
+
+  test("localizes Strategic Overview charts, thematic leaders, and Equipment by Country in Russian", async () => {
+    await render();
+    await start();
+    const result = snapshot() as ReturnType<typeof snapshot> & {
+      by_country: Record<string, unknown>[];
+      equipment_by_country: Record<string, Record<string, number>>;
+      world_equipment: Record<string, number>;
+    };
+    result.by_country = [{
+      tag: "GER", manpowerInField: 1000, divisions: 10, aircraft: 20, ships: 5,
+      effectiveMilitaryFactories: 12, effectiveCivilianFactories: 8,
+      effectiveDockyards: 3, warCasualties: [], calculatedWarCasualtiesTotal: 0,
+    }];
+    result.equipment_by_country = { GER: { infantry_equipment_1: 100 } };
+    result.world_equipment = { infantry_equipment_1: 100 };
+    await respond(0, result);
+    await act(async () => i18n.changeLanguage("ru"));
+
+    expect(container.textContent).toContain("Мобилизационный ресурс");
+    expect(container.textContent).toContain("Топ-10 стран по оснащению");
+    expect(container.textContent).toMatch(/Показать оснащение|Скрыть оснащение/);
+    expect(container.textContent).toContain("1 из 1");
+    const plotPayload = [...container.querySelectorAll('[data-testid="overview-plot"]')]
+      .map((node) => `${node.getAttribute("data-traces")} ${node.getAttribute("data-layout")}`)
+      .join(" ");
+    expect(plotPayload).toContain("Самолёты");
+    expect(plotPayload).toContain("Корабли");
+    expect(plotPayload).toContain("Военные заводы");
+    expect(plotPayload).toContain("Гражданские фабрики");
+    expect(plotPayload).toContain("Верфи");
+
+    const showEquipment = [...container.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent === "Показать оснащение",
+    );
+    if (showEquipment) await act(async () => showEquipment.click());
+    expect(container.textContent).toContain("Оснащение по странам");
+    const localizedEquipmentPlots = [...container.querySelectorAll('[data-testid="overview-plot"]')]
+      .map((node) => `${node.getAttribute("data-traces")} ${node.getAttribute("data-layout")}`)
+      .join(" ");
+    expect(localizedEquipmentPlots).toContain("Germany — состав оснащения страны");
+    expect(container.querySelector('input[placeholder="Фильтр по стране…"]')).not.toBeNull();
   });
 
   test("local-save discovery failure is safe, keeps upload available, and retries explicitly", async () => {

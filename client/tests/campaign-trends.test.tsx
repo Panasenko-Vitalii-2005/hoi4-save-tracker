@@ -8,6 +8,7 @@ import type {
   CampaignTrendsDto,
 } from "@/types/campaign-trends";
 import type { SaveRecord } from "@/types";
+import { i18n } from "@/i18n";
 
 vi.mock("react-plotly.js", () => ({
   default: ({
@@ -149,7 +150,8 @@ describe("Campaign Trends", () => {
   let equipmentResponse: CampaignEquipmentTrendsDto;
   let fail = false;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
     localStorage.clear();
     response = dto();
     equipmentResponse = equipmentDto(response.campaigns[0]);
@@ -178,6 +180,7 @@ describe("Campaign Trends", () => {
     await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+    await i18n.changeLanguage("en");
   });
 
   const render = async (
@@ -235,6 +238,31 @@ describe("Campaign Trends", () => {
         .querySelector('[data-testid="trend-plot"]')
         ?.getAttribute("data-layout") ?? "{}",
     ) as { xaxis?: Record<string, unknown> };
+
+  test("localizes Russian controls, series, hover text, and chart explanations without changing metric identifiers", async () => {
+    await i18n.changeLanguage("ru");
+    localStorage.setItem(
+      "hoi4-campaign-trends-v1",
+      JSON.stringify({ metrics: ["manpowerInField", "militaryFactories", "civilianFactories"] }),
+    );
+    await render();
+
+    expect(text()).toContain("Рост вооружённых сил");
+    expect(text()).toContain("Весь мир");
+    expect(text()).toContain("Показатели · 3");
+    expect(text()).toContain("Развитие кампании");
+    expect(text()).toContain("Нормированные значения показывают относительное изменение");
+    expect(traces().map(({ name }) => name)).toEqual([
+      "Личный состав в войсках",
+      "Военные заводы",
+      "Гражданские фабрики",
+    ]);
+    expect(traces()[0].hovertemplate).toContain("Дата: %{customdata[2]}");
+    expect(traces()[0].hovertemplate).toContain("Снимок: %{customdata[1]}");
+    expect(layout().xaxis?.title).toBe("Игровая дата");
+    expect(JSON.parse(localStorage.getItem("hoi4-campaign-trends-v1") ?? "{}").metrics)
+      .toEqual(["manpowerInField", "militaryFactories", "civilianFactories"]);
+  });
 
   test("renders heading, campaign summary, timeline, and an accessible multi-save chart", async () => {
     await render();

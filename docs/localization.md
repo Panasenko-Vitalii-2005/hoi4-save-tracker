@@ -19,6 +19,12 @@ resource first, then its Russian equivalent. To add another language, add a
 resource file, register it in `src/i18n/index.ts`, and expose it in the language
 selector.
 
+Coverage includes the main analyzer, Strategic Overview and thematic Top 10
+charts, Equipment by Country, Campaign Trends, the Campaign Report body, and
+their user-facing chart titles, legends, annotations and hover text. Chart and
+report components translate display labels at render time while retaining the
+stable metric keys used by APIs, saved preferences and telemetry.
+
 This layer translates presentation strings only. Backend/API error codes,
 telemetry event names and section identifiers, database values, country tags,
 country/equipment/division names, campaign labels, and all other save-derived

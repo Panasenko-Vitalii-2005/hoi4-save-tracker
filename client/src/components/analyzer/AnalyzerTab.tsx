@@ -326,7 +326,7 @@ function SaveBrowser({
                       }}
                       tabIndex={analyzing ? -1 : 0}
                       aria-disabled={analyzing}
-                      aria-label={`Analyze ${f.name}`}
+                      aria-label={t("analysis.analyzeFile", { name: f.name })}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
@@ -817,17 +817,17 @@ export function AnalyzerTab({
           sub: "vs previous save",
         },
         {
-          label: "Ships Δ",
+          label: `${t("analysis.overview.ships")} Δ`,
           value: renderDelta(diffTotals.ships),
           sub: "vs previous save",
         },
         {
-          label: "Aircraft Δ",
+          label: `${t("analysis.overview.aircraft")} Δ`,
           value: renderDelta(diffTotals.aircraft),
           sub: "vs previous save",
         },
         {
-          label: "Manpower Δ",
+          label: `${t("analysis.overview.manpowerMetric")} Δ`,
           value: renderDelta(diffTotals.manpowerInField),
           sub: "vs previous save",
         },
@@ -1136,10 +1136,10 @@ export function AnalyzerTab({
             <section className="panel" style={{ flex: 2 }}>
               <div className="panel-head">
                 <h2>{t("analysis.overview.manpower")}</h2>
-                <div className="micro-copy">Top {mpRows.length}</div>
+                <div className="micro-copy">{t("analysis.overview.topTen")} · {mpRows.length}</div>
               </div>
               <Suspense
-                fallback={<div style={{ minHeight: 520 }}>Loading…</div>}
+                fallback={<div style={{ minHeight: 520 }}>{t("analysis.overview.loading")}</div>}
               >
                 <Plot
                   data={[
@@ -1155,14 +1155,14 @@ export function AnalyzerTab({
                         opacity: 0.88,
                       },
                       hovertemplate:
-                        "<b>%{y}</b><br>Manpower: %{x:,.0f}<extra></extra>",
+                        `<b>%{y}</b><br>${t("analysis.overview.manpowerMetric")}: %{x:,.0f}<extra></extra>`,
                     },
                   ]}
                   layout={{
                     ...BASE,
                     margin: { l: 56, r: 80, t: 8, b: 40 },
                     xaxis: {
-                      title: "Manpower in field",
+                      title: t("analysis.overview.manpower"),
                       gridcolor: "rgba(23,34,38,0.08)",
                       tickformat: "~s",
                     },
@@ -1184,32 +1184,32 @@ export function AnalyzerTab({
                 <h2>{t("analysis.overview.navyAir")}</h2>
               </div>
               <Suspense
-                fallback={<div style={{ minHeight: 520 }}>Loading…</div>}
+                fallback={<div style={{ minHeight: 520 }}>{t("analysis.overview.loading")}</div>}
               >
                 <Plot
                   data={[
                     {
                       type: "bar",
                       orientation: "h",
-                      name: "Ships",
+                      name: t("analysis.overview.ships"),
                       x: [...navyAirRows].reverse().map((r) => r.ships),
                       y: [...navyAirRows]
                         .reverse()
                         .map((r) => countryFullName(r.tag)),
                       marker: { color: "#0b7a75", opacity: 0.85 },
-                      hovertemplate: "<b>%{y}</b> ships: %{x:,}<extra></extra>",
+                      hovertemplate: `<b>%{y}</b> ${t("analysis.overview.shipsMetric")}: %{x:,}<extra></extra>`,
                     },
                     {
                       type: "bar",
                       orientation: "h",
-                      name: "Aircraft",
+                      name: t("analysis.overview.aircraft"),
                       x: [...navyAirRows].reverse().map((r) => r.aircraft),
                       y: [...navyAirRows]
                         .reverse()
                         .map((r) => countryFullName(r.tag)),
                       marker: { color: "#f2a93b", opacity: 0.85 },
                       hovertemplate:
-                        "<b>%{y}</b> aircraft: %{x:,}<extra></extra>",
+                        `<b>%{y}</b> ${t("analysis.overview.aircraftMetric")}: %{x:,}<extra></extra>`,
                     },
                   ]}
                   layout={{
@@ -1218,7 +1218,7 @@ export function AnalyzerTab({
                     margin: { l: 56, r: 20, t: 8, b: 40 },
                     legend: { orientation: "h", y: 1.08 },
                     xaxis: {
-                      title: "Count",
+                      title: t("analysis.overview.count"),
                       gridcolor: "rgba(23,34,38,0.08)",
                       tickformat: "~s",
                     },
@@ -1242,47 +1242,47 @@ export function AnalyzerTab({
             <div className="panel-head">
               <h2>{t("analysis.overview.warIndustry")}</h2>
               <div className="micro-copy">
-                Military / Civilian factories &amp; Dockyards
+                {t("analysis.overview.industryBreakdown")}
               </div>
             </div>
-            <Suspense fallback={<div style={{ minHeight: 360 }}>Loading…</div>}>
+            <Suspense fallback={<div style={{ minHeight: 360 }}>{t("analysis.overview.loading")}</div>}>
               <Plot
                 data={[
                   {
                     type: "bar",
                     orientation: "h",
-                    name: "Mil. factories",
+                    name: t("analysis.overview.militaryFactoriesShort"),
                     x: [...industryRows]
                       .reverse()
                       .map((r) => r.effectiveMilitaryFactories),
                     y: industryY,
                     marker: { color: "#d94f2b", opacity: 0.85 },
                     hovertemplate:
-                      "<b>%{text}</b> mil. fac: %{x}<extra></extra>",
+                      `<b>%{text}</b> ${t("analysis.overview.militaryFactoriesShort")}: %{x}<extra></extra>`,
                     text: industryLabels,
                   },
                   {
                     type: "bar",
                     orientation: "h",
-                    name: "Civ. factories",
+                    name: t("analysis.overview.civilianFactoriesShort"),
                     x: [...industryRows]
                       .reverse()
                       .map((r) => r.effectiveCivilianFactories),
                     y: industryY,
                     marker: { color: "#0b7a75", opacity: 0.85 },
                     hovertemplate:
-                      "<b>%{text}</b> civ. fac: %{x}<extra></extra>",
+                      `<b>%{text}</b> ${t("analysis.overview.civilianFactoriesShort")}: %{x}<extra></extra>`,
                     text: industryLabels,
                   },
                   {
                     type: "bar",
                     orientation: "h",
-                    name: "Dockyards",
+                    name: t("analysis.overview.dockyards"),
                     x: [...industryRows].reverse().map((r) => r.effectiveDockyards),
                     y: industryY,
                     marker: { color: "#7a8898", opacity: 0.85 },
                     hovertemplate:
-                      "<b>%{text}</b> dockyards: %{x}<extra></extra>",
+                      `<b>%{text}</b> ${t("analysis.overview.dockyards")}: %{x}<extra></extra>`,
                     text: industryLabels,
                   },
                 ]}
@@ -1291,7 +1291,7 @@ export function AnalyzerTab({
                   barmode: "stack",
                   margin: { l: 160, r: 20, t: 8, b: 40 },
                   legend: { orientation: "h", y: 1.08 },
-                  xaxis: { title: "Count", gridcolor: "rgba(23,34,38,0.08)" },
+                  xaxis: { title: t("analysis.overview.count"), gridcolor: "rgba(23,34,38,0.08)" },
                   yaxis: {
                     tickmode: "array",
                     tickvals: industryY,
@@ -1314,7 +1314,7 @@ export function AnalyzerTab({
             <div className="panel-head">
               <h2>{t("analysis.overview.thematicTop")}</h2>
               <div className="micro-copy">
-                Industry, Navy, Air, Mobilization, Equipment leaders
+                {t("analysis.overview.thematicLeaders")}
               </div>
             </div>
             <div
@@ -1327,7 +1327,7 @@ export function AnalyzerTab({
                   <div className="micro-copy">{t("analysis.overview.topFactories")}</div>
                 </div>
                 <Suspense
-                  fallback={<div style={{ minHeight: 260 }}>Loading…</div>}
+                  fallback={<div style={{ minHeight: 260 }}>{t("analysis.overview.loading")}</div>}
                 >
                   <Plot
                     data={[
@@ -1347,14 +1347,14 @@ export function AnalyzerTab({
                           .reverse(),
                         marker: { color: "#d94f2b", opacity: 0.85 },
                         hovertemplate:
-                          "<b>%{y}</b><br>Total industry: %{x}<extra></extra>",
+                          `<b>%{y}</b><br>${t("analysis.overview.totalIndustry")}: %{x}<extra></extra>`,
                       },
                     ]}
                     layout={{
                       ...BASE,
                       margin: { l: 120, r: 20, t: 24, b: 40 },
                       xaxis: {
-                        title: "Total",
+                        title: t("analysis.overview.total"),
                         gridcolor: "rgba(23,34,38,0.08)",
                       },
                       yaxis: {
@@ -1377,7 +1377,7 @@ export function AnalyzerTab({
                   <div className="micro-copy">{t("analysis.overview.topShips")}</div>
                 </div>
                 <Suspense
-                  fallback={<div style={{ minHeight: 260 }}>Loading…</div>}
+                  fallback={<div style={{ minHeight: 260 }}>{t("analysis.overview.loading")}</div>}
                 >
                   <Plot
                     data={[
@@ -1388,14 +1388,14 @@ export function AnalyzerTab({
                         y: topNavy.map((r) => countryFullName(r.tag)).reverse(),
                         marker: { color: "#0b7a75", opacity: 0.85 },
                         hovertemplate:
-                          "<b>%{y}</b><br>Ships: %{x}<extra></extra>",
+                          `<b>%{y}</b><br>${t("analysis.overview.shipsMetric")}: %{x}<extra></extra>`,
                       },
                     ]}
                     layout={{
                       ...BASE,
                       margin: { l: 120, r: 20, t: 24, b: 40 },
                       xaxis: {
-                        title: "Ships",
+                        title: t("analysis.overview.ships"),
                         gridcolor: "rgba(23,34,38,0.08)",
                       },
                       yaxis: {
@@ -1418,7 +1418,7 @@ export function AnalyzerTab({
                   <div className="micro-copy">{t("analysis.overview.topAircraft")}</div>
                 </div>
                 <Suspense
-                  fallback={<div style={{ minHeight: 260 }}>Loading…</div>}
+                  fallback={<div style={{ minHeight: 260 }}>{t("analysis.overview.loading")}</div>}
                 >
                   <Plot
                     data={[
@@ -1429,14 +1429,14 @@ export function AnalyzerTab({
                         y: topAir.map((r) => countryFullName(r.tag)).reverse(),
                         marker: { color: "#f2a93b", opacity: 0.85 },
                         hovertemplate:
-                          "<b>%{y}</b><br>Aircraft: %{x}<extra></extra>",
+                          `<b>%{y}</b><br>${t("analysis.overview.aircraftMetric")}: %{x}<extra></extra>`,
                       },
                     ]}
                     layout={{
                       ...BASE,
                       margin: { l: 120, r: 20, t: 24, b: 40 },
                       xaxis: {
-                        title: "Aircraft",
+                        title: t("analysis.overview.aircraft"),
                         gridcolor: "rgba(23,34,38,0.08)",
                       },
                       yaxis: {
@@ -1455,11 +1455,11 @@ export function AnalyzerTab({
 
               <section className="panel" style={{ flex: 1, minWidth: 280 }}>
                 <div className="panel-head">
-                  <h3>Mobilization</h3>
-                  <div className="micro-copy">Top 10 manpower pools</div>
+                  <h3>{t("analysis.overview.mobilization")}</h3>
+                  <div className="micro-copy">{t("analysis.overview.manpowerPools")}</div>
                 </div>
                 <Suspense
-                  fallback={<div style={{ minHeight: 260 }}>Loading…</div>}
+                  fallback={<div style={{ minHeight: 260 }}>{t("analysis.overview.loading")}</div>}
                 >
                   <Plot
                     data={[
@@ -1474,14 +1474,14 @@ export function AnalyzerTab({
                           .reverse(),
                         marker: { color: "#7a8898", opacity: 0.85 },
                         hovertemplate:
-                          "<b>%{y}</b><br>Manpower: %{x}<extra></extra>",
+                          `<b>%{y}</b><br>${t("analysis.overview.manpowerMetric")}: %{x}<extra></extra>`,
                       },
                     ]}
                     layout={{
                       ...BASE,
                       margin: { l: 120, r: 20, t: 24, b: 40 },
                       xaxis: {
-                        title: "Manpower",
+                        title: t("analysis.overview.manpowerMetric"),
                         gridcolor: "rgba(23,34,38,0.08)",
                       },
                       yaxis: {
@@ -1500,11 +1500,11 @@ export function AnalyzerTab({
 
               <section className="panel" style={{ flex: 1, minWidth: 280 }}>
                 <div className="panel-head">
-                  <h3>Equipment</h3>
-                  <div className="micro-copy">Top 10 equipment countries</div>
+                  <h3>{t("analysis.overview.equipment")}</h3>
+                  <div className="micro-copy">{t("analysis.overview.equipmentCountries")}</div>
                 </div>
                 <Suspense
-                  fallback={<div style={{ minHeight: 260 }}>Loading…</div>}
+                  fallback={<div style={{ minHeight: 260 }}>{t("analysis.overview.loading")}</div>}
                 >
                   <Plot
                     data={[
@@ -1515,14 +1515,14 @@ export function AnalyzerTab({
                         y: topEquipmentLabels.reverse(),
                         marker: { color: "rgba(11,122,117,0.75)" },
                         hovertemplate:
-                          "<b>%{y}</b><br>Equipment: %{x}<extra></extra>",
+                          `<b>%{y}</b><br>${t("analysis.overview.equipment")}: %{x}<extra></extra>`,
                       },
                     ]}
                     layout={{
                       ...BASE,
                       margin: { l: 120, r: 20, t: 24, b: 40 },
                       xaxis: {
-                        title: "Units",
+                        title: t("analysis.overview.equipmentUnits"),
                         gridcolor: "rgba(23,34,38,0.08)",
                       },
                       yaxis: {
@@ -1545,7 +1545,7 @@ export function AnalyzerTab({
           {showEq && eqCountries.length > 0 && (
             <section className="panel" style={{ marginTop: 18 }}>
               <div className="panel-head">
-                <h2>Equipment by Country</h2>
+                <h2>{t("analysis.overview.equipmentByCountry")}</h2>
                 <label
                   className="field"
                   style={{
@@ -1555,7 +1555,7 @@ export function AnalyzerTab({
                     padding: "8px 14px",
                   }}
                 >
-                  <span>Country</span>
+                  <span>{t("common.country")}</span>
                   <select
                     value={eqCountry}
                     onChange={(e) => setEqCountry(e.target.value)}
@@ -1577,7 +1577,7 @@ export function AnalyzerTab({
               <div className="analyzer-charts-row">
                 <Suspense
                   fallback={
-                    <div style={{ flex: 2, minHeight: 440 }}>Loading…</div>
+                    <div style={{ flex: 2, minHeight: 440 }}>{t("analysis.overview.loading")}</div>
                   }
                 >
                   <Plot
@@ -1591,19 +1591,19 @@ export function AnalyzerTab({
                           .map(([k]) => shortEqName(k)),
                         marker: { color: "rgba(11,122,117,0.75)" },
                         hovertemplate:
-                          "<b>%{y}</b><br>Amount: %{x:,.0f}<extra></extra>",
+                          `<b>%{y}</b><br>${t("analysis.overview.amount")}: %{x:,.0f}<extra></extra>`,
                       },
                     ]}
                     layout={{
                       ...BASE,
                       margin: { l: 220, r: 60, t: 32, b: 40 },
                       title: {
-                        text: `${countryFullName(eqCountry)} — country equipment breakdown`,
+                        text: t("analysis.overview.countryEquipmentBreakdown", { country: countryFullName(eqCountry) }),
                         font: { size: 15 },
                         y: 0.95,
                       },
                       xaxis: {
-                        title: "Count",
+                        title: t("analysis.overview.count"),
                         gridcolor: "rgba(23,34,38,0.08)",
                         tickformat: ",.0f",
                       },
@@ -1621,7 +1621,7 @@ export function AnalyzerTab({
                 </Suspense>
                 <Suspense
                   fallback={
-                    <div style={{ flex: 1, minHeight: 440 }}>Loading…</div>
+                    <div style={{ flex: 1, minHeight: 440 }}>{t("analysis.overview.loading")}</div>
                   }
                 >
                   <Plot
@@ -1635,19 +1635,19 @@ export function AnalyzerTab({
                           .map(([k]) => shortEqName(k)),
                         marker: { color: "rgba(217,79,43,0.72)" },
                         hovertemplate:
-                          "<b>%{y}</b><br>World: %{x:,.0f}<extra></extra>",
+                          `<b>%{y}</b><br>${t("analysis.overview.world")}: %{x:,.0f}<extra></extra>`,
                       },
                     ]}
                     layout={{
                       ...BASE,
                       margin: { l: 200, r: 20, t: 32, b: 40 },
                       title: {
-                        text: "World totals — top 20",
+                        text: t("analysis.overview.worldTotalsTop", { count: 20 }),
                         font: { size: 15 },
                         y: 0.95,
                       },
                       xaxis: {
-                        title: "World total",
+                        title: t("analysis.overview.worldTotal"),
                         gridcolor: "rgba(23,34,38,0.08)",
                         tickformat: "~s",
                       },
@@ -1673,7 +1673,7 @@ export function AnalyzerTab({
               <div className="analyzer-table-controls">
                 <input
                   type="text"
-                  placeholder="Filter by country…"
+                  placeholder={t("analysis.overview.filterCountry")}
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
                   style={{
@@ -1685,14 +1685,14 @@ export function AnalyzerTab({
                   }}
                 />
                 <span className="micro-copy">
-                  {sortedRows.length} of {result.by_country.length}
+                  {t("analysis.overview.showingCountries", { shown: sortedRows.length, total: result.by_country.length })}
                 </span>
                 <button
                   className="button button-secondary"
                   style={{ padding: "8px 16px", fontSize: 14 }}
                   onClick={() => setShowEq((v) => !v)}
                 >
-                  {showEq ? "Hide Equipment" : "Show Equipment"}
+                  {showEq ? t("analysis.overview.hideEquipment") : t("analysis.overview.showEquipment")}
                 </button>
               </div>
             </div>
@@ -1700,14 +1700,14 @@ export function AnalyzerTab({
               <table className="recent-table analyzer-table">
                 <thead>
                   <tr>
-                    <SortTh col="tag" label="Country" />
-                    <SortTh col="manpowerInField" label="Manpower" />
-                    <SortTh col="divisions" label="Divisions" />
-                    <SortTh col="aircraft" label="Aircraft" />
-                    <SortTh col="ships" label="Ships" />
-                    <SortTh col="effectiveMilitaryFactories" label="Mil. fac." />
-                    <SortTh col="effectiveCivilianFactories" label="Civ. fac." />
-                    <SortTh col="effectiveDockyards" label="Dockyards" />
+                    <SortTh col="tag" label={t("common.country")} />
+                    <SortTh col="manpowerInField" label={t("analysis.overview.manpowerMetric")} />
+                    <SortTh col="divisions" label={t("analysis.overview.divisions")} />
+                    <SortTh col="aircraft" label={t("analysis.overview.aircraft")} />
+                    <SortTh col="ships" label={t("analysis.overview.ships")} />
+                    <SortTh col="effectiveMilitaryFactories" label={t("analysis.overview.militaryFactoriesShort")} />
+                    <SortTh col="effectiveCivilianFactories" label={t("analysis.overview.civilianFactoriesShort")} />
+                    <SortTh col="effectiveDockyards" label={t("analysis.overview.dockyards")} />
                   </tr>
                 </thead>
                 <tbody>

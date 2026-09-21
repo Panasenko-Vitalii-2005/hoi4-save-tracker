@@ -1,13 +1,7 @@
 import type { NumericDiff } from "@/types/analysis-comparison";
+import { appLocale, i18n } from "@/i18n";
 
-const EXACT_NUMBER = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 15,
-});
-const COMPACT_NUMBER = new Intl.NumberFormat("en-US", {
-  notation: "compact",
-  maximumFractionDigits: 2,
-});
-const MONTHS = [
+const ENGLISH_MONTHS = [
   "January",
   "February",
   "March",
@@ -21,13 +15,19 @@ const MONTHS = [
   "November",
   "December",
 ] as const;
+const RUSSIAN_MONTHS = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+] as const;
 
 export function formatReportNumber(
   value: number | null | undefined,
   compact = false,
 ): string {
   if (value == null || !Number.isFinite(value)) return "—";
-  return (compact ? COMPACT_NUMBER : EXACT_NUMBER).format(value);
+  return new Intl.NumberFormat(appLocale(), compact
+    ? { notation: "compact", maximumFractionDigits: 2 }
+    : { maximumFractionDigits: 15 }).format(value);
 }
 
 export function formatReportDelta(
@@ -43,12 +43,13 @@ export function formatReportDate(value: string | null | undefined): string {
   const match = /^(\d{1,4})\.(\d{1,2})\.(\d{1,2})(?:\.\d{1,2})?$/.exec(
     value ?? "",
   );
-  if (!match) return "Unknown date";
+  if (!match) return i18n.t("common.unknown");
   const month = Number(match[2]);
   const day = Number(match[3]);
   if (month < 1 || month > 12 || day < 1 || day > 31)
-    return "Unknown date";
-  return `${day} ${MONTHS[month - 1]} ${match[1]}`;
+    return i18n.t("common.unknown");
+  const months = i18n.language.startsWith("ru") ? RUSSIAN_MONTHS : ENGLISH_MONTHS;
+  return `${day} ${months[month - 1]} ${match[1]}`;
 }
 
 export function diffStatus(diff: NumericDiff): string {

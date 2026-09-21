@@ -39,19 +39,16 @@ interface BatchAcknowledgement {
 }
 
 const PREFLIGHT_CHUNK_SIZE = 200;
-const PREFLIGHT_UNAVAILABLE =
-  "Could not check existing analyses. No saves were uploaded.";
-
-const STATUS_COPY: Record<BatchStatus, { symbol: string; label: string }> = {
-  identifying: { symbol: "…", label: "Identifying" },
-  already_analyzed: { symbol: "✓", label: "Already analyzed" },
-  queued: { symbol: "○", label: "Queued" },
-  analyzing: { symbol: "→", label: "Uploading & analyzing" },
-  completed: { symbol: "✓", label: "Completed" },
-  failed: { symbol: "!", label: "Failed" },
-  invalid: { symbol: "!", label: "Invalid" },
-  duplicate: { symbol: "↷", label: "Duplicate selection" },
-  cancelled: { symbol: "–", label: "Cancelled" },
+const STATUS_COPY = {
+  identifying: { symbol: "…", labelKey: "batch.statuses.identifying" },
+  already_analyzed: { symbol: "✓", labelKey: "batch.statuses.alreadyAnalyzed" },
+  queued: { symbol: "○", labelKey: "batch.statuses.queued" },
+  analyzing: { symbol: "→", labelKey: "batch.statuses.analyzing" },
+  completed: { symbol: "✓", labelKey: "batch.statuses.completed" },
+  failed: { symbol: "!", labelKey: "batch.statuses.failed" },
+  invalid: { symbol: "!", labelKey: "batch.statuses.invalid" },
+  duplicate: { symbol: "↷", labelKey: "batch.statuses.duplicate" },
+  cancelled: { symbol: "–", labelKey: "batch.statuses.cancelled" },
 };
 
 function bytes(value: number): string {
@@ -107,6 +104,7 @@ export const BatchAnalysisPanel = forwardRef<
   ref,
 ) {
   const { t } = useAppTranslation();
+  const preflightUnavailable = t("analysis.errors.unavailable");
   const inputRef = useRef<HTMLInputElement>(null);
   const itemsRef = useRef<BatchItem[]>([]);
   const generationRef = useRef(0);
@@ -163,17 +161,17 @@ export const BatchAnalysisPanel = forwardRef<
   const completionSummary = useMemo(
     () =>
       [
-        `${counts.selected} selected`,
-        counts.known ? `${counts.known} already analyzed` : "",
-        `${counts.completed} analyzed successfully`,
-        `${counts.failed} failed`,
-        counts.cancelled ? `${counts.cancelled} cancelled` : "",
-        counts.invalid ? `${counts.invalid} invalid` : "",
-        counts.duplicates ? `${counts.duplicates} duplicates skipped` : "",
+        `${t("batch.selected")}: ${counts.selected}`,
+        counts.known ? `${t("batch.alreadyAnalyzed")}: ${counts.known}` : "",
+        `${t("batch.statuses.completed")}: ${counts.completed}`,
+        `${t("batch.statuses.failed")}: ${counts.failed}`,
+        counts.cancelled ? `${t("batch.statuses.cancelled")}: ${counts.cancelled}` : "",
+        counts.invalid ? `${t("batch.invalid")}: ${counts.invalid}` : "",
+        counts.duplicates ? `${t("batch.duplicates")}: ${counts.duplicates}` : "",
       ]
         .filter(Boolean)
         .join(" · "),
-    [counts],
+    [counts, t],
   );
 
   const visibleItems = useMemo(
@@ -213,14 +211,14 @@ export const BatchAnalysisPanel = forwardRef<
       } catch {
         throw new Error(analyzerUnavailableMessage());
       }
-      if (!response.ok) throw new Error(PREFLIGHT_UNAVAILABLE);
+      if (!response.ok) throw new Error(preflightUnavailable);
       const value: unknown = await response.json();
       if (
         !value ||
         typeof value !== "object" ||
         !Array.isArray((value as Record<string, unknown>).knownHashes)
       )
-        throw new Error(PREFLIGHT_UNAVAILABLE);
+        throw new Error(preflightUnavailable);
       for (const hash of (value as { knownHashes: unknown[] }).knownHashes) {
         if (typeof hash === "string" && chunk.includes(hash)) known.add(hash);
       }
@@ -256,9 +254,9 @@ export const BatchAnalysisPanel = forwardRef<
           ? "invalid"
           : "identifying",
       error: !file.name.toLowerCase().endsWith(".hoi4")
-        ? "Choose a .hoi4 save file."
+        ? t("analysis.errors.UNSUPPORTED_FILE_TYPE")
         : file.size === 0
-          ? "The save is empty."
+          ? t("analysis.errors.EMPTY_FILE")
           : null,
       gameDate: null,
     }));
@@ -276,7 +274,7 @@ export const BatchAnalysisPanel = forwardRef<
           else seen.add(hash);
         } catch {
           item.status = "invalid";
-          item.error = "Could not identify this save in the browser.";
+          item.error = t("analysis.errors.fileRead");
         }
       }
       setIdentifyProgress({ done: index + 1, total: prepared.length });
@@ -291,7 +289,7 @@ export const BatchAnalysisPanel = forwardRef<
         error instanceof Error &&
           error.message === analyzerUnavailableMessage()
           ? error.message
-          : PREFLIGHT_UNAVAILABLE,
+          : preflightUnavailable,
       );
       setPhase("review");
     }
@@ -308,7 +306,7 @@ export const BatchAnalysisPanel = forwardRef<
         error instanceof Error &&
           error.message === analyzerUnavailableMessage()
           ? error.message
-          : PREFLIGHT_UNAVAILABLE,
+          : preflightUnavailable,
       );
       setPhase("review");
     }
@@ -345,7 +343,7 @@ export const BatchAnalysisPanel = forwardRef<
             throw new Error(safe.msg);
           }
           failureMessage =
-            "The analysis response could not be read. Try this save again.";
+            t("analysis.responseUnreadable");
           const acknowledgement: unknown = await response.json();
           if (!validAcknowledgement(acknowledgement, item.hash)) {
             throw new Error(failureMessage);
@@ -455,7 +453,7 @@ export const BatchAnalysisPanel = forwardRef<
           accept=".hoi4"
           multiple
           hidden
-          aria-label="Import multiple .hoi4 saves"
+          aria-label={t("batch.title")}
           disabled={disabled || phase === "running"}
           onChange={(event) => {
             const selected = Array.from(event.target.files ?? []);
@@ -467,7 +465,7 @@ export const BatchAnalysisPanel = forwardRef<
 
       {phase === "idle" ? (
         <div className="batch-analysis-drop-hint">
-          Drop multiple .hoi4 saves here, or use Import Campaign.
+          {t("batch.body")}
         </div>
       ) : (
         <>
@@ -497,7 +495,7 @@ export const BatchAnalysisPanel = forwardRef<
           {phase === "identifying" && (
             <div className="batch-analysis-progress" role="status">
               <span className="spinner" aria-hidden="true" />
-              Identifying saves {identifyProgress.done} /{" "}
+              {t("batch.analyzing")} {identifyProgress.done} /{" "}
               {identifyProgress.total}…
             </div>
           )}
@@ -508,9 +506,9 @@ export const BatchAnalysisPanel = forwardRef<
               <div>
                 <strong>{t("batch.analyzing")}</strong>
                 <span>
-                  {processed} / {items.length} processed
+                  {t("batch.processed", { processed, total: items.length })}
                 </span>
-                {current && <span>Current: {current.file.name}</span>}
+                {current && <span>{t("batch.current", { name: current.file.name })}</span>}
               </div>
             </div>
           )}
@@ -539,7 +537,7 @@ export const BatchAnalysisPanel = forwardRef<
                     className="button button-secondary"
                     onClick={retryFailed}
                   >
-                    Retry failed
+                    {t("batch.retryFailed")}
                   </button>
                 )}
                 <button
@@ -550,14 +548,14 @@ export const BatchAnalysisPanel = forwardRef<
                       ?.scrollIntoView({ behavior: "smooth", block: "start" })
                   }
                 >
-                  View Recent Analyses
+                  {t("batch.viewRecent")}
                 </button>
                 {onNavigateToCampaignTrends && (
                   <button
                     className="button button-primary"
                     onClick={onNavigateToCampaignTrends}
                   >
-                    View Campaign Trends
+                    {t("batch.viewTrends")}
                   </button>
                 )}
               </div>
@@ -570,7 +568,7 @@ export const BatchAnalysisPanel = forwardRef<
               <ul>
                 {failureGroups.map(({ message, count }) => (
                   <li key={message}>
-                    {count} {count === 1 ? "file" : "files"}: {message}
+                    {t("batch.files", { count })}: {message}
                   </li>
                 ))}
               </ul>
@@ -581,23 +579,23 @@ export const BatchAnalysisPanel = forwardRef<
             <>
               <div className="batch-analysis-toolbar">
                 <label>
-                  Status
+                  {t("batch.status")}
                   <select
                     value={filter}
                     onChange={(event) =>
                       setFilter(event.target.value as "all" | BatchStatus)
                     }
                   >
-                    <option value="all">All files ({items.length})</option>
-                    <option value="queued">Queued ({counts.queued})</option>
+                    <option value="all">{t("batch.allFiles", { count: items.length })}</option>
+                    <option value="queued">{t("batch.queuedCount", { count: counts.queued })}</option>
                     <option value="completed">
-                      Completed ({counts.completed})
+                      {t("batch.completedCount", { count: counts.completed })}
                     </option>
                     <option value="already_analyzed">
-                      Already analyzed ({counts.known})
+                      {t("batch.knownCount", { count: counts.known })}
                     </option>
-                    <option value="failed">Failed ({counts.failed})</option>
-                    <option value="invalid">Invalid ({counts.invalid})</option>
+                    <option value="failed">{t("batch.failedCount", { count: counts.failed })}</option>
+                    <option value="invalid">{t("batch.invalidCount", { count: counts.invalid })}</option>
                   </select>
                 </label>
                 <div className="batch-analysis-toolbar-actions">
@@ -605,8 +603,7 @@ export const BatchAnalysisPanel = forwardRef<
                     counts.queued > 0 &&
                     !preflightError && (
                       <button className="button button-primary" onClick={start}>
-                        Analyze {counts.queued} new{" "}
-                        {counts.queued === 1 ? "save" : "saves"}
+                        {t("batch.analyzeNew", { count: counts.queued })}
                       </button>
                     )}
                   {phase === "running" && counts.queued > 0 && (
@@ -614,7 +611,7 @@ export const BatchAnalysisPanel = forwardRef<
                       className="button button-secondary"
                       onClick={cancel}
                     >
-                      Cancel remaining
+                      {t("batch.cancelRemaining")}
                     </button>
                   )}
                 </div>
@@ -622,7 +619,7 @@ export const BatchAnalysisPanel = forwardRef<
               <div
                 className="batch-analysis-list"
                 tabIndex={0}
-                aria-label="Batch save files"
+                aria-label={t("batch.listAria")}
               >
                 <table>
                   <thead>
@@ -647,7 +644,7 @@ export const BatchAnalysisPanel = forwardRef<
                               className={`batch-status batch-status-${item.status}`}
                             >
                               <span aria-hidden="true">{copy.symbol}</span>{" "}
-                              {copy.label}
+                              {t(copy.labelKey)}
                             </span>
                             {item.error && <small>{item.error}</small>}
                           </td>

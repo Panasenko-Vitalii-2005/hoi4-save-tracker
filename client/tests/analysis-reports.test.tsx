@@ -7,6 +7,7 @@ import { CampaignReport } from "@/components/reports/CampaignReport";
 import type { AnalyzeResult, CountryStats } from "@/types";
 import type { AnalysisComparisonDto, NumericDiff } from "@/types/analysis-comparison";
 import type { CampaignTrend } from "@/types/campaign-trends";
+import { i18n } from "@/i18n";
 
 const country = (tag: string, manpowerInField: number): CountryStats =>
   ({
@@ -145,7 +146,8 @@ describe("analysis reports", () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     container = document.createElement("div");
     document.body.append(container);
@@ -157,6 +159,7 @@ describe("analysis reports", () => {
     container.remove();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    await i18n.changeLanguage("en");
   });
 
   test("renders a bounded single-save report with control values and metadata", async () => {
@@ -251,5 +254,28 @@ describe("analysis reports", () => {
     );
     expect(container.textContent).not.toContain("moving average");
     expect(container.textContent).not.toContain("normalized");
+  });
+
+  test("localizes the Campaign Report body, chart legend, and accessible chart text in Russian", async () => {
+    await i18n.changeLanguage("ru");
+    await act(async () =>
+      root.render(
+        <CampaignReport
+          campaign={campaign}
+          context={{ scope: "global", countryTag: null }}
+          onBack={() => undefined}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain("Кампания: Germany");
+    expect(container.textContent).toContain("Сводка кампании");
+    expect(container.textContent).toContain("1 февраля 1936");
+    expect(container.textContent).toContain("Сводка изменений");
+    expect(container.textContent).toContain("Военные заводы");
+    expect(container.textContent).toContain("Наблюдаемые снимки промышленности");
+    expect(container.textContent).toContain("Наибольшее число военных заводов");
+    expect(container.querySelector(".report-chart svg")?.getAttribute("aria-label"))
+      .toContain("График промышленности по 3 снимкам");
   });
 });

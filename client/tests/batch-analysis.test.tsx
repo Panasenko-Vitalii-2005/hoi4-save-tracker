@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { BatchAnalysisPanel } from "../src/components/analyzer/BatchAnalysisPanel";
 import { seedCsrfCookie } from "./auth-fixture";
+import { i18n } from "../src/i18n";
 
 function hash(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
@@ -30,7 +31,8 @@ describe("BatchAnalysisPanel", () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
     seedCsrfCookie();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     container = document.createElement("div");
@@ -42,11 +44,12 @@ describe("BatchAnalysisPanel", () => {
     await act(async () => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+    await i18n.changeLanguage("en");
   });
 
   const input = () =>
     container.querySelector<HTMLInputElement>(
-      'input[aria-label="Import multiple .hoi4 saves"]',
+      'input[type="file"][multiple]',
     )!;
   const button = (label: string) =>
     [...container.querySelectorAll("button")].find(
@@ -154,7 +157,7 @@ describe("BatchAnalysisPanel", () => {
     expect(batchNames).toEqual(["first.hoi4", "second.hoi4"]);
     expect(maxActive).toBe(1);
     expect(container.textContent).toContain(
-      "1 analyzed successfully · 1 failed",
+      "Completed: 1 · Failed: 1",
     );
     expect(container.textContent).toContain(
       "This is not a valid Hearts of Iron IV save",
@@ -167,12 +170,36 @@ describe("BatchAnalysisPanel", () => {
     await waitFor(
       () =>
         batchNames.length === 3 &&
-        container.textContent?.includes("0 failed") === true,
+        container.textContent?.includes("Failed: 0") === true,
     );
     expect(batchNames).toEqual(["first.hoi4", "second.hoi4", "first.hoi4"]);
     expect(historyChanged).toHaveBeenCalledTimes(2);
     await act(async () => button("View Campaign Trends").click());
     expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  test("localizes completed analysis navigation actions in Russian", async () => {
+    const contents = "campaign";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/analyze/batch/preflight")
+          return Response.json({ knownHashes: [] }, { status: 201 });
+        return Response.json(
+          { hash: hash(contents), gameDate: "1944.5.1", campaignId: "campaign-a" },
+          { status: 201 },
+        );
+      }),
+    );
+    await i18n.changeLanguage("ru");
+    await act(async () =>
+      root.render(<BatchAnalysisPanel onNavigateToCampaignTrends={() => undefined} />),
+    );
+    await select([save("campaign.hoi4", contents)]);
+    await act(async () => button("Проанализировать 1 новое сохранение").click());
+    await waitFor(() => container.textContent?.includes("Пакетный анализ завершён") === true);
+    expect(button("Посмотреть недавние анализы")).toBeDefined();
+    expect(button("Открыть динамику кампании")).toBeDefined();
   });
 
   test("cancel stops queued uploads while allowing the current file to finish", async () => {
@@ -250,12 +277,12 @@ describe("BatchAnalysisPanel", () => {
     await waitFor(() => container.textContent?.includes("Batch complete") === true);
 
     expect(attempted).toEqual(["offline.hoi4", "good.hoi4"]);
-    expect(container.textContent).toContain("1 analyzed successfully · 1 failed");
+    expect(container.textContent).toContain("Completed: 1 · Failed: 1");
     expect(container.textContent).toContain("Cannot reach the analyzer service");
     expect(container.textContent).not.toMatch(/Worker|private/);
 
     await act(async () => button("Retry failed").click());
-    await waitFor(() => container.textContent?.includes("0 failed") === true);
+    await waitFor(() => container.textContent?.includes("Failed: 0") === true);
     expect(attempted).toEqual([
       "offline.hoi4",
       "good.hoi4",

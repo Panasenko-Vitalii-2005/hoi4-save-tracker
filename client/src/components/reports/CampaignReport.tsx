@@ -12,6 +12,7 @@ import {
   type CampaignExportContext,
 } from "@/lib/data-export";
 import { countryFullName } from "@/lib/utils";
+import { useAppTranslation } from "@/i18n";
 import { ReportMetric, ReportShell } from "./ReportShell";
 import {
   finiteValues,
@@ -24,23 +25,34 @@ type CampaignMetric = keyof CountryTrendMetrics;
 
 const GROWTH_METRICS: readonly {
   key: CampaignMetric;
-  label: string;
   compact?: boolean;
 }[] = [
-  { key: "divisions", label: "Divisions" },
-  { key: "manpowerInField", label: "Manpower in field", compact: true },
-  { key: "aircraft", label: "Aircraft", compact: true },
-  { key: "ships", label: "Ships" },
-  { key: "militaryFactories", label: "Military factories" },
-  { key: "civilianFactories", label: "Civilian factories" },
-  { key: "dockyards", label: "Dockyards" },
+  { key: "divisions" },
+  { key: "manpowerInField", compact: true },
+  { key: "aircraft", compact: true },
+  { key: "ships" },
+  { key: "militaryFactories" },
+  { key: "civilianFactories" },
+  { key: "dockyards" },
 ];
 
 const CHART_METRICS = [
-  { key: "militaryFactories" as const, label: "Military factories", className: "mil" },
-  { key: "civilianFactories" as const, label: "Civilian factories", className: "civ" },
-  { key: "dockyards" as const, label: "Dockyards", className: "dock" },
+  { key: "militaryFactories" as const, className: "mil" },
+  { key: "civilianFactories" as const, className: "civ" },
+  { key: "dockyards" as const, className: "dock" },
 ] as const;
+
+const METRIC_KEYS = {
+  divisions: "campaign.metrics.divisions",
+  manpowerInField: "campaign.metrics.manpowerInField",
+  aircraft: "campaign.metrics.aircraft",
+  ships: "campaign.metrics.ships",
+  activeCountries: "campaign.metrics.activeCountries",
+  militaryFactories: "campaign.metrics.militaryFactories",
+  civilianFactories: "campaign.metrics.civilianFactories",
+  dockyards: "campaign.metrics.dockyards",
+  calculatedCasualties: "campaign.metrics.calculatedCasualties",
+} as const;
 
 function snapshotMetric(
   snapshot: CampaignTrendSnapshot,
@@ -78,6 +90,7 @@ function ReportIndustryChart({
   snapshots: readonly CampaignTrendSnapshot[];
   context: CampaignExportContext;
 }) {
+  const { t } = useAppTranslation();
   const width = 720;
   const height = 240;
   const padding = { top: 18, right: 18, bottom: 34, left: 54 };
@@ -111,18 +124,18 @@ function ReportIndustryChart({
   return (
     <figure className="report-chart">
       <figcaption>
-        <strong>Observed industry snapshots</strong>
-        <span>Raw values; missing snapshots remain gaps.</span>
+        <strong>{t("report.campaign.observedIndustry")}</strong>
+        <span>{t("report.campaign.chartCaption")}</span>
       </figcaption>
       <div className="report-chart-legend" aria-hidden="true">
         {CHART_METRICS.map((metric) => (
-          <span key={metric.key} className={metric.className}>{metric.label}</span>
+          <span key={metric.key} className={metric.className}>{t(METRIC_KEYS[metric.key])}</span>
         ))}
       </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`Industry chart across ${snapshots.length} snapshots. Maximum displayed value ${formatReportNumber(maximum)}.`}
+        aria-label={t("report.campaign.chartAria", { count: snapshots.length, maximum: formatReportNumber(maximum) })}
       >
         <line
           className="report-chart-axis"
@@ -170,34 +183,35 @@ export function CampaignReport({
   context: CampaignExportContext;
   onBack: () => void;
 }) {
+  const { t } = useAppTranslation();
   const snapshots = campaign.snapshots;
   const first = snapshots[0] ?? null;
   const latest = snapshots.at(-1) ?? null;
   const scopeName =
     context.scope === "country" && context.countryTag
       ? countryFullName(context.countryTag)
-      : "Global campaign";
+      : t("report.campaign.globalScope");
   const campaignName = campaign.playerCountryTag
-    ? `${countryFullName(campaign.playerCountryTag)} Campaign`
+    ? t("report.campaign.campaignSuffix", { country: countryFullName(campaign.playerCountryTag) })
     : campaign.campaignId
-      ? "Known Campaign"
-      : "Legacy Campaign";
+      ? t("report.campaign.known")
+      : t("report.campaign.legacy");
   const milestones = useMemo(
     () => [
       {
-        label: "Highest observed military factories",
+        label: t("report.campaign.highestMilitary"),
         result: observedMaximum(snapshots, context, "militaryFactories"),
       },
       {
-        label: "Highest observed manpower",
+        label: t("report.campaign.highestManpower"),
         result: observedMaximum(snapshots, context, "manpowerInField"),
       },
       {
-        label: "Highest observed divisions",
+        label: t("report.campaign.highestDivisions"),
         result: observedMaximum(snapshots, context, "divisions"),
       },
     ],
-    [context, snapshots],
+    [context, snapshots, t],
   );
   const firstMil = first
     ? snapshotMetric(first, context, "militaryFactories")
@@ -210,16 +224,16 @@ export function CampaignReport({
 
   return (
     <ReportShell
-      eyebrow="Campaign report"
+      eyebrow={t("report.campaign.eyebrow")}
       title={campaignName}
       subtitle={`${formatReportDate(campaign.firstGameDate)} → ${formatReportDate(campaign.latestGameDate)}`}
       metadata={
         <>
-          <span>{formatReportNumber(campaign.snapshotCount)} analyzed saves</span>
-          <span>Report scope: {scopeName}</span>
+          <span>{t("report.campaign.analyzedSaves", { count: formatReportNumber(campaign.snapshotCount) })}</span>
+          <span>{t("report.campaign.scope", { scope: scopeName })}</span>
           {campaign.campaignId && (
             <span title={campaign.campaignId}>
-              Campaign {campaign.campaignId.slice(0, 8)}…{campaign.campaignId.slice(-4)}
+              {t("report.campaign.campaignId", { id: `${campaign.campaignId.slice(0, 8)}…${campaign.campaignId.slice(-4)}` })}
             </span>
           )}
         </>
@@ -235,58 +249,53 @@ export function CampaignReport({
       })}
     >
       <section className="report-section report-introduction">
-        <h2>Campaign summary</h2>
-        <p>
-          Across {formatReportNumber(campaign.snapshotCount)} analyzed saves,
-          military factories changed from {formatReportNumber(firstMil)} to{" "}
-          {formatReportNumber(latestMil)} ({formatReportDelta(milChange)}).
-          Values are direct observations from stored snapshots.
-        </p>
+        <h2>{t("report.campaign.summary")}</h2>
+        <p>{t("report.campaign.summaryText", { count: formatReportNumber(campaign.snapshotCount), first: formatReportNumber(firstMil), latest: formatReportNumber(latestMil), change: formatReportDelta(milChange) })}</p>
       </section>
 
       <section className="report-section" aria-labelledby="campaign-overview-title">
         <div className="report-section-heading">
           <div>
-            <span className="eyebrow">Stored history</span>
-            <h2 id="campaign-overview-title">Campaign Overview</h2>
+            <span className="eyebrow">{t("report.campaign.storedHistory")}</span>
+            <h2 id="campaign-overview-title">{t("report.campaign.overview")}</h2>
           </div>
         </div>
         <div className="report-metric-grid report-metric-grid-compact">
           <ReportMetric
-            label="Analyzed snapshots"
+            label={t("report.campaign.snapshots")}
             value={formatReportNumber(campaign.snapshotCount)}
           />
           <ReportMetric
-            label="First snapshot"
+            label={t("report.campaign.firstSnapshot")}
             value={campaign.firstGameDate ?? "—"}
           />
           <ReportMetric
-            label="Latest snapshot"
+            label={t("report.campaign.latestSnapshot")}
             value={campaign.latestGameDate ?? "—"}
           />
-          <ReportMetric label="Scope" value={scopeName} />
+          <ReportMetric label={t("report.campaign.scopeLabel")} value={scopeName} />
         </div>
       </section>
 
       <section className="report-section" aria-labelledby="growth-summary-title">
         <div className="report-section-heading">
           <div>
-            <span className="eyebrow">First and latest observations</span>
-            <h2 id="growth-summary-title">Growth Summary</h2>
+            <span className="eyebrow">{t("report.campaign.firstLatest")}</span>
+            <h2 id="growth-summary-title">{t("report.campaign.growth")}</h2>
           </div>
         </div>
         <div className="report-table-wrap" role="region" tabIndex={0}>
           <table className="report-table report-change-table">
             <thead>
               <tr>
-                <th scope="col">Metric</th>
-                <th scope="col" className="num">First</th>
-                <th scope="col" className="num">Latest</th>
-                <th scope="col" className="num">Net change</th>
+                <th scope="col">{t("report.campaign.metric")}</th>
+                <th scope="col" className="num">{t("report.campaign.first")}</th>
+                <th scope="col" className="num">{t("report.campaign.latest")}</th>
+                <th scope="col" className="num">{t("report.campaign.netChange")}</th>
               </tr>
             </thead>
             <tbody>
-              {GROWTH_METRICS.map(({ key, label, compact }) => {
+              {GROWTH_METRICS.map(({ key, compact }) => {
                 const firstValue = first
                   ? snapshotMetric(first, context, key)
                   : null;
@@ -295,7 +304,7 @@ export function CampaignReport({
                   : null;
                 return (
                   <tr key={key}>
-                    <th scope="row">{label}</th>
+                    <th scope="row">{t(METRIC_KEYS[key])}</th>
                     <td className="num">{formatReportNumber(firstValue, compact)}</td>
                     <td className="num">{formatReportNumber(latestValue, compact)}</td>
                     <td className="num">
@@ -318,8 +327,8 @@ export function CampaignReport({
         <section className="report-section" aria-labelledby="campaign-chart-title">
           <div className="report-section-heading">
             <div>
-              <span className="eyebrow">Raw industry values</span>
-              <h2 id="campaign-chart-title">Campaign Chart</h2>
+              <span className="eyebrow">{t("report.campaign.rawIndustry")}</span>
+              <h2 id="campaign-chart-title">{t("report.campaign.chart")}</h2>
             </div>
           </div>
           <ReportIndustryChart snapshots={snapshots} context={context} />
@@ -329,15 +338,15 @@ export function CampaignReport({
       <section className="report-section" aria-labelledby="milestones-title">
         <div className="report-section-heading">
           <div>
-            <span className="eyebrow">Deterministic observations</span>
-            <h2 id="milestones-title">Observed Milestones</h2>
+            <span className="eyebrow">{t("report.campaign.observations")}</span>
+            <h2 id="milestones-title">{t("report.campaign.milestones")}</h2>
           </div>
         </div>
         <div className="report-milestones">
           <article>
-            <span>First snapshot</span>
+            <span>{t("report.campaign.firstSnapshot")}</span>
             <strong>{first?.gameDate ?? "—"}</strong>
-            <small>{first?.fileName ?? "Unavailable"}</small>
+            <small>{first?.fileName ?? t("report.campaign.unavailable")}</small>
           </article>
           {milestones.map(({ label, result }) => (
             <article key={label}>
@@ -345,20 +354,19 @@ export function CampaignReport({
               <strong>{formatReportNumber(result?.value, true)}</strong>
               <small>
                 {result
-                  ? `${result.snapshot.gameDate} · ${formatReportNumber(result.value)}`
-                  : "Unavailable"}
+                  ? t("report.campaign.milestoneValue", { date: result.snapshot.gameDate, value: formatReportNumber(result.value) })
+                  : t("report.campaign.unavailable")}
               </small>
             </article>
           ))}
           <article>
-            <span>Latest snapshot</span>
+            <span>{t("report.campaign.latestSnapshot")}</span>
             <strong>{latest?.gameDate ?? "—"}</strong>
-            <small>{latest?.fileName ?? "Unavailable"}</small>
+            <small>{latest?.fileName ?? t("report.campaign.unavailable")}</small>
           </article>
         </div>
         <p className="report-note">
-          Maxima are the highest values observed in analyzed snapshots. They do
-          not imply historical events between saves.
+          {t("report.campaign.note")}
         </p>
       </section>
     </ReportShell>
