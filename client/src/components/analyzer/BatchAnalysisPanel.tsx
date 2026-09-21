@@ -11,6 +11,14 @@ import {
 } from "@/lib/analysis-error";
 import { apiFetch } from "@/lib/api-client";
 import { useAppTranslation } from "@/i18n";
+import {
+  filterSnapshotFolderFiles,
+  formatFileSize,
+  sampleSnapshotFiles,
+  type SnapshotSampleTarget,
+  sortSnapshotFiles,
+  totalFileSize,
+} from "@/lib/snapshot-folder";
 
 type BatchStatus =
   | "identifying"
@@ -50,12 +58,6 @@ const STATUS_COPY = {
   duplicate: { symbol: "↷", labelKey: "batch.statuses.duplicate" },
   cancelled: { symbol: "–", labelKey: "batch.statuses.cancelled" },
 };
-
-function bytes(value: number): string {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KiB`;
-  return `${(value / (1024 * 1024)).toLocaleString(undefined, { maximumFractionDigits: 1 })} MiB`;
-}
 
 async function hashSaveFile(file: File): Promise<string> {
   // Web Crypto has no streaming SHA-256 API. Files are therefore hashed one at
@@ -103,9 +105,10 @@ export const BatchAnalysisPanel = forwardRef<
   },
   ref,
 ) {
-  const { t } = useAppTranslation();
+  const { t, i18n } = useAppTranslation();
   const preflightUnavailable = t("analysis.errors.unavailable");
   const inputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const itemsRef = useRef<BatchItem[]>([]);
   const generationRef = useRef(0);
   const cancelRef = useRef(false);
@@ -120,6 +123,10 @@ export const BatchAnalysisPanel = forwardRef<
   });
   const [preflightError, setPreflightError] = useState("");
   const [filter, setFilter] = useState<"all" | BatchStatus>("all");
+  const [folderSelectionMade, setFolderSelectionMade] = useState(false);
+  const [snapshotFiles, setSnapshotFiles] = useState<File[]>([]);
+  const [sampleTarget, setSampleTarget] =
+    useState<SnapshotSampleTarget>(25);
 
   useImperativeHandle(ref, () => ({
     openPicker: () => inputRef.current?.click(),
@@ -150,6 +157,20 @@ export const BatchAnalysisPanel = forwardRef<
       cancelled: count("cancelled"),
     };
   }, [items]);
+  const sampledSnapshotFiles = useMemo(
+    () => sampleSnapshotFiles(snapshotFiles, sampleTarget),
+    [sampleTarget, snapshotFiles],
+  );
+  const snapshotFolderSummary = useMemo(
+    () => ({
+      found: snapshotFiles.length,
+      selected: sampledSnapshotFiles.length,
+      skipped: snapshotFiles.length - sampledSnapshotFiles.length,
+      selectedSize: totalFileSize(sampledSnapshotFiles),
+      totalSize: totalFileSize(snapshotFiles),
+    }),
+    [sampledSnapshotFiles, snapshotFiles],
+  );
   const failureGroups = useMemo(() => {
     const groups = new Map<string, number>();
     for (const item of items) {
@@ -239,6 +260,7 @@ export const BatchAnalysisPanel = forwardRef<
 
   const prepare = async (files: File[]) => {
     if (phase === "running" || disabled) return;
+    setFolderSelectionMade(false);
     const generation = ++generationRef.current;
     cancelRef.current = false;
     setPreflightError("");
@@ -440,13 +462,22 @@ export const BatchAnalysisPanel = forwardRef<
           <h2 id="batch-analysis-title">{t("batch.title")}</h2>
           <p>{t("batch.body")}</p>
         </div>
-        <button
-          className="button button-secondary"
-          disabled={disabled || phase === "running" || phase === "identifying"}
-          onClick={() => inputRef.current?.click()}
-        >
-          {t("analysis.importCampaign")}
-        </button>
+        <div className="batch-analysis-source-actions">
+          <button
+            className="button button-secondary"
+            disabled={disabled || phase === "running" || phase === "identifying"}
+            onClick={() => inputRef.current?.click()}
+          >
+            {t("analysis.importCampaign")}
+          </button>
+          <button
+            className="button button-secondary"
+            disabled={disabled || phase === "running" || phase === "identifying"}
+            onClick={() => folderInputRef.current?.click()}
+          >
+            {t("batch.selectSnapshotFolder")}
+          </button>
+        </div>
         <input
           ref={inputRef}
           type="file"
@@ -461,12 +492,113 @@ export const BatchAnalysisPanel = forwardRef<
             event.target.value = "";
           }}
         />
+        <input
+          ref={folderInputRef}
+          type="file"
+          accept=".hoi4"
+          multiple
+          hidden
+          aria-label={t("batch.snapshotFolderPickerAria")}
+          disabled={disabled || phase === "running"}
+          {...({ webkitdirectory: "" } as Record<string, string>)}
+          onChange={(event) => {
+            const selected = Array.from(event.target.files ?? []);
+            if (selected.length) {
+              updateItems([]);
+              setPhase("idle");
+              setPreflightError("");
+              setFilter("all");
+              setSnapshotFiles(
+                sortSnapshotFiles(filterSnapshotFolderFiles(selected)),
+              );
+              setSampleTarget(25);
+              setFolderSelectionMade(true);
+            }
+            event.target.value = "";
+          }}
+        />
       </div>
 
-      {phase === "idle" ? (
-        <div className="batch-analysis-drop-hint">
-          {t("batch.body")}
+      {folderSelectionMade && (
+        <div className="snapshot-folder-review" aria-live="polite">
+          {snapshotFiles.length === 0 ? (
+            <p className="snapshot-folder-empty">{t("batch.noSnapshotsFound")}</p>
+          ) : (
+            <>
+              <div className="snapshot-folder-controls">
+                <label>
+                  <span>{t("batch.sampleDensity")}</span>
+                  <select
+                    value={sampleTarget}
+                    onChange={(event) =>
+                      setSampleTarget(
+                        event.target.value === "all"
+                          ? "all"
+                          : (Number(event.target.value) as SnapshotSampleTarget),
+                      )
+                    }
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>
+                      25 — {t("batch.recommended")}
+                    </option>
+                    <option value={50}>50</option>
+                    <option value="all">{t("batch.allSnapshots")}</option>
+                  </select>
+                </label>
+                <button
+                  className="button button-primary"
+                  onClick={() => void prepare(sampledSnapshotFiles)}
+                >
+                  {t("batch.useSelectedSnapshots")}
+                </button>
+              </div>
+              <dl className="snapshot-folder-summary">
+                <div>
+                  <dt>{t("batch.snapshotsFound")}</dt>
+                  <dd>{snapshotFolderSummary.found}</dd>
+                </div>
+                <div>
+                  <dt>{t("batch.snapshotsSelected")}</dt>
+                  <dd>{snapshotFolderSummary.selected}</dd>
+                </div>
+                <div>
+                  <dt>{t("batch.snapshotsSkipped")}</dt>
+                  <dd>{snapshotFolderSummary.skipped}</dd>
+                </div>
+                <div>
+                  <dt>{t("batch.selectedUploadSize")}</dt>
+                  <dd>
+                    {formatFileSize(
+                      snapshotFolderSummary.selectedSize,
+                      i18n.resolvedLanguage ?? i18n.language,
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("batch.totalSnapshotSize")}</dt>
+                  <dd>
+                    {formatFileSize(
+                      snapshotFolderSummary.totalSize,
+                      i18n.resolvedLanguage ?? i18n.language,
+                    )}
+                  </dd>
+                </div>
+              </dl>
+              <p className="snapshot-folder-note">
+                {t("batch.snapshotSamplingNote")}
+              </p>
+            </>
+          )}
         </div>
+      )}
+
+      {phase === "idle" ? (
+        folderSelectionMade ? null : (
+          <div className="batch-analysis-drop-hint">
+            {t("batch.body")}
+          </div>
+        )
       ) : (
         <>
           <div className="batch-analysis-summary" aria-live="polite">
@@ -638,7 +770,12 @@ export const BatchAnalysisPanel = forwardRef<
                             <strong>{item.file.name}</strong>
                             {item.gameDate && <span>{item.gameDate}</span>}
                           </td>
-                          <td className="num">{bytes(item.file.size)}</td>
+                          <td className="num">
+                            {formatFileSize(
+                              item.file.size,
+                              i18n.resolvedLanguage ?? i18n.language,
+                            )}
+                          </td>
                           <td>
                             <span
                               className={`batch-status batch-status-${item.status}`}

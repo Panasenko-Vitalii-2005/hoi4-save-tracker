@@ -36,7 +36,7 @@ The utility polls for filename/size/last-write changes, requires two consecutive
 
 Source saves are opened only for reading. They are never modified, moved, renamed, truncated, or deleted. The output directory must be separate from and outside the source directory. Copy errors, locks, sharing violations, and temporary read failures are logged without changing the source or terminating watch mode. Existing snapshots are never deleted and there is no retention policy.
 
-Run the tool while playing, allow snapshots to accumulate, then select the snapshot files in HoI4 Save Tracker's campaign import.
+Run the tool while playing and allow snapshots to accumulate. In HoI4 Save Tracker's campaign import, choose **Select snapshot folder** and keep the recommended 25-file sample, choose another density, or choose **All**. Direct `.hoi4` snapshots are included; checksum sidecars and nested folders are ignored. Sampling is based on chronological snapshot capture order; exact game dates are extracted during analysis, and previously analyzed snapshots are reused.
 
 ## Tests and local validation
 

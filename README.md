@@ -113,11 +113,13 @@ See [Architecture](docs/architecture.md) for component boundaries, persistence d
 ## Demonstration path
 
 1. Open **Save Analyzer** and analyze one `.hoi4` save.
-2. Use **Import Campaign** to select a sequence of saves.
+2. Use **Select snapshot folder** to load snapshotter output, keep the recommended evenly distributed 25-file sample (or choose 10, 50, or All), and start the existing campaign import. Manual multi-file selection remains available through **Import Campaign**.
 3. Reopen and manage snapshots in **Recent Analyses**.
 4. Choose Base and Target in **Compare Saves**.
 5. Explore the exact campaign in **Campaign Trends**.
 6. Open **View Report**, print it, or export CSV/JSON.
+
+Folder sampling considers direct `.hoi4` files in the selected folder, follows their capture timestamps, and uploads only the selected files. Nested folders and checksum sidecars are ignored. The folder picker targets current Chrome and Edge; **Import Campaign** remains the fallback manual multi-file picker. Sampling approximates campaign coverage; exact in-game dates are still extracted by the server during analysis. Previously analyzed snapshots are reused by the normal batch workflow.
 
 ## Performance and scale
 

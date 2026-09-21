@@ -19,6 +19,15 @@ function save(name: string, contents: string): File {
   return file;
 }
 
+function folderSave(name: string, contents: string): File {
+  const file = save(name, contents);
+  Object.defineProperty(file, "webkitRelativePath", {
+    configurable: true,
+    value: `snapshots/${name}`,
+  });
+  return file;
+}
+
 async function waitFor(check: () => boolean) {
   for (let attempt = 0; attempt < 100; attempt++) {
     if (check()) return;
@@ -51,6 +60,10 @@ describe("BatchAnalysisPanel", () => {
     container.querySelector<HTMLInputElement>(
       'input[type="file"][multiple]',
     )!;
+  const folderInput = () =>
+    container.querySelector<HTMLInputElement>(
+      'input[aria-label="Select a campaign snapshot folder"]',
+    )!;
   const button = (label: string) =>
     [...container.querySelectorAll("button")].find(
       (element) => element.textContent?.trim() === label,
@@ -79,7 +92,121 @@ describe("BatchAnalysisPanel", () => {
     expect(container.textContent).toContain("Already analyzed saves are skipped");
     expect(container.textContent).toContain("added to Campaign Trends");
     expect(button("Import Campaign")).toBeDefined();
+    expect(button("Select snapshot folder")).toBeDefined();
     expect(input().multiple).toBe(true);
+    expect(folderInput().hasAttribute("webkitdirectory")).toBe(true);
+  });
+
+  test("samples a snapshot folder before sending only selected files into the existing batch flow", async () => {
+    const files = Array.from({ length: 79 }, (_, index) => {
+      const hour = String(15 + Math.floor(index / 60)).padStart(2, "0");
+      const minute = String(index % 60).padStart(2, "0");
+      return folderSave(
+        `autosave_temp_2026-09-21_${hour}-${minute}-00.hoi4`,
+        `snapshot-${index}`,
+      );
+    });
+    const hashes = new Map(
+      files.map((file, index) => [file.name, hash(`snapshot-${index}`)]),
+    );
+    const uploaded: string[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/analyze/batch/preflight")
+        return Response.json({ knownHashes: [] }, { status: 201 });
+      if (!(init?.body instanceof FormData)) throw new Error("Missing upload");
+      const file = init.body.get("file") as File;
+      uploaded.push(file.name);
+      return Response.json(
+        {
+          hash: hashes.get(file.name),
+          gameDate: "1944.5.1",
+          campaignId: "campaign-a",
+        },
+        { status: 201 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await act(async () => root.render(<BatchAnalysisPanel />));
+    Object.defineProperty(folderInput(), "files", {
+      configurable: true,
+      value: files,
+    });
+    await act(async () =>
+      folderInput().dispatchEvent(new Event("change", { bubbles: true })),
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Snapshots found79");
+    expect(container.textContent).toContain("Selected25");
+    expect(container.textContent).toContain("Skipped54");
+    expect(
+      container.querySelector<HTMLSelectElement>(
+        ".snapshot-folder-controls select",
+      )?.value,
+    ).toBe("25");
+
+    await act(async () => button("Use selected snapshots").click());
+    await waitFor(
+      () =>
+        container
+          .querySelector(".batch-analysis-panel")
+          ?.getAttribute("data-phase") === "review",
+    );
+    expect(container.textContent).toContain("25Selected");
+    expect(uploaded).toEqual([]);
+
+    await act(async () => button("Analyze 25 new saves").click());
+    await waitFor(
+      () =>
+        uploaded.length === 25 &&
+        container.textContent?.includes("Batch complete") === true,
+    );
+    expect(uploaded).toHaveLength(25);
+    expect(uploaded[0]).toBe(files[0].name);
+    expect(uploaded.at(-1)).toBe(files.at(-1)?.name);
+  });
+
+  test("recalculates folder sample counts and fully localizes the workflow", async () => {
+    await i18n.changeLanguage("ru");
+    await act(async () => root.render(<BatchAnalysisPanel />));
+    const russianFolderInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Выбрать папку со снимками кампании"]',
+    )!;
+    const files = Array.from({ length: 18 }, (_, index) =>
+      folderSave(
+        `autosave_temp_2026-09-21_15-${String(index).padStart(2, "0")}-00.hoi4`,
+        "x".repeat(index + 1),
+      ),
+    );
+    Object.defineProperty(russianFolderInput, "files", {
+      configurable: true,
+      value: files,
+    });
+    await act(async () =>
+      russianFolderInput.dispatchEvent(new Event("change", { bubbles: true })),
+    );
+
+    expect(button("Выбрать папку со снимками")).toBeDefined();
+    expect(container.textContent).toContain("Найдено снимков18");
+    expect(container.textContent).toContain("Выбрано18");
+    expect(container.textContent).toContain("Пропущено0");
+    expect(container.textContent).toContain("Объём выбранных файлов171 B");
+    expect(container.textContent).toContain("Общий объём снимков171 B");
+    expect(container.textContent).toContain("Рекомендуется");
+    expect(container.textContent).toContain("Точные игровые даты");
+
+    const target = container.querySelector<HTMLSelectElement>(
+      ".snapshot-folder-controls select",
+    )!;
+    await act(async () => {
+      target.value = "10";
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("Выбрано10");
+    expect(container.textContent).toContain("Пропущено8");
+    expect(container.textContent).toContain("Объём выбранных файлов95 B");
+    expect(container.textContent).toContain("Общий объём снимков171 B");
   });
 
   test("reviews, deduplicates and sequentially processes files with isolated retry", async () => {
