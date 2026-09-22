@@ -8,16 +8,23 @@ Hearts of Iron IV overwrites autosaves, which can leave too few historical files
 - Windows PowerShell 5.1 or PowerShell 7.
 - No administrator privileges, installer, or server connection.
 
-From a PowerShell window:
+Download the script from Campaign Import, then open PowerShell in the folder containing `hoi4-save-snapshotter.ps1`. Browser-downloaded `.ps1` files may be blocked by Windows because they came from the Internet or are not digitally signed. If that happens, review the script if desired and unblock only this downloaded file:
 
 ```powershell
-cd C:\Path\To\Downloaded\Script
-.\hoi4-save-snapshotter.ps1 `
-  -SourceDir "$HOME\Documents\Paradox Interactive\Hearts of Iron IV\save games" `
-  -OutputDir "$HOME\Documents\HoI4 Snapshots"
+Unblock-File -LiteralPath ".\hoi4-save-snapshotter.ps1"
 ```
 
-The defaults use the current user's Documents folder for both the standard HoI4 save location and a separate `HoI4 Save Tracker Snapshots` directory. The source path is validated; pass `-SourceDir` explicitly when Documents is redirected or the game uses another location.
+Alternatively, right-click the file in File Explorer → Properties → Unblock → Apply. Run the command below afterward. No administrator privileges or global execution-policy changes are required.
+
+Replace `<YOUR_HOI4_SAVE_FOLDER>` with the actual HoI4 save directory on your computer; the placeholder is not a path you can run literally. The folder is usually under `Documents\Paradox Interactive\Hearts of Iron IV\save games`, but Windows may redirect Documents through OneDrive or another location.
+
+```powershell
+.\hoi4-save-snapshotter.ps1 `
+  -SourceDir "<YOUR_HOI4_SAVE_FOLDER>" `
+  -OutputDir "C:\HoI4Snapshots"
+```
+
+`C:\HoI4Snapshots` is the example output directory for historical snapshots. Keep it separate from the HoI4 save directory. Leave PowerShell running while playing, then select the output folder in Campaign Import.
 
 By default `autosave.hoi4` and `autosave_*.hoi4` are watched. This covers installations where `autosave_temp.hoi4` is persistent, installations where it is transient and `autosave.hoi4` is final, and existing rotating autosave names. Manual saves are ignored. Override the defaults only when your installation uses another autosave name, for example `-Patterns 'autosave.hoi4','my_rotating_save_*.hoi4'`.
 

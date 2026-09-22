@@ -5099,16 +5099,30 @@ button {
   line-height: 1.55;
 }
 
-.snapshotter-unblock-command {
-  display: block;
+.snapshotter-setup-alert {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border-left: 3px solid var(--accent);
+  border-radius: 7px;
+}
+
+.snapshotter-setup-alert strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.snapshotter-setup-alert code {
   width: fit-content;
   max-width: 100%;
   overflow-x: auto;
   padding: 5px 8px;
-  background: var(--panel);
+  background: var(--intel-surface-deep);
+  border: 1px solid var(--intel-line);
   border-radius: 6px;
   color: var(--ink);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .snapshot-folder-review {

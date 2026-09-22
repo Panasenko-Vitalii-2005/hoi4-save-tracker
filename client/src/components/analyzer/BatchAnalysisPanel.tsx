@@ -549,22 +549,30 @@ export const BatchAnalysisPanel = forwardRef<
             <ol>
               <li>{t("batch.snapshotter.steps.download")}</li>
               <li>{t("batch.snapshotter.steps.openPowerShell")}</li>
+              <li>{t("batch.snapshotter.steps.unblock")}</li>
               <li>{t("batch.snapshotter.steps.findSaveFolder")}</li>
+              <li>{t("batch.snapshotter.steps.replacePath")}</li>
               <li>{t("batch.snapshotter.steps.chooseOutput")}</li>
               <li>{t("batch.snapshotter.steps.start")}</li>
               <li>{t("batch.snapshotter.steps.keepRunning")}</li>
               <li>{t("batch.snapshotter.steps.return")}</li>
             </ol>
-            <pre aria-label={t("batch.snapshotter.commandAria")}>
-              <code>{`.\\hoi4-save-snapshotter.ps1 \`
-  -SourceDir "C:\\Path\\To\\Hearts of Iron IV\\save games" \`
-  -OutputDir "C:\\HoI4Snapshots"`}</code>
-            </pre>
+            <div className="snapshotter-setup-alert">
+              <strong>{t("batch.snapshotter.blockingTitle")}</strong>
+              <p>{t("batch.snapshotter.blockingNote")}</p>
+              <code>{t("batch.snapshotter.unblockCommand")}</code>
+              <p>{t("batch.snapshotter.unblockGui")}</p>
+            </div>
+            <p>{t("batch.snapshotter.saveFolderLocation")}</p>
             <p>{t("batch.snapshotter.pathNote")}</p>
-            <p>{t("batch.snapshotter.powerShellNote")}</p>
-            <code className="snapshotter-unblock-command">
-              Unblock-File .\hoi4-save-snapshotter.ps1
-            </code>
+            <div className="snapshotter-setup-alert">
+              <strong>{t("batch.snapshotter.replacePathTitle")}</strong>
+              <p>{t("batch.snapshotter.replacePathNote")}</p>
+            </div>
+            <pre aria-label={t("batch.snapshotter.commandAria")}>
+              <code>{t("batch.snapshotter.command")}</code>
+            </pre>
+            <p>{t("batch.snapshotter.outputNote")}</p>
             <p>{t("batch.snapshotter.workflow")}</p>
           </div>
         </details>

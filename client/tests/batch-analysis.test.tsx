@@ -110,11 +110,20 @@ describe("BatchAnalysisPanel", () => {
     expect(download.textContent).toContain("Download Snapshotter for Windows");
     expect(download.getAttribute("href")).toBe(SNAPSHOTTER_DOWNLOAD_PATH);
     expect(download.getAttribute("download")).toBe("hoi4-save-snapshotter.ps1");
+    expect(onboarding.querySelector("details")?.textContent).toContain("How to use");
+    const command = onboarding.querySelector("pre")?.textContent ?? "";
+    expect(command).toContain('-SourceDir "<YOUR_HOI4_SAVE_FOLDER>"');
+    expect(command).toContain('-OutputDir "C:\\HoI4Snapshots"');
+    expect(command).not.toContain("C:\\Path\\To");
+    expect(onboarding.textContent).toContain("<YOUR_HOI4_SAVE_FOLDER> is not a real path");
+    expect(onboarding.textContent).toContain("Documents\\Paradox Interactive\\Hearts of Iron IV\\save games");
     expect(onboarding.textContent).toContain("OneDrive");
-    expect(onboarding.textContent).toContain("File Properties → Unblock");
+    expect(onboarding.textContent).toContain("Properties → Unblock → Apply");
     expect(onboarding.textContent).toContain(
-      "Unblock-File .\\hoi4-save-snapshotter.ps1",
+      'Unblock-File -LiteralPath ".\\hoi4-save-snapshotter.ps1"',
     );
+    expect(onboarding.textContent).toContain("Leave PowerShell running");
+    expect(onboarding.textContent).not.toContain("Set-ExecutionPolicy");
     expect(onboarding.textContent).not.toContain("-Patterns");
     expect(onboarding.textContent).not.toMatch(/panas|custom-projects/i);
   });
@@ -127,9 +136,22 @@ describe("BatchAnalysisPanel", () => {
     expect(onboarding.textContent).toContain("Автоматические снимки кампании");
     expect(onboarding.textContent).toContain("Скачать Snapshotter для Windows");
     expect(onboarding.textContent).toContain("Как использовать");
+    expect(onboarding.querySelector("pre")?.textContent).toContain(
+      '-SourceDir "<ПУТЬ_К_ПАПКЕ_СЕЙВОВ_HOI4>"',
+    );
+    expect(onboarding.textContent).toContain("не настоящий путь");
+    expect(onboarding.textContent).toContain("Документы\\Paradox Interactive\\Hearts of Iron IV\\save games");
     expect(onboarding.textContent).toContain("OneDrive");
+    expect(onboarding.textContent).toContain("Свойства → Разблокировать → Применить");
+    expect(onboarding.textContent).toContain(
+      'Unblock-File -LiteralPath ".\\hoi4-save-snapshotter.ps1"',
+    );
+    expect(onboarding.textContent).toContain("Оставьте PowerShell запущенным");
     expect(onboarding.textContent).toContain("25 файлов");
     expect(onboarding.textContent).not.toContain("Download Snapshotter");
+    expect(onboarding.textContent).not.toContain("C:\\Path\\To");
+    expect(onboarding.textContent).not.toContain("Set-ExecutionPolicy");
+    expect(onboarding.textContent).not.toContain("-Patterns");
   });
 
   test("samples a snapshot folder before sending only selected files into the existing batch flow", async () => {
