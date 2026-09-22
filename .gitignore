@@ -4,6 +4,8 @@ node_modules/
 # Build output
 dist/
 build/
+/tools/hoi4-save-snapshotter-gui/**/bin/
+/tools/hoi4-save-snapshotter-gui/**/obj/
 
 # Environment files
 .env
