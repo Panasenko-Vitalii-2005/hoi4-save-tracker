@@ -25,6 +25,8 @@ npm run build
 
 The production build is emitted to `server/client/dist` for Nest static serving; the frontend Docker image copies the same build into nginx.
 
+Campaign Import exposes `/downloads/hoi4-save-snapshotter.ps1`. The reviewed source of truth remains `tools/hoi4-save-snapshotter/snapshotter.ps1`; `scripts/snapshotter-asset.mjs` stages it into the ignored `public/downloads` path before test, development, and build commands. The build then verifies that the emitted download is byte-identical to the canonical script. The Docker build copies that canonical source into its build stage before running the same process.
+
 ## UI architecture
 
 - `src/components/analyzer/` — upload, Campaign Import, Recent, Compare, storage, and domain analysis views.

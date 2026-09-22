@@ -4,9 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "snapshotter:sync": "node scripts/snapshotter-asset.mjs sync",
+    "snapshotter:verify-build": "node scripts/snapshotter-asset.mjs verify-build",
+    "pretest": "npm run snapshotter:sync",
     "test": "vitest run",
+    "predev": "npm run snapshotter:sync",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "prebuild": "npm run snapshotter:sync",
+    "build": "tsc -b && vite build && npm run snapshotter:verify-build",
     "lint": "oxlint",
     "preview": "vite preview"
   },

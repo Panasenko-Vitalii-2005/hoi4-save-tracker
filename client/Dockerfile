@@ -4,6 +4,7 @@ WORKDIR /app/client
 COPY client/package*.json ./
 RUN npm ci
 COPY client/ ./
+COPY tools/hoi4-save-snapshotter/snapshotter.ps1 /app/tools/hoi4-save-snapshotter/snapshotter.ps1
 RUN npm run build
 
 FROM nginx:1.28-alpine AS runtime

@@ -129,6 +129,9 @@ test-results/
 # Project-specific
 # =========================================================================
 
+# Generated from the canonical PowerShell tool before frontend test/dev/build.
+/client/public/downloads/hoi4-save-snapshotter.ps1
+
 # Hearts of Iron IV save files
 *.hoi4
 saves/

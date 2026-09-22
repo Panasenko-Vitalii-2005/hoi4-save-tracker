@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { BatchAnalysisPanel } from "../src/components/analyzer/BatchAnalysisPanel";
+import {
+  BatchAnalysisPanel,
+  SNAPSHOTTER_DOWNLOAD_PATH,
+} from "../src/components/analyzer/BatchAnalysisPanel";
 import { seedCsrfCookie } from "./auth-fixture";
 import { i18n } from "../src/i18n";
 
@@ -95,6 +98,37 @@ describe("BatchAnalysisPanel", () => {
     expect(button("Select snapshot folder")).toBeDefined();
     expect(input().multiple).toBe(true);
     expect(folderInput().hasAttribute("webkitdirectory")).toBe(true);
+  });
+
+  test("offers the canonical same-origin Windows snapshotter with safe English guidance", async () => {
+    await act(async () => root.render(<BatchAnalysisPanel />));
+
+    const onboarding = container.querySelector(".snapshotter-onboarding")!;
+    const download = onboarding.querySelector<HTMLAnchorElement>("a[download]")!;
+    expect(onboarding.textContent).toContain("Automatic campaign snapshots");
+    expect(onboarding.textContent).toContain("Hearts of Iron IV overwrites autosaves");
+    expect(download.textContent).toContain("Download Snapshotter for Windows");
+    expect(download.getAttribute("href")).toBe(SNAPSHOTTER_DOWNLOAD_PATH);
+    expect(download.getAttribute("download")).toBe("hoi4-save-snapshotter.ps1");
+    expect(onboarding.textContent).toContain("OneDrive");
+    expect(onboarding.textContent).toContain("File Properties → Unblock");
+    expect(onboarding.textContent).toContain(
+      "Unblock-File .\\hoi4-save-snapshotter.ps1",
+    );
+    expect(onboarding.textContent).not.toMatch(/panas|custom-projects/i);
+  });
+
+  test("fully localizes snapshotter onboarding in Russian", async () => {
+    await i18n.changeLanguage("ru");
+    await act(async () => root.render(<BatchAnalysisPanel />));
+
+    const onboarding = container.querySelector(".snapshotter-onboarding")!;
+    expect(onboarding.textContent).toContain("Автоматические снимки кампании");
+    expect(onboarding.textContent).toContain("Скачать Snapshotter для Windows");
+    expect(onboarding.textContent).toContain("Как использовать");
+    expect(onboarding.textContent).toContain("OneDrive");
+    expect(onboarding.textContent).toContain("25 файлов");
+    expect(onboarding.textContent).not.toContain("Download Snapshotter");
   });
 
   test("samples a snapshot folder before sending only selected files into the existing batch flow", async () => {

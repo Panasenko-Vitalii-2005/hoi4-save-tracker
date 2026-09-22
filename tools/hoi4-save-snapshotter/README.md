@@ -1,6 +1,6 @@
 # HoI4 Autosave Snapshotter
 
-Hearts of Iron IV overwrites autosaves, which can leave too few historical files for useful Campaign Trends. This small local Windows utility preserves content-distinct autosave snapshots for later batch analysis in HoI4 Save Tracker.
+Hearts of Iron IV overwrites autosaves, which can leave too few historical files for useful Campaign Trends. This small local Windows utility preserves content-distinct autosave snapshots for later batch analysis in HoI4 Save Tracker. Private-alpha users can download the reviewed script directly from the Campaign Import panel; this repository file remains its canonical source.
 
 ## Requirements and usage
 
@@ -11,10 +11,10 @@ Hearts of Iron IV overwrites autosaves, which can leave too few historical files
 From a PowerShell window:
 
 ```powershell
-cd D:\custom-projects\save-tracker\tools\hoi4-save-snapshotter
-.\snapshotter.ps1 `
+cd C:\Path\To\Downloaded\Script
+.\hoi4-save-snapshotter.ps1 `
   -SourceDir "$HOME\Documents\Paradox Interactive\Hearts of Iron IV\save games" `
-  -OutputDir "D:\HoI4Snapshots"
+  -OutputDir "$HOME\Documents\HoI4 Snapshots"
 ```
 
 The defaults use the current user's Documents folder for both the standard HoI4 save location and a separate `HoI4 Save Tracker Snapshots` directory. The source path is validated; pass `-SourceDir` explicitly when Documents is redirected or the game uses another location.

@@ -47,6 +47,8 @@ interface BatchAcknowledgement {
 }
 
 const PREFLIGHT_CHUNK_SIZE = 200;
+export const SNAPSHOTTER_DOWNLOAD_PATH =
+  "/downloads/hoi4-save-snapshotter.ps1";
 const STATUS_COPY = {
   identifying: { symbol: "…", labelKey: "batch.statuses.identifying" },
   already_analyzed: { symbol: "✓", labelKey: "batch.statuses.alreadyAnalyzed" },
@@ -518,6 +520,56 @@ export const BatchAnalysisPanel = forwardRef<
           }}
         />
       </div>
+
+      <aside
+        className="snapshotter-onboarding"
+        aria-labelledby="snapshotter-onboarding-title"
+      >
+        <div className="snapshotter-onboarding-intro">
+          <div>
+            <span className="batch-analysis-eyebrow">
+              {t("batch.snapshotter.eyebrow")}
+            </span>
+            <h3 id="snapshotter-onboarding-title">
+              {t("batch.snapshotter.title")}
+            </h3>
+            <p>{t("batch.snapshotter.explanation")}</p>
+          </div>
+          <a
+            className="button button-secondary"
+            href={SNAPSHOTTER_DOWNLOAD_PATH}
+            download="hoi4-save-snapshotter.ps1"
+          >
+            {t("batch.snapshotter.download")}
+          </a>
+        </div>
+        <details className="snapshotter-quick-start">
+          <summary>{t("batch.snapshotter.howToUse")}</summary>
+          <div className="snapshotter-quick-start-body">
+            <ol>
+              <li>{t("batch.snapshotter.steps.download")}</li>
+              <li>{t("batch.snapshotter.steps.openPowerShell")}</li>
+              <li>{t("batch.snapshotter.steps.findSaveFolder")}</li>
+              <li>{t("batch.snapshotter.steps.chooseOutput")}</li>
+              <li>{t("batch.snapshotter.steps.start")}</li>
+              <li>{t("batch.snapshotter.steps.keepRunning")}</li>
+              <li>{t("batch.snapshotter.steps.return")}</li>
+            </ol>
+            <pre aria-label={t("batch.snapshotter.commandAria")}>
+              <code>{`.\\hoi4-save-snapshotter.ps1 \`
+  -SourceDir "C:\\Path\\To\\Hearts of Iron IV\\save games" \`
+  -OutputDir "C:\\HoI4Snapshots" \`
+  -Patterns "autosave_temp.hoi4"`}</code>
+            </pre>
+            <p>{t("batch.snapshotter.pathNote")}</p>
+            <p>{t("batch.snapshotter.powerShellNote")}</p>
+            <code className="snapshotter-unblock-command">
+              Unblock-File .\hoi4-save-snapshotter.ps1
+            </code>
+            <p>{t("batch.snapshotter.workflow")}</p>
+          </div>
+        </details>
+      </aside>
 
       {folderSelectionMade && (
         <div className="snapshot-folder-review" aria-live="polite">

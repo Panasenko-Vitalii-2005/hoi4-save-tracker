@@ -5018,6 +5018,99 @@ button {
   text-align: center;
 }
 
+.snapshotter-onboarding {
+  display: grid;
+  gap: 11px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--intel-surface-deep));
+  border: 1px solid var(--intel-line);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+}
+
+.snapshotter-onboarding-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.snapshotter-onboarding-intro > div {
+  min-width: 0;
+}
+
+.snapshotter-onboarding h3 {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.snapshotter-onboarding p {
+  max-width: 800px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.snapshotter-onboarding .button {
+  flex: none;
+}
+
+.snapshotter-quick-start {
+  padding-top: 9px;
+  border-top: 1px solid var(--intel-line);
+}
+
+.snapshotter-quick-start summary {
+  width: fit-content;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.snapshotter-quick-start-body {
+  display: grid;
+  gap: 9px;
+  padding-top: 11px;
+}
+
+.snapshotter-quick-start ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 21px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.snapshotter-quick-start pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 11px 12px;
+  background: var(--panel);
+  border: 1px solid var(--intel-line);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.snapshotter-unblock-command {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 5px 8px;
+  background: var(--panel);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 11px;
+}
+
 .snapshot-folder-review {
   display: grid;
   gap: 12px;
@@ -6436,6 +6529,7 @@ button {
   .batch-analysis-head,
   .batch-analysis-complete,
   .batch-analysis-toolbar,
+  .snapshotter-onboarding-intro,
   .snapshot-folder-controls,
   .product-empty-state,
   .analysis-comparison-empty {
@@ -6494,6 +6588,10 @@ button {
 
   .batch-analysis-source-actions {
     display: grid;
+    width: 100%;
+  }
+
+  .snapshotter-onboarding .button {
     width: 100%;
   }
 
