@@ -77,26 +77,30 @@ function Wait-FileStable {
         [int]$MaximumChecks
     )
     $previous = Get-FileSignature -Path $Path
-    if ($null -eq $previous) { return $false }
+    if ($null -eq $previous) {
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return 'Disappeared' }
+        return 'TimedOut'
+    }
     $unchangedChecks = 0
     for ($check = 0; $check -lt $MaximumChecks; $check++) {
         if ($IntervalSeconds -gt 0) { Start-Sleep -Seconds $IntervalSeconds }
         $current = Get-FileSignature -Path $Path
         if ($null -eq $current) {
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return 'Disappeared' }
             Write-SnapshotterLog WARN 'Save temporarily unavailable, retrying...'
             $unchangedChecks = 0
             continue
         }
         if ($current -eq $previous) {
             $unchangedChecks++
-            if ($unchangedChecks -ge 2) { return $true }
+            if ($unchangedChecks -ge 2) { return 'Stable' }
         }
         else {
             $unchangedChecks = 0
             $previous = $current
         }
     }
-    return $false
+    return 'TimedOut'
 }
 
 function Get-Sha256 {
@@ -184,7 +188,12 @@ function Invoke-SnapshotCandidate {
     param([IO.FileInfo]$File, [string]$DestinationDirectory, $KnownHashes, [int]$StableSeconds, [int]$MaximumChecks)
     Write-SnapshotterLog INFO ('Change detected: {0}' -f $File.Name)
     Write-SnapshotterLog INFO 'Waiting for stable file...'
-    if (-not (Wait-FileStable -Path $File.FullName -IntervalSeconds $StableSeconds -MaximumChecks $MaximumChecks)) {
+    $stability = Wait-FileStable -Path $File.FullName -IntervalSeconds $StableSeconds -MaximumChecks $MaximumChecks
+    if ($stability -eq 'Disappeared') {
+        Write-SnapshotterLog INFO 'Save disappeared during write; waiting for completed autosave...'
+        return $false
+    }
+    if ($stability -ne 'Stable') {
         Write-SnapshotterLog WARN ('File did not become stable in time: {0}' -f $File.Name)
         return $false
     }

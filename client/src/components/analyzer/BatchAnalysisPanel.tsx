@@ -558,8 +558,7 @@ export const BatchAnalysisPanel = forwardRef<
             <pre aria-label={t("batch.snapshotter.commandAria")}>
               <code>{`.\\hoi4-save-snapshotter.ps1 \`
   -SourceDir "C:\\Path\\To\\Hearts of Iron IV\\save games" \`
-  -OutputDir "C:\\HoI4Snapshots" \`
-  -Patterns "autosave_temp.hoi4"`}</code>
+  -OutputDir "C:\\HoI4Snapshots"`}</code>
             </pre>
             <p>{t("batch.snapshotter.pathNote")}</p>
             <p>{t("batch.snapshotter.powerShellNote")}</p>

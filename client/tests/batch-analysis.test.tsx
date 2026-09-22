@@ -115,6 +115,7 @@ describe("BatchAnalysisPanel", () => {
     expect(onboarding.textContent).toContain(
       "Unblock-File .\\hoi4-save-snapshotter.ps1",
     );
+    expect(onboarding.textContent).not.toContain("-Patterns");
     expect(onboarding.textContent).not.toMatch(/panas|custom-projects/i);
   });
 

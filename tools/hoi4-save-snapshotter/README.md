@@ -19,7 +19,7 @@ cd C:\Path\To\Downloaded\Script
 
 The defaults use the current user's Documents folder for both the standard HoI4 save location and a separate `HoI4 Save Tracker Snapshots` directory. The source path is validated; pass `-SourceDir` explicitly when Documents is redirected or the game uses another location.
 
-By default only `autosave.hoi4` and `autosave_*.hoi4` are watched. Manual saves are ignored. Override this with, for example, `-Patterns 'autosave.hoi4','my_rotating_save_*.hoi4'`.
+By default `autosave.hoi4` and `autosave_*.hoi4` are watched. This covers installations where `autosave_temp.hoi4` is persistent, installations where it is transient and `autosave.hoi4` is final, and existing rotating autosave names. Manual saves are ignored. Override the defaults only when your installation uses another autosave name, for example `-Patterns 'autosave.hoi4','my_rotating_save_*.hoi4'`.
 
 Useful options:
 
@@ -33,6 +33,8 @@ Press Ctrl+C to stop watch mode. Normal Ctrl+C shutdown does not write shared st
 ## Behavior and safety
 
 The utility polls for filename/size/last-write changes, requires two consecutive unchanged checks, calculates SHA-256, and skips content already captured. New content is copied to a temporary file in the output directory, checksum-verified, then renamed to a chronological name such as `autosave_2026-09-20_21-15-03.hoi4`. Collisions receive `_2`, `_3`, and so on. A small `.sha256` sidecar beside each snapshot makes deduplication across restarts inexpensive. A snapshot with a missing or syntactically invalid sidecar is hashed once during startup; a sidecar containing a valid 64-character hexadecimal value is trusted as stored and is not automatically checked against the snapshot on every startup.
+
+Some HoI4 installations briefly create `autosave_temp.hoi4` and then replace it with `autosave.hoi4`. If a candidate disappears during stability checking, the Snapshotter treats that as a normal transient write, stops waiting immediately, and returns to polling for the completed autosave. A stable `autosave_temp.hoi4` is still captured normally.
 
 Source saves are opened only for reading. They are never modified, moved, renamed, truncated, or deleted. The output directory must be separate from and outside the source directory. Copy errors, locks, sharing violations, and temporary read failures are logged without changing the source or terminating watch mode. Existing snapshots are never deleted and there is no retention policy.
 

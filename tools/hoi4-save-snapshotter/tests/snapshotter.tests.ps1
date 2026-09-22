@@ -21,9 +21,11 @@ Invoke-Test 'filters default autosave patterns' {
     try {
         Set-Content -LiteralPath (Join-Path $root 'autosave.hoi4') -Value 'a'
         Set-Content -LiteralPath (Join-Path $root 'autosave_1.hoi4') -Value 'b'
+        Set-Content -LiteralPath (Join-Path $root 'autosave_temp.hoi4') -Value 'temp'
         Set-Content -LiteralPath (Join-Path $root 'manual.hoi4') -Value 'c'
         $names = @(Get-MatchingSaveFiles $root @('autosave.hoi4', 'autosave_*.hoi4') | ForEach-Object Name)
-        Assert-True ($names.Count -eq 2) 'Expected only two autosave files.'
+        Assert-True ($names.Count -eq 3) 'Expected persistent, rotating, and temporary-named autosaves.'
+        Assert-True ($names -contains 'autosave_temp.hoi4') 'autosave_temp.hoi4 was not included.'
         Assert-True ($names -notcontains 'manual.hoi4') 'Manual save was included.'
     } finally { Remove-Item -LiteralPath $root -Recurse -Force }
 }
@@ -82,7 +84,7 @@ Invoke-Test 'hashes, deduplicates, preserves source, and captures changed conten
         $source = Join-Path $sourceDir 'autosave.hoi4'
         [IO.File]::WriteAllText($source, 'content A')
         $hashes = Import-KnownHashes $outputDir
-        Assert-True (Wait-FileStable $source 0 2) 'Stable file was not detected.'
+        Assert-True ((Wait-FileStable $source 0 2) -eq 'Stable') 'Stable file was not detected.'
         [void](New-SaveSnapshot $source $outputDir $hashes)
         $originalHash = Get-Sha256 $source
         [void](New-SaveSnapshot $source $outputDir $hashes)
@@ -137,6 +139,76 @@ Invoke-Test 'one-shot mode creates output and leaves manual saves untouched' {
         Assert-True (Test-Path $output -PathType Container) 'Output directory was not created.'
         Assert-True (@(Get-ChildItem $output -Filter '*.hoi4').Count -eq 1) 'One-shot output count was incorrect.'
         Assert-True (Test-Path (Join-Path $source 'manual.hoi4')) 'Manual save was changed.'
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
+Invoke-Test 'persistent autosave_temp is captured with default-compatible patterns' {
+    $root = New-TestDirectory
+    try {
+        $source = Join-Path $root 'source'; $output = Join-Path $root 'output'
+        [void](New-Item -ItemType Directory -Path $source)
+        [IO.File]::WriteAllText((Join-Path $source 'autosave_temp.hoi4'), 'persistent temp layout')
+        Start-Hoi4SaveSnapshotter $source $output @('autosave.hoi4', 'autosave_*.hoi4') 1 0 2 $true
+        $snapshots = @(Get-ChildItem $output -Filter '*.hoi4')
+        Assert-True ($snapshots.Count -eq 1) 'Persistent autosave_temp.hoi4 was not captured.'
+        Assert-True ($snapshots[0].Name.StartsWith('autosave_temp_')) 'Unexpected autosave_temp snapshot name.'
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
+Invoke-Test 'disappeared candidate exits stability checking immediately' {
+    $root = New-TestDirectory
+    try {
+        $source = Join-Path $root 'autosave_temp.hoi4'
+        [IO.File]::WriteAllText($source, 'transient')
+        $script:TestSignatureCalls = 0
+        $status = & {
+            function Get-FileSignature {
+                param([string]$Path)
+                $script:TestSignatureCalls++
+                if ($script:TestSignatureCalls -eq 1) { return '9:1' }
+                if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force }
+                return $null
+            }
+            Wait-FileStable $source 0 10
+        }
+        Assert-True ($status -eq 'Disappeared') 'Disappeared candidate returned the wrong stability status.'
+        Assert-True ($script:TestSignatureCalls -eq 2) 'Stability checking continued after disappearance.'
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
+Invoke-Test 'disappeared temp is informational and does not block completed autosave' {
+    $root = New-TestDirectory
+    try {
+        $sourceDir = Join-Path $root 'source'; $output = Join-Path $root 'output'
+        [void](New-Item -ItemType Directory -Path $sourceDir)
+        [void](New-Item -ItemType Directory -Path $output)
+        $temporary = Join-Path $sourceDir 'autosave_temp.hoi4'
+        [IO.File]::WriteAllText($temporary, 'transient')
+        $temporaryFile = Get-Item $temporary
+        $hashes = Import-KnownHashes $output
+        $script:TestSignatureCalls = 0
+        $script:TransientProcessed = $true
+        $messages = @(& {
+            function Get-FileSignature {
+                param([string]$Path)
+                $script:TestSignatureCalls++
+                if ($script:TestSignatureCalls -eq 1) { return '9:1' }
+                if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force }
+                return $null
+            }
+            $script:TransientProcessed = Invoke-SnapshotCandidate $temporaryFile $output $hashes 0 10
+        } 6>&1)
+        $messageText = ($messages | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+        Assert-True (-not $script:TransientProcessed) 'Disappeared temporary save was marked processed.'
+        Assert-True ($messageText.Contains('[INFO] Save disappeared during write; waiting for completed autosave...')) 'Disappearance INFO message was not emitted.'
+        Assert-True (-not $messageText.Contains('[WARN]')) 'Disappearing save emitted a warning.'
+        Assert-True ($script:TestSignatureCalls -eq 2) 'Candidate was retried after disappearance.'
+
+        $completed = Join-Path $sourceDir 'autosave.hoi4'
+        [IO.File]::WriteAllText($completed, 'completed autosave')
+        $processed = Invoke-SnapshotCandidate (Get-Item $completed) $output $hashes 0 2
+        Assert-True $processed 'Subsequent autosave.hoi4 was not processed.'
+        Assert-True (@(Get-ChildItem $output -Filter '*.hoi4').Count -eq 1) 'Subsequent autosave snapshot was not created exactly once.'
     } finally { Remove-Item -LiteralPath $root -Recurse -Force }
 }
 
