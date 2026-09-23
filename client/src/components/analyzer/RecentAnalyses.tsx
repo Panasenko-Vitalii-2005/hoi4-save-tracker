@@ -18,6 +18,14 @@ type SortOrder =
   | "game-newest"
   | "game-oldest";
 
+export interface RecentComparisonState {
+  items: RecentAnalysis[];
+  busy: boolean;
+  optionsLoading: boolean;
+  optionsUnavailable: boolean;
+  retryOptions: () => void;
+}
+
 function gameDateKey(date: string): number | null {
   if (typeof date !== "string" || !/^\d+\.\d{1,2}\.\d{1,2}$/.test(date))
     return null;
@@ -184,6 +192,7 @@ export function RecentAnalyses({
   analyzing = false,
   onAnalyzeSave,
   onImportCampaign,
+  onComparisonStateChange,
 }: {
   refreshVersion: number;
   onOpen: (item: RecentAnalysis) => void;
@@ -192,6 +201,7 @@ export function RecentAnalyses({
   analyzing?: boolean;
   onAnalyzeSave?: () => void;
   onImportCampaign?: () => void;
+  onComparisonStateChange?: (state: RecentComparisonState) => void;
 }) {
   const { t, i18n } = useAppTranslation();
   const locale = appLocale(i18n.resolvedLanguage);
@@ -214,6 +224,27 @@ export function RecentAnalyses({
   >(new Map());
   const mutationInFlight = useRef(false);
   const mounted = useRef(false);
+
+  const comparisonState = useMemo<RecentComparisonState>(
+    () => ({
+      items,
+      busy:
+        loading ||
+        failed ||
+        mutation !== null ||
+        storageBusy ||
+        openingHash !== null ||
+        analyzing,
+      optionsLoading: loading,
+      optionsUnavailable: failed,
+      retryOptions: () => setRetry((value) => value + 1),
+    }),
+    [items, loading, failed, mutation, storageBusy, openingHash, analyzing],
+  );
+
+  useEffect(() => {
+    onComparisonStateChange?.(comparisonState);
+  }, [comparisonState, onComparisonStateChange]);
 
   useEffect(() => {
     mounted.current = true;
@@ -711,22 +742,17 @@ export function RecentAnalyses({
           </div>
         )}
       </section>
-      <AnalysisComparison
-        items={items}
-        busy={
-          loading ||
-          failed ||
-          mutation !== null ||
-          storageBusy ||
-          openingHash !== null ||
-          analyzing
-        }
-        onUnavailable={() => setRetry((value) => value + 1)}
-        optionsLoading={loading}
-        optionsUnavailable={failed}
-        onRetryOptions={() => setRetry((value) => value + 1)}
-        onAnalyzeSave={onAnalyzeSave}
-      />
+      {!onComparisonStateChange && (
+        <AnalysisComparison
+          items={comparisonState.items}
+          busy={comparisonState.busy}
+          optionsLoading={comparisonState.optionsLoading}
+          optionsUnavailable={comparisonState.optionsUnavailable}
+          onUnavailable={comparisonState.retryOptions}
+          onRetryOptions={comparisonState.retryOptions}
+          onAnalyzeSave={onAnalyzeSave}
+        />
+      )}
       {shareItem && (
         <ShareAnalysisDialog
           item={shareItem}

@@ -23,7 +23,8 @@ import { ProductionTab } from "./ProductionTab";
 import { StockpileTab } from "./StockpileTab";
 import { LandForcesTab } from "./LandForcesTab";
 import { CountryDisplay } from "./CountryDisplay";
-import { RecentAnalyses } from "./RecentAnalyses";
+import { RecentAnalyses, type RecentComparisonState } from "./RecentAnalyses";
+import { AnalysisComparison } from "./AnalysisComparison";
 import {
   BatchAnalysisPanel,
   type BatchAnalysisPanelHandle,
@@ -112,15 +113,17 @@ function AnalyzerViewContext({
   view,
   gameDate,
   actions,
+  sectionRef,
 }: {
   view: AnalysisView;
   gameDate: string;
   actions?: React.ReactNode;
+  sectionRef?: React.Ref<HTMLElement>;
 }) {
   const { t } = useAppTranslation();
   const key = ANALYZER_VIEW_KEY[view];
   return (
-    <section className="analyzer-view-context">
+    <section className="analyzer-view-context" ref={sectionRef}>
       <div>
         <span>{t(`analysis.views.${key}.eyebrow`)}</span>
         <h2>{t(`analysis.views.${key}.title`)}</h2>
@@ -393,6 +396,15 @@ export function AnalyzerTab({
   const [openingHash, setOpeningHash] = useState<string | null>(null);
   const [openError, setOpenError] = useState("");
   const [historyVersion, setHistoryVersion] = useState(0);
+  const [comparisonState, setComparisonState] =
+    useState<RecentComparisonState | null>(null);
+  const onComparisonStateChange = useCallback(
+    (next: RecentComparisonState) => setComparisonState(next),
+    [],
+  );
+  const overviewStartRef = useRef<HTMLElement>(null);
+  const [openScrollRequest, setOpenScrollRequest] = useState(0);
+  const lastScrolledOpenRequest = useRef(0);
   const [batchRunning, setBatchRunning] = useState(false);
   const batchPanelRef = useRef<BatchAnalysisPanelHandle>(null);
   const [result, setResult] = useState<AnalyzeResult | null>(
@@ -457,6 +469,20 @@ export function AnalyzerTab({
     section?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     section?.querySelector<HTMLButtonElement>("button")?.focus();
   }, [focusRequest, readOnly]);
+
+  useEffect(() => {
+    if (
+      !openScrollRequest ||
+      openScrollRequest === lastScrolledOpenRequest.current ||
+      !result ||
+      analysisView !== "overview"
+    ) return;
+    lastScrolledOpenRequest.current = openScrollRequest;
+    overviewStartRef.current?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [openScrollRequest, result, analysisView]);
 
   useEffect(
     () => () => {
@@ -541,6 +567,7 @@ export function AnalyzerTab({
         analysisHash: item.hash,
         playerCountryTag: item.playerCountryTag ?? null,
       });
+      setOpenScrollRequest((value) => value + 1);
       setStatus({
         type: "ok",
         msg: `✓ Opened analysis: ${item.fileName} — ${data.game_date} · Original parse: ${data.parse_seconds}s`,
@@ -994,6 +1021,7 @@ export function AnalyzerTab({
                 ?.click()
             }
             onImportCampaign={() => batchPanelRef.current?.openPicker()}
+            onComparisonStateChange={onComparisonStateChange}
           />
         </>
       )}
@@ -1058,6 +1086,7 @@ export function AnalyzerTab({
           <AnalyzerViewContext
             view={analysisView}
             gameDate={result.game_date}
+            sectionRef={overviewStartRef}
             actions={
               <>
                 <button
@@ -1133,7 +1162,7 @@ export function AnalyzerTab({
 
           {/* Manpower + Navy/Air charts */}
           <div className="analyzer-charts-row">
-            <section className="panel" style={{ flex: 2 }}>
+            <section className="panel analyzer-chart-panel" style={{ flex: 2 }}>
               <div className="panel-head">
                 <h2>{t("analysis.overview.manpower")}</h2>
                 <div className="micro-copy">{t("analysis.overview.topTen")} · {mpRows.length}</div>
@@ -1179,7 +1208,7 @@ export function AnalyzerTab({
                 />
               </Suspense>
             </section>
-            <section className="panel" style={{ flex: 1 }}>
+            <section className="panel analyzer-chart-panel" style={{ flex: 1 }}>
               <div className="panel-head">
                 <h2>{t("analysis.overview.navyAir")}</h2>
               </div>
@@ -1238,7 +1267,7 @@ export function AnalyzerTab({
           </div>
 
           {/* Industry chart */}
-          <section className="panel" style={{ marginTop: 18 }}>
+          <section className="panel analyzer-chart-panel" style={{ marginTop: 18 }}>
             <div className="panel-head">
               <h2>{t("analysis.overview.warIndustry")}</h2>
               <div className="micro-copy">
@@ -1310,7 +1339,7 @@ export function AnalyzerTab({
           </section>
 
           {/* Thematic top-10 overview */}
-          <section className="panel" style={{ marginTop: 18 }}>
+          <section className="panel analyzer-chart-panel" style={{ marginTop: 18 }}>
             <div className="panel-head">
               <h2>{t("analysis.overview.thematicTop")}</h2>
               <div className="micro-copy">
@@ -1321,7 +1350,7 @@ export function AnalyzerTab({
               className="analyzer-charts-row"
               style={{ gap: 14, flexWrap: "wrap" }}
             >
-              <section className="panel" style={{ flex: 1, minWidth: 280 }}>
+              <section className="panel analyzer-chart-panel" style={{ flex: 1, minWidth: 280 }}>
                 <div className="panel-head">
                   <h3>{t("analysis.overview.industry")}</h3>
                   <div className="micro-copy">{t("analysis.overview.topFactories")}</div>
@@ -1371,7 +1400,7 @@ export function AnalyzerTab({
                 </Suspense>
               </section>
 
-              <section className="panel" style={{ flex: 1, minWidth: 280 }}>
+              <section className="panel analyzer-chart-panel" style={{ flex: 1, minWidth: 280 }}>
                 <div className="panel-head">
                   <h3>{t("analysis.overview.navy")}</h3>
                   <div className="micro-copy">{t("analysis.overview.topShips")}</div>
@@ -1412,7 +1441,7 @@ export function AnalyzerTab({
                 </Suspense>
               </section>
 
-              <section className="panel" style={{ flex: 1, minWidth: 280 }}>
+              <section className="panel analyzer-chart-panel" style={{ flex: 1, minWidth: 280 }}>
                 <div className="panel-head">
                   <h3>{t("analysis.overview.air")}</h3>
                   <div className="micro-copy">{t("analysis.overview.topAircraft")}</div>
@@ -1453,7 +1482,7 @@ export function AnalyzerTab({
                 </Suspense>
               </section>
 
-              <section className="panel" style={{ flex: 1, minWidth: 280 }}>
+              <section className="panel analyzer-chart-panel" style={{ flex: 1, minWidth: 280 }}>
                 <div className="panel-head">
                   <h3>{t("analysis.overview.mobilization")}</h3>
                   <div className="micro-copy">{t("analysis.overview.manpowerPools")}</div>
@@ -1498,7 +1527,7 @@ export function AnalyzerTab({
                 </Suspense>
               </section>
 
-              <section className="panel" style={{ flex: 1, minWidth: 280 }}>
+              <section className="panel analyzer-chart-panel" style={{ flex: 1, minWidth: 280 }}>
                 <div className="panel-head">
                   <h3>{t("analysis.overview.equipment")}</h3>
                   <div className="micro-copy">{t("analysis.overview.equipmentCountries")}</div>
@@ -1543,7 +1572,7 @@ export function AnalyzerTab({
           {/* Full table */}
           {/* Equipment section */}
           {showEq && eqCountries.length > 0 && (
-            <section className="panel" style={{ marginTop: 18 }}>
+            <section className="panel analyzer-chart-panel" style={{ marginTop: 18 }}>
               <div className="panel-head">
                 <h2>{t("analysis.overview.equipmentByCountry")}</h2>
                 <label
@@ -1667,6 +1696,30 @@ export function AnalyzerTab({
             </section>
           )}
 
+            </>
+          )}
+        </>
+      )}
+
+      {!readOnly && comparisonState && (
+        <AnalysisComparison
+          items={comparisonState.items}
+          busy={comparisonState.busy}
+          optionsLoading={comparisonState.optionsLoading}
+          optionsUnavailable={comparisonState.optionsUnavailable}
+          onUnavailable={comparisonState.retryOptions}
+          onRetryOptions={comparisonState.retryOptions}
+          onAnalyzeSave={() =>
+            document
+              .querySelector<HTMLButtonElement>(
+                "#analyze-one-save .button-primary",
+              )
+              ?.click()
+          }
+        />
+      )}
+
+      {result && analysisView === "overview" && (
           <section className="panel" style={{ marginTop: 18 }}>
             <div className="panel-head">
               <h2>{t("analysis.overview.allCountries")}</h2>
@@ -1748,9 +1801,6 @@ export function AnalyzerTab({
               </table>
             </div>
           </section>
-            </>
-          )}
-        </>
       )}
     </div>
   );

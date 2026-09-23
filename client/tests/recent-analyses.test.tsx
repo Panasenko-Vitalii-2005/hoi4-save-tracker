@@ -497,6 +497,70 @@ describe("Recent Analyses", () => {
     expect(resultDate()).toBe("1945.1.1");
   });
 
+  test("Open result scrolls to Strategic Overview after the result is rendered", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    try {
+      await opened();
+      const overview = container.querySelector<HTMLElement>(
+        ".analyzer-view-context",
+      );
+      expect(overview?.querySelector("h2")?.textContent).toBe(
+        "Strategic overview",
+      );
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "start",
+      });
+      expect(scrollIntoView.mock.instances.at(-1)).toBe(overview);
+      const scrollCount = scrollIntoView.mock.calls.length;
+      await act(async () =>
+        [...container.querySelectorAll("button")]
+          .find((button) => button.textContent === "Stockpile")!
+          .click(),
+      );
+      await act(async () =>
+        [...container.querySelectorAll("button")]
+          .find((button) => button.textContent === "Overview")!
+          .click(),
+      );
+      expect(scrollIntoView).toHaveBeenCalledTimes(scrollCount);
+    } finally {
+      delete (HTMLElement.prototype as { scrollIntoView?: unknown })
+        .scrollIntoView;
+    }
+  });
+
+  test("Compare follows the full overview and precedes All countries without hiding the no-result comparison", async () => {
+    await withAvailableResult();
+    const compareBeforeOpen = container.querySelector(
+      ".analysis-comparison-controls",
+    );
+    expect(compareBeforeOpen).not.toBeNull();
+    await act(async () => openButton().click());
+    await act(async () => openRequests[0].resolve(Response.json(snapshot)));
+
+    const compare = container.querySelector(".analysis-comparison-controls")!;
+    const charts = container.querySelectorAll(".analyzer-chart-panel");
+    const allCountries = [...container.querySelectorAll("h2")]
+      .find((heading) => heading.textContent === "All Countries")
+      ?.closest("section");
+    expect(compare).toBe(compareBeforeOpen); // Reordering does not reset Compare state.
+    expect(charts.length).toBeGreaterThan(0);
+    expect(
+      charts[charts.length - 1].compareDocumentPosition(compare) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(allCountries).not.toBeNull();
+    expect(
+      compare.compareDocumentPosition(allCountries!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   test("reopened analysis defaults modern country views to player country without overriding user selection", async () => {
     await act(async () => root.render(<AnalyzerTab />));
     await respond(0, [

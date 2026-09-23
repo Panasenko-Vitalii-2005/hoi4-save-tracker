@@ -191,6 +191,16 @@ describe("analysis request lifecycle", () => {
     expect(container.textContent).not.toContain("Soldiers by Country");
   });
 
+  test("language and theme controls share a header cluster beside the account area", async () => {
+    await render(true);
+    const controls = container.querySelector(".header-controls")!;
+    expect(controls.querySelector(".language-switcher select")).not.toBeNull();
+    expect(controls.querySelector(".theme-toggle")).not.toBeNull();
+    expect(container.querySelector(".auth-account button")?.textContent).toBe(
+      "Sign out",
+    );
+  });
+
   test("localizes Strategic Overview charts, thematic leaders, and Equipment by Country in Russian", async () => {
     await render();
     await start();

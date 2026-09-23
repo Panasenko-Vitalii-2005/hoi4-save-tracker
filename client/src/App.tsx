@@ -100,15 +100,17 @@ export default function App() {
 
   return (
     <>
-      <button
-        className="theme-toggle"
-        onClick={toggleTheme}
-        title={theme === "light" ? t("common.switchDark") : t("common.switchLight")}
-        aria-label={t("common.toggleTheme")}
-      >
-        {theme === "light" ? "🌙" : "☀️"}
-      </button>
-      <LanguageSwitcher />
+      <div className="header-controls">
+        <LanguageSwitcher />
+        <button
+          className="theme-toggle"
+          onClick={toggleTheme}
+          title={theme === "light" ? t("common.switchDark") : t("common.switchLight")}
+          aria-label={t("common.toggleTheme")}
+        >
+          {theme === "light" ? "🌙" : "☀️"}
+        </button>
+      </div>
       {publicId !== null ? (
         <SharedAnalysisPage publicId={publicId} />
       ) : (

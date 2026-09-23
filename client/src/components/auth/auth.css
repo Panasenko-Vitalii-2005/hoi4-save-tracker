@@ -47,7 +47,8 @@
 .auth-account {
   max-width: 1680px;
   margin-inline: auto;
-  padding: 18px 84px 0 28px;
+  padding: 18px 180px 0 28px;
+  min-height: 78px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -69,16 +70,18 @@
   text-align: right;
   color: var(--ink);
 }
-@media (max-width: 480px) {
-  .auth-panel {
-    padding: 22px;
-  }
+@media (max-width: 760px) {
   .auth-account {
-    padding-left: 20px;
+    padding: 72px 20px 0;
     justify-content: flex-start;
   }
   .auth-account p {
     text-align: left;
+  }
+}
+@media (max-width: 480px) {
+  .auth-panel {
+    padding: 22px;
   }
 }
 @media print {

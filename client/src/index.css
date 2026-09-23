@@ -53,12 +53,18 @@
   border-color: var(--line);
 }
 
-/* theme toggle button */
-.theme-toggle {
+/* Keep global controls together so they cannot overlap each other. */
+.header-controls {
   position: fixed;
   top: 18px;
   right: 22px;
   z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.theme-toggle {
   width: 42px;
   height: 42px;
   border-radius: 50%;
@@ -83,10 +89,7 @@
 }
 
 .language-switcher {
-  position: fixed;
-  top: 18px;
-  right: 74px;
-  z-index: 1000;
+  display: flex;
 }
 
 .language-switcher select {
@@ -105,6 +108,13 @@
 .language-switcher select:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent-2) 45%, transparent);
   outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .header-controls {
+    top: 12px;
+    right: 16px;
+  }
 }
 
 .sr-only {
@@ -1432,7 +1442,7 @@ select {
     color: #111 !important;
   }
 
-  .theme-toggle,
+  .header-controls,
   .page-shell > .tab-bar,
   .report-actions {
     display: none !important;
@@ -4785,6 +4795,10 @@ button {
   border-bottom: 1px solid var(--intel-line);
 }
 
+.analyzer-shell .analyzer-chart-panel > .panel-head {
+  margin-bottom: 26px;
+}
+
 .analyzer-shell .panel-head h2 {
   color: var(--ink);
   font-size: 20px;
@@ -5625,6 +5639,7 @@ button {
   gap: 24px;
   padding: 6px 4px 8px 18px;
   border-left: 3px solid var(--accent);
+  scroll-margin-top: 80px;
 }
 
 .analyzer-view-context > div:first-child {
