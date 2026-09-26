@@ -8,6 +8,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Documents and redirected Documents detection", TestDocuments),
     ("Missing source and unsafe output paths", TestPaths),
     ("Output creation and stable autosave", TestStableSave),
+    ("Generated snapshot names are not live autosaves", TestGeneratedSnapshotNames),
+    ("Historical snapshots are skipped before scanning; later saves still work", TestGeneratedSnapshotDiscovery),
     ("Transient temp disappears; final autosave proceeds", TestTransient),
     ("Deduplication, changed content and restart", TestDeduplication),
     ("Matching sidecar and collision suffix", TestSidecarAndCollision),
@@ -103,6 +105,70 @@ static async Task TestStableSave()
         Check(Directory.Exists(output), "Output was not created");
         Check(Directory.GetFiles(output, "*.hoi4").Length == 1, "Expected one autosave, no manual save");
         Check(File.ReadAllText(Path.Combine(source, "autosave.hoi4")) == "stable save", "Source changed");
+    }
+    finally { Directory.Delete(root, true); }
+}
+
+static async Task TestGeneratedSnapshotNames()
+{
+    string[] ignored =
+    [
+        "autosave_2026-09-26_21-20-34.hoi4",
+        "autosave_temp_2026-09-26_21-20-34.hoi4",
+        "autosave_142_temp_2026-09-26_21-20-34.hoi4",
+        "autosave_2026-09-26_21-20-34_2.hoi4",
+        "autosave_2026-09-26_21-20-34_3.hoi4"
+    ];
+    foreach (var name in ignored)
+    {
+        Check(SnapshotterEngine.IsGeneratedSnapshotName(name), $"Generated name was not recognized: {name}");
+        Check(!SnapshotterEngine.IsAutosave(name), $"Generated name remained a candidate: {name}");
+    }
+
+    string[] accepted =
+    [
+        "autosave.hoi4",
+        "autosave_temp.hoi4",
+        "autosave_1.hoi4",
+        "autosave_142_temp.hoi4",
+        "autosave_monthly.hoi4",
+        "autosave_2026-09-26_21-20.hoi4",
+        "autosave_2026-99-26_21-20-34.hoi4",
+        "autosave_2026-09-26_21-20-34_extra.hoi4"
+    ];
+    foreach (var name in accepted)
+    {
+        Check(!SnapshotterEngine.IsGeneratedSnapshotName(name), $"Live-style name was excluded: {name}");
+        Check(SnapshotterEngine.IsAutosave(name), $"Live-style autosave was rejected: {name}");
+    }
+    Check(!SnapshotterEngine.IsAutosave("manual.hoi4"), "Manual save became a candidate");
+    await Task.CompletedTask;
+}
+
+static async Task TestGeneratedSnapshotDiscovery()
+{
+    var root = TempRoot();
+    try
+    {
+        var source = Path.Combine(root, "source");
+        var output = Path.Combine(root, "output");
+        Directory.CreateDirectory(source);
+        var historical = Path.Combine(source, "autosave_142_temp_2026-09-26_21-20-34.hoi4");
+        File.WriteAllText(historical, "historical snapshot");
+        var activity = new List<SnapshotActivity>();
+        var engine = FastEngine(activity: activity.Add);
+        await engine.ScanOncePreparedAsync(source, output);
+        Check(Directory.GetFiles(output, "*.hoi4").Length == 0, "Historical snapshot was copied");
+        Check(activity.Count == 0, "Ignored snapshot produced activity noise");
+
+        var live = Path.Combine(source, "autosave_142_temp.hoi4");
+        File.WriteAllText(live, "live autosave");
+        await engine.ScanOncePreparedAsync(source, output);
+        Check(Directory.GetFiles(output, "*.hoi4").Length == 1, "Later live autosave was not copied exactly once");
+        Check(activity.Count == 1 && activity[0].SnapshotName is not null, "Unexpected activity for live save");
+        await engine.ScanOncePreparedAsync(source, output);
+        Check(Directory.GetFiles(output, "*.hoi4").Length == 1, "Deduplication changed after exclusion");
+        Check(File.ReadAllText(historical) == "historical snapshot", "Historical source was changed");
     }
     finally { Directory.Delete(root, true); }
 }
@@ -409,5 +475,5 @@ static async Task TestSidecarFailure()
     finally { Directory.Delete(root, true); }
 }
 
-static SnapshotterEngine FastEngine(Func<DateTime>? clock = null) =>
-    new(pollInterval: TimeSpan.FromMilliseconds(10), stabilityInterval: TimeSpan.FromMilliseconds(10), clock: clock);
+static SnapshotterEngine FastEngine(Func<DateTime>? clock = null, Action<SnapshotActivity>? activity = null) =>
+    new(activity, pollInterval: TimeSpan.FromMilliseconds(10), stabilityInterval: TimeSpan.FromMilliseconds(10), clock: clock);

@@ -26,7 +26,7 @@ Replace `<YOUR_HOI4_SAVE_FOLDER>` with the actual HoI4 save directory on your co
 
 `C:\HoI4Snapshots` is the example output directory for historical snapshots. Keep it separate from the HoI4 save directory. Leave PowerShell running while playing, then select the output folder in Campaign Import.
 
-By default `autosave.hoi4` and `autosave_*.hoi4` are watched. This covers installations where `autosave_temp.hoi4` is persistent, installations where it is transient and `autosave.hoi4` is final, and existing rotating autosave names. Manual saves are ignored. Override the defaults only when your installation uses another autosave name, for example `-Patterns 'autosave.hoi4','my_rotating_save_*.hoi4'`.
+By default `autosave.hoi4` and `autosave_*.hoi4` are watched. This covers installations where `autosave_temp.hoi4` is persistent, installations where it is transient and `autosave.hoi4` is final, and existing rotating autosave names. Files already named like generated snapshots (`<source-base>_YYYY-MM-DD_HH-mm-ss.hoi4`, optionally with a numeric collision suffix) are ignored if they appear in the source folder. Manual saves are ignored. Override the defaults only when your installation uses another autosave name, for example `-Patterns 'autosave.hoi4','my_rotating_save_*.hoi4'`.
 
 Useful options:
 

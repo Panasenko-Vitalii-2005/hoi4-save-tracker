@@ -57,11 +57,26 @@ function Get-FileSignature {
     }
 }
 
+function Test-IsGeneratedSnapshotName {
+    param([string]$Name)
+    $fileName = [IO.Path]::GetFileName($Name)
+    if ($fileName -notmatch '^.+_(?<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})(?:_\d+)?\.hoi4$') { return $false }
+    $timestamp = [datetime]::MinValue
+    return [datetime]::TryParseExact(
+        $Matches['timestamp'],
+        'yyyy-MM-dd_HH-mm-ss',
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::None,
+        [ref]$timestamp
+    )
+}
+
 function Get-MatchingSaveFiles {
     param([string]$Directory, [string[]]$FilePatterns)
     $seen = @{}
     foreach ($pattern in $FilePatterns) {
         foreach ($file in @(Get-ChildItem -LiteralPath $Directory -Filter $pattern -File -ErrorAction Stop)) {
+            if (Test-IsGeneratedSnapshotName -Name $file.Name) { continue }
             if (-not $seen.ContainsKey($file.FullName)) {
                 $seen[$file.FullName] = $true
                 $file

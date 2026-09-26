@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -12,6 +13,9 @@ public sealed record SnapshotActivity(string Message, string? SnapshotName = nul
 
 public sealed class SnapshotterEngine
 {
+    private static readonly Regex GeneratedSnapshotName = new(
+        @"^.+_(?<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})(?:_\d+)?\.hoi4$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private readonly TimeSpan _pollInterval;
     private readonly TimeSpan _stabilityInterval;
     private readonly int _maximumStabilityChecks;
@@ -86,7 +90,15 @@ public sealed class SnapshotterEngine
         var name = Path.GetFileName(path);
         return name.Equals("autosave.hoi4", StringComparison.OrdinalIgnoreCase) ||
                (name.StartsWith("autosave_", StringComparison.OrdinalIgnoreCase) &&
-                name.EndsWith(".hoi4", StringComparison.OrdinalIgnoreCase));
+                name.EndsWith(".hoi4", StringComparison.OrdinalIgnoreCase) &&
+                !IsGeneratedSnapshotName(name));
+    }
+
+    public static bool IsGeneratedSnapshotName(string path)
+    {
+        var match = GeneratedSnapshotName.Match(Path.GetFileName(path));
+        return match.Success && DateTime.TryParseExact(match.Groups["timestamp"].Value,
+            "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
     }
 
     public async Task<CandidateResult> ProcessCandidateAsync(string sourcePath, string output, CancellationToken cancellationToken = default)

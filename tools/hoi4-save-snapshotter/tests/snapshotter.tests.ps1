@@ -30,6 +30,60 @@ Invoke-Test 'filters default autosave patterns' {
     } finally { Remove-Item -LiteralPath $root -Recurse -Force }
 }
 
+Invoke-Test 'generated snapshot names are excluded without narrowing autosave patterns' {
+    $root = New-TestDirectory
+    try {
+        $ignored = @(
+            'autosave_2026-09-26_21-20-34.hoi4',
+            'autosave_temp_2026-09-26_21-20-34.hoi4',
+            'autosave_142_temp_2026-09-26_21-20-34.hoi4',
+            'autosave_2026-09-26_21-20-34_2.hoi4'
+        )
+        $accepted = @(
+            'autosave.hoi4',
+            'autosave_temp.hoi4',
+            'autosave_1.hoi4',
+            'autosave_142_temp.hoi4',
+            'autosave_monthly.hoi4'
+        )
+        foreach ($name in $ignored) {
+            Assert-True (Test-IsGeneratedSnapshotName $name) "Generated snapshot was not recognized: $name"
+            [IO.File]::WriteAllText((Join-Path $root $name), $name)
+        }
+        foreach ($name in $accepted) {
+            Assert-True (-not (Test-IsGeneratedSnapshotName $name)) "Live autosave was excluded: $name"
+            [IO.File]::WriteAllText((Join-Path $root $name), $name)
+        }
+        Assert-True (-not (Test-IsGeneratedSnapshotName 'autosave_2026-09-26_21-20.hoi4')) 'Partial timestamp was excluded.'
+        Assert-True (-not (Test-IsGeneratedSnapshotName 'autosave_2026-99-26_21-20-34.hoi4')) 'Invalid timestamp was excluded.'
+        Assert-True (-not (Test-IsGeneratedSnapshotName 'autosave_2026-09-26_21-20-34_extra.hoi4')) 'Nonnumeric suffix was excluded.'
+        $selectedNames = @(Get-MatchingSaveFiles $root @('autosave.hoi4', 'autosave_*.hoi4') | ForEach-Object Name)
+        Assert-True ($selectedNames.Count -eq $accepted.Count) 'Candidate discovery included generated snapshots or lost live saves.'
+        foreach ($name in $accepted) { Assert-True ($selectedNames -contains $name) "Live autosave was not discovered: $name" }
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
+Invoke-Test 'historical source snapshot is quiet; later autosave still copies and deduplicates' {
+    $root = New-TestDirectory
+    try {
+        $source = Join-Path $root 'source'; $output = Join-Path $root 'output'
+        [void](New-Item -ItemType Directory -Path $source)
+        $historical = Join-Path $source 'autosave_142_temp_2026-09-26_21-20-34.hoi4'
+        [IO.File]::WriteAllText($historical, 'historical snapshot')
+        $firstMessages = @(& { Start-Hoi4SaveSnapshotter $source $output @('autosave.hoi4', 'autosave_*.hoi4') 1 0 2 $true } 6>&1)
+        Assert-True (@(Get-ChildItem -LiteralPath $output -Filter '*.hoi4').Count -eq 0) 'Historical snapshot was copied.'
+        Assert-True (-not (($firstMessages | Out-String).Contains('Change detected'))) 'Ignored snapshot produced activity noise.'
+
+        $live = Join-Path $source 'autosave_142_temp.hoi4'
+        [IO.File]::WriteAllText($live, 'live autosave')
+        Start-Hoi4SaveSnapshotter $source $output @('autosave.hoi4', 'autosave_*.hoi4') 1 0 2 $true
+        Assert-True (@(Get-ChildItem -LiteralPath $output -Filter '*.hoi4').Count -eq 1) 'Later live autosave was not copied once.'
+        Start-Hoi4SaveSnapshotter $source $output @('autosave.hoi4', 'autosave_*.hoi4') 1 0 2 $true
+        Assert-True (@(Get-ChildItem -LiteralPath $output -Filter '*.hoi4').Count -eq 1) 'Deduplication changed after exclusion.'
+        Assert-True ([IO.File]::ReadAllText($historical) -eq 'historical snapshot') 'Historical source was changed.'
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
 Invoke-Test 'normalizes ordinary source and output paths' {
     $root = New-TestDirectory
     try {
