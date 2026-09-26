@@ -44,6 +44,20 @@ public sealed class SnapshotterEngine
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                CaptureInitialSignatures(paths.Source, cancellationToken);
+                break;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                _activity?.Invoke(new SnapshotActivity("Cannot access the HoI4 save folder right now. Watching will retry."));
+                await Task.Delay(_pollInterval, cancellationToken);
+            }
+        }
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             try { await ScanOnceAsync(paths.Source, paths.Output, cancellationToken); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
@@ -70,6 +84,19 @@ public sealed class SnapshotterEngine
         LoadKnownHashes(paths.Output);
         _observed.Clear();
         return paths;
+    }
+
+    private void CaptureInitialSignatures(string source, CancellationToken cancellationToken)
+    {
+        var initial = new Dictionary<string, FileSignature>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in Directory.EnumerateFiles(source, "*.hoi4", SearchOption.TopDirectoryOnly).Where(IsAutosave))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var signature = ReadSignature(file);
+            if (signature is not null) initial[file] = signature.Value;
+        }
+        _observed.Clear();
+        foreach (var (file, signature) in initial) _observed[file] = signature;
     }
 
     public async Task ScanOnceAsync(string source, string output, CancellationToken cancellationToken = default)

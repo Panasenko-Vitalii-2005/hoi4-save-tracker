@@ -85,6 +85,16 @@ function Get-MatchingSaveFiles {
     }
 }
 
+function Get-InitialObservedSignatures {
+    param([string]$Directory, [string[]]$FilePatterns)
+    $initial = @{}
+    foreach ($file in @(Get-MatchingSaveFiles -Directory $Directory -FilePatterns $FilePatterns)) {
+        $signature = Get-FileSignature -Path $file.FullName
+        if ($null -ne $signature) { $initial[$file.FullName] = $signature }
+    }
+    return $initial
+}
+
 function Wait-FileStable {
     param(
         [string]$Path,
@@ -236,6 +246,19 @@ function Start-Hoi4SaveSnapshotter {
     $observed = @{}
     Write-SnapshotterLog INFO ('Watching: {0}' -f $sourceFull)
     Write-SnapshotterLog INFO ('Output: {0}' -f $outputFull)
+
+    if (-not $RunOnce) {
+        while ($true) {
+            try {
+                $observed = Get-InitialObservedSignatures -Directory $sourceFull -FilePatterns $FilePatterns
+                break
+            }
+            catch {
+                Write-SnapshotterLog WARN ('Could not scan save directory; retrying: {0}' -f $_.Exception.Message)
+                Start-Sleep -Seconds $PollSeconds
+            }
+        }
+    }
 
     do {
         $files = @()

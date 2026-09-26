@@ -84,6 +84,46 @@ Invoke-Test 'historical source snapshot is quiet; later autosave still copies an
     } finally { Remove-Item -LiteralPath $root -Recurse -Force }
 }
 
+Invoke-Test 'watch mode baselines existing autosaves and captures changed and new files' {
+    $root = New-TestDirectory
+    try {
+        $source = Join-Path $root 'source'; $output = Join-Path $root 'output'
+        [void](New-Item -ItemType Directory -Path $source)
+        $old = Join-Path $source 'autosave_142_temp.hoi4'
+        $unchanged = Join-Path $source 'autosave_temp.hoi4'
+        [IO.File]::WriteAllText($old, 'older campaign')
+        [IO.File]::WriteAllText($unchanged, 'unchanged campaign')
+        [IO.File]::WriteAllText((Join-Path $source 'autosave_142_temp_2026-09-26_21-20-34.hoi4'), 'historical')
+        $script:WatchPolls = 0
+        try {
+            & {
+                function Start-Sleep {
+                    param([int]$Seconds)
+                    $script:WatchPolls++
+                    $count = @(Get-ChildItem -LiteralPath $output -Filter '*.hoi4').Count
+                    if ($script:WatchPolls -eq 1) {
+                        Assert-True ($count -eq 0) 'Pre-existing autosaves were copied on Start.'
+                        [IO.File]::WriteAllText($old, 'new campaign content')
+                        [IO.File]::SetLastWriteTimeUtc($old, [datetime]::UtcNow.AddSeconds(2))
+                        [IO.File]::WriteAllText((Join-Path $source 'autosave_1.hoi4'), 'new rotating autosave')
+                    }
+                    else {
+                        Assert-True ($count -eq 2) 'Changed and new autosaves were not copied exactly once.'
+                        throw 'WATCH_TEST_DONE'
+                    }
+                }
+                Start-Hoi4SaveSnapshotter $source $output @('autosave.hoi4', 'autosave_*.hoi4') 0 0 2 $false
+            }
+        }
+        catch {
+            if ($_.Exception.Message -ne 'WATCH_TEST_DONE') { throw }
+        }
+        Assert-True ($script:WatchPolls -eq 2) 'Watch did not complete expected polls.'
+        Assert-True ([IO.File]::ReadAllText($unchanged) -eq 'unchanged campaign') 'Unchanged baseline source was modified.'
+        Assert-True (@(Get-ChildItem -LiteralPath $output -Filter '*.hoi4').Count -eq 2) 'Generated or unchanged files were copied.'
+    } finally { Remove-Item -LiteralPath $root -Recurse -Force }
+}
+
 Invoke-Test 'normalizes ordinary source and output paths' {
     $root = New-TestDirectory
     try {

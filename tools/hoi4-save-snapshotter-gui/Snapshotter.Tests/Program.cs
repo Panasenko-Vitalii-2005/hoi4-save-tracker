@@ -10,6 +10,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Output creation and stable autosave", TestStableSave),
     ("Generated snapshot names are not live autosaves", TestGeneratedSnapshotNames),
     ("Historical snapshots are skipped before scanning; later saves still work", TestGeneratedSnapshotDiscovery),
+    ("Watch mode baselines existing autosaves and captures only later changes", TestWatchBaseline),
+    ("Watch mode skips disappearing temp and captures later final save", TestWatchTransient),
     ("Transient temp disappears; final autosave proceeds", TestTransient),
     ("Deduplication, changed content and restart", TestDeduplication),
     ("Matching sidecar and collision suffix", TestSidecarAndCollision),
@@ -169,6 +171,81 @@ static async Task TestGeneratedSnapshotDiscovery()
         await engine.ScanOncePreparedAsync(source, output);
         Check(Directory.GetFiles(output, "*.hoi4").Length == 1, "Deduplication changed after exclusion");
         Check(File.ReadAllText(historical) == "historical snapshot", "Historical source was changed");
+    }
+    finally { Directory.Delete(root, true); }
+}
+
+static async Task TestWatchBaseline()
+{
+    var root = TempRoot();
+    try
+    {
+        var source = Path.Combine(root, "source");
+        var output = Path.Combine(root, "output");
+        Directory.CreateDirectory(source);
+        var old = Path.Combine(source, "autosave_142_temp.hoi4");
+        var unchanged = Path.Combine(source, "autosave_temp.hoi4");
+        File.WriteAllText(old, "older campaign");
+        File.WriteAllText(unchanged, "unchanged campaign");
+        File.WriteAllText(Path.Combine(source, "autosave_142_temp_2026-09-26_21-20-34.hoi4"), "historical");
+        using var cancellation = new CancellationTokenSource();
+        var watch = FastEngine().WatchAsync(source, output, cancellation.Token);
+        try
+        {
+            await Task.Delay(100);
+            Check(Directory.GetFiles(output, "*.hoi4").Length == 0, "Pre-existing autosaves were copied on Start");
+
+            File.WriteAllText(old, "new campaign content");
+            File.SetLastWriteTimeUtc(old, DateTime.UtcNow.AddSeconds(2));
+            await WaitFor(() => Directory.GetFiles(output, "*.hoi4").Length == 1);
+            Check(Directory.GetFiles(output, "*.hoi4").Single().Contains("autosave_142_temp_"),
+                "Changed baseline file was not copied");
+
+            File.WriteAllText(Path.Combine(source, "autosave_1.hoi4"), "new rotating autosave");
+            await WaitFor(() => Directory.GetFiles(output, "*.hoi4").Length == 2);
+            await Task.Delay(50);
+            Check(Directory.GetFiles(output, "*.hoi4").Length == 2, "Unchanged or generated files were copied");
+            Check(File.ReadAllText(unchanged) == "unchanged campaign", "Baseline source was modified");
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await ExpectCanceled(watch, cancellation.Token);
+        }
+    }
+    finally { Directory.Delete(root, true); }
+}
+
+static async Task TestWatchTransient()
+{
+    var root = TempRoot();
+    try
+    {
+        var source = Path.Combine(root, "source");
+        var output = Path.Combine(root, "output");
+        Directory.CreateDirectory(source);
+        using var cancellation = new CancellationTokenSource();
+        var engine = new SnapshotterEngine(pollInterval: TimeSpan.FromMilliseconds(10),
+            stabilityInterval: TimeSpan.FromMilliseconds(100));
+        var watch = engine.WatchAsync(source, output, cancellation.Token);
+        try
+        {
+            var transient = Path.Combine(source, "autosave_temp.hoi4");
+            File.WriteAllText(transient, "transient");
+            await Task.Delay(40);
+            File.Delete(transient);
+            File.WriteAllText(Path.Combine(source, "autosave.hoi4"), "completed save");
+            await WaitFor(() => Directory.GetFiles(output, "*.hoi4")
+                .Any(path => Path.GetFileName(path).StartsWith("autosave_", StringComparison.OrdinalIgnoreCase) &&
+                             !Path.GetFileName(path).StartsWith("autosave_temp_", StringComparison.OrdinalIgnoreCase)));
+            Check(Directory.GetFiles(output, "*.hoi4").Length == 1,
+                "Transient autosave was copied or completed autosave was not captured exactly once");
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await ExpectCanceled(watch, cancellation.Token);
+        }
     }
     finally { Directory.Delete(root, true); }
 }
