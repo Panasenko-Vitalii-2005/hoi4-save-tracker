@@ -1,4 +1,11 @@
-using Snapshotter.Gui;
+namespace Snapshotter.Gui;
 
-ApplicationConfiguration.Initialize();
-Application.Run(new SnapshotterForm());
+internal static class Program
+{
+    [STAThread]
+    private static void Main()
+    {
+        ApplicationConfiguration.Initialize();
+        Application.Run(new SnapshotterForm());
+    }
+}

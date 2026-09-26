@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
+using System.Reflection;
 using Snapshotter.Core;
+using Snapshotter.Gui;
 
 var tests = new (string Name, Func<Task> Run)[]
 {
@@ -10,7 +12,12 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Deduplication, changed content and restart", TestDeduplication),
     ("Matching sidecar and collision suffix", TestSidecarAndCollision),
     ("Sidecar failure does not duplicate a published snapshot", TestSidecarFailure),
-    ("Clean cancellation", TestStop),
+    ("Poll-delay cancellation", TestStop),
+    ("Stability-wait cancellation", TestStabilityCancellation),
+    ("GUI STA entry point and folder selection", TestGuiEntryAndFolderSelection),
+    ("GUI repeated Start/Stop and locked configuration", TestGuiLifecycle),
+    ("GUI Stop during stability wait", TestGuiStabilityStop),
+    ("GUI close while watching", TestGuiClose),
 };
 
 var failed = 0;
@@ -191,12 +198,191 @@ static async Task TestStop()
         var watch = FastEngine().WatchAsync(source, output, cancellation.Token);
         await Task.Delay(30);
         cancellation.Cancel();
-        try { await watch.WaitAsync(TimeSpan.FromSeconds(2)); }
-        catch (OperationCanceledException) { }
+        await ExpectCanceled(watch, cancellation.Token);
         Check(watch.IsCompleted, "Watcher did not stop promptly");
         Check(Directory.GetFiles(output, ".snapshot-*.tmp").Length == 0, "Temporary file remained after stop");
     }
     finally { Directory.Delete(root, true); }
+}
+
+static async Task TestStabilityCancellation()
+{
+    var root = TempRoot();
+    try
+    {
+        var source = Path.Combine(root, "source");
+        var output = Path.Combine(root, "output");
+        Directory.CreateDirectory(source);
+        Directory.CreateDirectory(output);
+        var save = Path.Combine(source, "autosave.hoi4");
+        File.WriteAllText(save, "being checked");
+        using var cancellation = new CancellationTokenSource();
+        var processing = new SnapshotterEngine(stabilityInterval: TimeSpan.FromSeconds(2))
+            .ProcessCandidateAsync(save, output, cancellation.Token);
+        await Task.Delay(30);
+        cancellation.Cancel();
+        await ExpectCanceled(processing, cancellation.Token);
+        Check(Directory.GetFiles(output, "*.hoi4").Length == 0, "Cancellation published a snapshot");
+    }
+    finally { Directory.Delete(root, true); }
+}
+
+static async Task ExpectCanceled(Task task, CancellationToken expectedToken)
+{
+    try { await task.WaitAsync(TimeSpan.FromSeconds(2)); }
+    catch (OperationCanceledException error) when (error.CancellationToken == expectedToken) { return; }
+    throw new Exception("Expected cancellation with the watcher token");
+}
+
+static async Task TestGuiEntryAndFolderSelection()
+{
+    var entry = typeof(SnapshotterForm).Assembly.GetType("Snapshotter.Gui.Program")?
+        .GetMethod("Main", BindingFlags.Static | BindingFlags.NonPublic);
+    Check(entry?.IsDefined(typeof(STAThreadAttribute)) == true, "WinForms entry point is not STA");
+
+    var root = TempRoot();
+    try
+    {
+        var existing = Path.Combine(root, "existing");
+        Directory.CreateDirectory(existing);
+        var selected = FolderSelection.Choose(existing, initial =>
+        {
+            Check(initial == existing, "Existing initial path was not passed to Browse");
+            return (DialogResult.OK, existing);
+        });
+        Check(selected == existing, "Valid folder was not selected");
+        selected = FolderSelection.Choose(Path.Combine(root, "missing"), initial =>
+        {
+            Check(initial is null, "Missing initial path was passed to Browse");
+            return (DialogResult.Cancel, existing);
+        });
+        Check(selected is null, "Cancel changed the selected folder");
+        selected = FolderSelection.Choose(existing, _ => (DialogResult.OK, Path.Combine(root, "missing")));
+        Check(selected is null, "Missing selected folder was accepted");
+    }
+    finally { Directory.Delete(root, true); }
+    await Task.CompletedTask;
+}
+
+static async Task TestGuiLifecycle()
+{
+    var root = TempRoot();
+    try
+    {
+        var source = Path.Combine(root, "source");
+        var output = Path.Combine(root, "output");
+        Directory.CreateDirectory(source);
+        await RunGuiCase(async form =>
+        {
+            var sourceInput = FormControl<TextBox>(form, "sourcePath");
+            var outputInput = FormControl<TextBox>(form, "outputPath");
+            var sourceBrowse = FormControl<Button>(form, "sourceBrowse");
+            var outputBrowse = FormControl<Button>(form, "outputBrowse");
+            var toggle = FormControl<Button>(form, "watchToggle");
+            var status = FormControl<Label>(form, "watchStatus");
+            sourceInput.Text = source;
+            outputInput.Text = output;
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                toggle.PerformClick();
+                await WaitFor(() => status.Text == "Watching" && Directory.Exists(output));
+                Check(!sourceInput.Enabled && !outputInput.Enabled && !sourceBrowse.Enabled && !outputBrowse.Enabled,
+                    "Configuration remained editable while watching");
+                toggle.PerformClick();
+                await WaitFor(() => status.Text == "Idle" && toggle.Enabled);
+                Check(sourceInput.Enabled && outputInput.Enabled && sourceBrowse.Enabled && outputBrowse.Enabled,
+                    "Configuration was not restored after Stop");
+            }
+        });
+    }
+    finally { Directory.Delete(root, true); }
+}
+
+static async Task TestGuiStabilityStop()
+{
+    var root = TempRoot();
+    try
+    {
+        var source = Path.Combine(root, "source");
+        var output = Path.Combine(root, "output");
+        Directory.CreateDirectory(source);
+        File.WriteAllText(Path.Combine(source, "autosave.hoi4"), "candidate");
+        await RunGuiCase(async form =>
+        {
+            FormControl<TextBox>(form, "sourcePath").Text = source;
+            FormControl<TextBox>(form, "outputPath").Text = output;
+            var toggle = FormControl<Button>(form, "watchToggle");
+            var status = FormControl<Label>(form, "watchStatus");
+            toggle.PerformClick();
+            await WaitFor(() => Directory.Exists(output));
+            await Task.Delay(50);
+            toggle.PerformClick();
+            await WaitFor(() => status.Text == "Idle" && toggle.Enabled);
+            Check(Directory.GetFiles(output, "*.hoi4").Length == 0, "Stop during stability check published a snapshot");
+        }, TimeSpan.FromSeconds(2));
+    }
+    finally { Directory.Delete(root, true); }
+}
+
+static async Task TestGuiClose()
+{
+    var root = TempRoot();
+    try
+    {
+        var source = Path.Combine(root, "source");
+        var output = Path.Combine(root, "output");
+        Directory.CreateDirectory(source);
+        await RunGuiCase(async form =>
+        {
+            FormControl<TextBox>(form, "sourcePath").Text = source;
+            FormControl<TextBox>(form, "outputPath").Text = output;
+            FormControl<Button>(form, "watchToggle").PerformClick();
+            await WaitFor(() => Directory.Exists(output));
+            form.Close();
+            form.Close(); // A second close request must not race disposal/cancellation.
+        });
+    }
+    finally { Directory.Delete(root, true); }
+}
+
+static T FormControl<T>(Form form, string name) where T : Control =>
+    form.Controls.Find(name, true).OfType<T>().Single();
+
+static async Task WaitFor(Func<bool> condition)
+{
+    for (var attempt = 0; attempt < 100; attempt++)
+    {
+        if (condition()) return;
+        await Task.Delay(20);
+    }
+    throw new Exception("Timed out waiting for the GUI state");
+}
+
+static async Task RunGuiCase(Func<SnapshotterForm, Task> scenario, TimeSpan? stabilityInterval = null)
+{
+    var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var thread = new Thread(() =>
+    {
+        try
+        {
+            using var form = new SnapshotterForm(activity => new SnapshotterEngine(activity,
+                pollInterval: TimeSpan.FromMilliseconds(30),
+                stabilityInterval: stabilityInterval ?? TimeSpan.FromMilliseconds(30)));
+            form.Shown += async (_, _) =>
+            {
+                try { await scenario(form); }
+                catch (Exception error) { completed.TrySetException(error); }
+                finally { if (!form.IsDisposed) form.Close(); }
+            };
+            Application.Run(form);
+            completed.TrySetResult();
+        }
+        catch (Exception error) { completed.TrySetException(error); }
+    });
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+    await completed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+    Check(thread.Join(TimeSpan.FromSeconds(2)), "GUI message loop remained alive after close");
 }
 
 static async Task TestSidecarFailure()

@@ -9,5 +9,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Snapshotter.Core\Snapshotter.Core.csproj" />
+    <InternalsVisibleTo Include="Snapshotter.Tests" />
   </ItemGroup>
 </Project>

@@ -4,23 +4,25 @@ namespace Snapshotter.Gui;
 
 public sealed class SnapshotterForm : Form
 {
-    private readonly TextBox _source = new() { Dock = DockStyle.Fill };
-    private readonly TextBox _output = new() { Dock = DockStyle.Fill };
+    private readonly TextBox _source = new() { Name = "sourcePath", Dock = DockStyle.Fill };
+    private readonly TextBox _output = new() { Name = "outputPath", Dock = DockStyle.Fill };
     private readonly Label _sourceHint = new() { AutoSize = true };
-    private readonly Label _status = new() { AutoSize = true, Text = "Idle" };
+    private readonly Label _status = new() { Name = "watchStatus", AutoSize = true, Text = "Idle" };
     private readonly Label _last = new() { AutoSize = true, Text = "None yet" };
     private readonly Label _count = new() { AutoSize = true, Text = "0" };
     private readonly Label _activity = new() { AutoEllipsis = true, Dock = DockStyle.Fill, Text = "Ready to watch HoI4 autosaves." };
-    private readonly Button _sourceBrowse = new() { Text = "Browse...", AutoSize = true };
-    private readonly Button _outputBrowse = new() { Text = "Browse...", AutoSize = true };
-    private readonly Button _toggle = new() { Text = "Start watching", AutoSize = true };
+    private readonly Button _sourceBrowse = new() { Name = "sourceBrowse", Text = "Browse...", AutoSize = true };
+    private readonly Button _outputBrowse = new() { Name = "outputBrowse", Text = "Browse...", AutoSize = true };
+    private readonly Button _toggle = new() { Name = "watchToggle", Text = "Start watching", AutoSize = true };
+    private readonly Func<Action<SnapshotActivity>, SnapshotterEngine> _engineFactory;
     private CancellationTokenSource? _watchCancellation;
     private Task? _watchTask;
     private bool _closing;
     private int _created;
 
-    public SnapshotterForm()
+    public SnapshotterForm(Func<Action<SnapshotActivity>, SnapshotterEngine>? engineFactory = null)
     {
+        _engineFactory = engineFactory ?? (activity => new SnapshotterEngine(activity));
         Text = "HoI4 Campaign Snapshotter";
         MinimumSize = new Size(620, 560);
         Size = new Size(760, 620);
@@ -67,7 +69,15 @@ public sealed class SnapshotterForm : Form
 
         _sourceBrowse.Click += (_, _) => Browse(_source);
         _outputBrowse.Click += (_, _) => Browse(_output);
-        _toggle.Click += async (_, _) => await ToggleAsync();
+        _toggle.Click += async (_, _) =>
+        {
+            try { await ToggleAsync(); }
+            catch (Exception)
+            {
+                if (!IsDisposed && !_closing)
+                    ShowError("Snapshotter encountered an unexpected problem. Stop and try again.");
+            }
+        };
         FormClosing += OnFormClosing;
     }
 
@@ -80,9 +90,21 @@ public sealed class SnapshotterForm : Form
 
     private void Browse(TextBox target)
     {
-        using var dialog = new FolderBrowserDialog { ShowNewFolderButton = true };
-        if (Directory.Exists(target.Text)) dialog.SelectedPath = target.Text;
-        if (dialog.ShowDialog(this) == DialogResult.OK) target.Text = dialog.SelectedPath;
+        if (_watchCancellation is not null) return;
+        try
+        {
+            var selectedPath = FolderSelection.Choose(target.Text, initialPath =>
+            {
+                using var dialog = new FolderBrowserDialog { ShowNewFolderButton = true };
+                if (initialPath is not null) dialog.SelectedPath = initialPath;
+                return (dialog.ShowDialog(this), dialog.SelectedPath);
+            });
+            if (selectedPath is not null) target.Text = selectedPath;
+        }
+        catch (Exception)
+        {
+            ShowError("The folder chooser could not open. Check the folder and try again.");
+        }
     }
 
     private async Task ToggleAsync()
@@ -91,7 +113,6 @@ public sealed class SnapshotterForm : Form
         {
             _toggle.Enabled = false;
             _watchCancellation.Cancel();
-            if (_watchTask is not null) await _watchTask;
             return;
         }
 
@@ -110,10 +131,17 @@ public sealed class SnapshotterForm : Form
         _activity.Text = "Watching for autosaves. Leave this window open while playing.";
         var cancellation = new CancellationTokenSource();
         _watchCancellation = cancellation;
-        var engine = new SnapshotterEngine(OnActivity);
-        _watchTask = Task.Run(() => engine.WatchAsync(paths.Source, paths.Output, cancellation.Token));
-        try { await _watchTask; }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        try
+        {
+            var engine = _engineFactory(OnActivity);
+            _watchTask = Task.Run(() => engine.WatchAsync(paths.Source, paths.Output, cancellation.Token));
+            await _watchTask;
+        }
+        catch (OperationCanceledException error) when (
+            cancellation.IsCancellationRequested && error.CancellationToken == cancellation.Token)
+        {
+            // User-requested Stop and form close are normal shutdown.
+        }
         catch (SnapshotterException error) { ShowError(error.Message); }
         catch (Exception) { ShowError("Snapshotter could not access a folder. Check its permissions and try again."); }
         finally
@@ -125,7 +153,7 @@ public sealed class SnapshotterForm : Form
             _toggle.Enabled = true;
             _toggle.Text = "Start watching";
             if (_status.Text != "Error") _status.Text = "Idle";
-            if (_closing) BeginInvoke(Close);
+            if (_closing && !IsDisposed) Close();
         }
     }
 
