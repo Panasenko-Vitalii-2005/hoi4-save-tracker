@@ -54,7 +54,10 @@ export function formatDivisionRatio(value: number | null): string {
   return DIVISION_RATIO_FORMATTER.format(value);
 }
 
-export { formatEquipmentDefinition } from "./equipmentNames";
+export {
+  formatEquipmentDefinition,
+  resolveEquipmentVariantDisplayName,
+} from "./equipmentNames";
 
 const PRODUCTION_RATE_FORMATTER = new Intl.NumberFormat("en-US", {
   useGrouping: true,

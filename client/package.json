@@ -6,6 +6,8 @@
   "scripts": {
     "snapshotter:sync": "node scripts/snapshotter-asset.mjs sync",
     "snapshotter:verify-build": "node scripts/snapshotter-asset.mjs verify-build",
+    "equipment:names:generate": "node scripts/generate-equipment-names.mjs",
+    "equipment:names:test": "node --test scripts/generate-equipment-names.spec.mjs",
     "pretest": "npm run snapshotter:sync",
     "test": "vitest run",
     "predev": "npm run snapshotter:sync",

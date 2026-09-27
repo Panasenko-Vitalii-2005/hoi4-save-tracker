@@ -6,6 +6,7 @@ import {
 import {
   formatEquipmentDefinition,
   formatProductionRate,
+  resolveEquipmentVariantDisplayName,
 } from "@/lib/utils";
 
 describe("presentation formatters", () => {
@@ -59,6 +60,44 @@ describe("presentation formatters", () => {
     expect(formatEquipmentDefinition("my_mod_super_weapon")).toBe(
       "My mod super weapon",
     );
+  });
+
+  test("preserves an explicit save-file variant name over localization", () => {
+    expect(resolveEquipmentVariantDisplayName(
+      "anti_air_equipment_2", "USA", "Custom 40 mm Design",
+    )).toBe("Custom 40 mm Design");
+  });
+
+  test.each([
+    ["USA", "40 mm Automatic Gun M1"],
+    ["JAP", "Type 2 20 mm"],
+    ["ENG", "QF 40 mm Bofors"],
+    ["HUN", "Improved Anti-Air"],
+  ])("resolves the verified anti-air display name for %s", (tag, name) => {
+    expect(resolveEquipmentVariantDisplayName(
+      "anti_air_equipment_2", tag, null,
+    )).toBe(name);
+  });
+
+  test.each([
+    ["USA", "anti_tank_equipment_2", "57 mm Gun M1"],
+    ["USA", "anti_tank_equipment_3", "3-inch Gun M5"],
+    ["JAP", "anti_tank_equipment_3", "Type 1 47 mm quick-firing gun"],
+    ["ENG", "artillery_equipment_3", "BL 5.5-inch Medium Gun"],
+    ["USA", "artillery_equipment_3", "155 mm Howitzer M1"],
+    ["USA", "infantry_equipment_1", "M1 Garand"],
+    ["USA", "infantry_equipment_2", "M1 Thompson"],
+    ["JAP", "infantry_equipment_2", "Nambu Type 100/40"],
+  ])("uses generated %s %s display name", (tag, definition, name) => {
+    expect(resolveEquipmentVariantDisplayName(definition, tag, null)).toBe(name);
+  });
+
+  test("keeps an unknown modded definition as a technical fallback", () => {
+    expect(resolveEquipmentVariantDisplayName(
+      "my_mod_super_weapon", "XYZ", "  ",
+    )).toBe("my_mod_super_weapon");
+    expect(resolveEquipmentVariantDisplayName("constructor", "XYZ", null))
+      .toBe("constructor");
   });
 
   test.each([

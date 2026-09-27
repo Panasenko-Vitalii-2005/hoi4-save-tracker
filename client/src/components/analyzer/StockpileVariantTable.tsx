@@ -4,6 +4,7 @@ import type {
   UnresolvedStockpileVariantSummary,
 } from "@/types";
 import { useAppTranslation } from "@/i18n";
+import { resolveEquipmentVariantDisplayName } from "@/lib/utils";
 import { StockpileBalance } from "./StockpileBalance";
 
 function displayTag(tag: string | null): string {
@@ -32,7 +33,11 @@ export const StockpileVariantTable = memo(function StockpileVariantTable({
           <tr key={`${variant.equipmentRef.type}:${variant.equipmentRef.id}`}>
             <td className="design-cell">
               <strong>
-                {variant.variantName?.trim() || t("production.unnamedDesign")}
+                {resolveEquipmentVariantDisplayName(
+                  variant.definition,
+                  variant.creatorTag,
+                  variant.variantName,
+                )}
               </strong>
               {variant.obsolete && (
                 <span className="stockpile-obsolete">{t("common.obsolete")}</span>

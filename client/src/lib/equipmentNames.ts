@@ -1,3 +1,5 @@
+import { COUNTRY_EQUIPMENT_NAMES } from "./equipmentCountryNames.generated";
+
 const EQUIPMENT_DISPLAY_NAMES: Readonly<Record<string, string>> = Object.freeze({
   amphibious_mechanized_equipment_1: "Basic Amphibious Tractor",
   amphibious_mechanized_equipment_2: "Improved Amphibious Tractor",
@@ -114,6 +116,31 @@ const EQUIPMENT_DISPLAY_NAMES: Readonly<Record<string, string>> = Object.freeze(
   transport_plane_equipment_2: "Improved Transport Plane",
   transport_plane_equipment_3: "Modern Transport Plane",
 });
+
+export function resolveEquipmentVariantDisplayName(
+  definition: string,
+  creatorTag: string | null,
+  saveName: string | null,
+): string {
+  const explicitName = saveName?.trim();
+  if (explicitName) return explicitName;
+
+  const normalizedDefinition = definition.trim().toLowerCase();
+  const countryKey = creatorTag?.trim().toUpperCase();
+  if (countryKey) {
+    const localized = COUNTRY_EQUIPMENT_NAMES[
+      `${countryKey}_${normalizedDefinition}`
+    ];
+    if (localized) return localized;
+  }
+
+  return Object.prototype.hasOwnProperty.call(
+    EQUIPMENT_DISPLAY_NAMES,
+    normalizedDefinition,
+  )
+    ? EQUIPMENT_DISPLAY_NAMES[normalizedDefinition]
+    : definition;
+}
 
 export function formatEquipmentDefinition(definition: string): string {
   const knownName = EQUIPMENT_DISPLAY_NAMES[definition.trim().toLowerCase()];

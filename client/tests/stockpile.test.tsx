@@ -26,7 +26,7 @@ const countries: CountryStockpileSummary[] = [
         {
           equipmentRef: { type: 52, id: 1 },
           definition: "anti_air_equipment_2",
-          variantName: "40 mm Automatic Gun M1",
+          variantName: null,
           amount: 4_650,
           version: 1,
           creatorTag: "USA",
@@ -36,11 +36,31 @@ const countries: CountryStockpileSummary[] = [
         {
           equipmentRef: { type: 52, id: 2 },
           definition: "anti_air_equipment_2",
-          variantName: "Type 2 20 mm",
-          amount: 35,
+          variantName: null,
+          amount: 33,
           version: null,
-          creatorTag: "CZE",
-          originTag: "CZE",
+          creatorTag: "JAP",
+          originTag: "JAP",
+          obsolete: false,
+        },
+        {
+          equipmentRef: { type: 52, id: 3 },
+          definition: "anti_air_equipment_2",
+          variantName: null,
+          amount: 1,
+          version: null,
+          creatorTag: "ENG",
+          originTag: "ENG",
+          obsolete: false,
+        },
+        {
+          equipmentRef: { type: 52, id: 4 },
+          definition: "anti_air_equipment_2",
+          variantName: null,
+          amount: 1,
+          version: null,
+          creatorTag: "HUN",
+          originTag: "HUN",
           obsolete: false,
         },
       ]),
@@ -89,7 +109,7 @@ describe("National Stockpile presentation", () => {
     expect(countries[1].definitions[2].amount).toBe(-24);
     expect(container.textContent).toContain("Баланс");
     expect(container.textContent).toContain("3 типа");
-    expect(container.textContent).toContain("2 варианта");
+    expect(container.textContent).toContain("4 варианта");
   });
 
   test("searches display names and raw IDs without changing the country", async () => {
@@ -120,10 +140,20 @@ describe("National Stockpile presentation", () => {
     expect(selected.querySelector(".stockpile-deficit")).toBeNull();
     expect(container.querySelector(".stockpile-variant-expansion")?.textContent)
       .toContain("40 mm Automatic Gun M1");
-    expect(container.querySelector(".stockpile-variant-expansion")?.textContent)
-      .toContain("4,650");
-    expect(container.querySelector(".stockpile-variant-expansion")?.textContent)
-      .toContain("CZE");
+    const variantRows = [...container.querySelectorAll<HTMLTableRowElement>(
+      ".stockpile-variant-table tbody tr",
+    )];
+    expect(variantRows.map((row) => row.querySelector(".design-cell")?.textContent))
+      .toEqual([
+        "40 mm Automatic Gun M1",
+        "Type 2 20 mm",
+        "QF 40 mm Bofors",
+        "Improved Anti-Air",
+      ]);
+    expect(variantRows.map((row) => row.querySelector(".numeric-cell")?.textContent))
+      .toEqual(["4,650", "33", "1", "1"]);
+    expect(countries[1].definitions[1].variants.every((variant) => variant.variantName === null))
+      .toBe(true);
     await act(async () => button.click());
     expect(container.querySelector(".stockpile-variant-expansion")).toBeNull();
     const css = readFileSync("src/index.css", "utf8");
