@@ -121,7 +121,7 @@ See [Architecture](docs/architecture.md) for component boundaries, persistence d
 
 Folder sampling considers direct `.hoi4` files in the selected folder, follows their capture timestamps, and uploads only the selected files. Nested folders and checksum sidecars are ignored. The folder picker targets current Chrome and Edge; **Import Campaign** remains the fallback manual multi-file picker. Sampling approximates campaign coverage; exact in-game dates are still extracted by the server during analysis. Previously analyzed snapshots are reused by the normal batch workflow.
 
-The Campaign Import panel also offers the validated Windows PowerShell snapshotter at `/downloads/hoi4-save-snapshotter.ps1`. Its canonical source is `tools/hoi4-save-snapshotter/snapshotter.ps1`; frontend test, development, and production-build commands stage that source into the static asset directory, and the production build verifies byte equality. The tool remains a foreground PowerShell process: it has no installer, automatic startup, updater, filesystem discovery, or direct upload behavior.
+Campaign Import recommends the local [Windows Snapshotter GUI](tools/hoi4-save-snapshotter-gui/README.md). Its **Download for Windows** button points to the constant `Snapshotter.Gui.exe` asset on the repository's latest published GitHub Release, so a new Snapshotter release does not require a frontend redeploy. The validated PowerShell version remains available as an advanced fallback at `/downloads/hoi4-save-snapshotter.ps1`; its canonical source is `tools/hoi4-save-snapshotter/snapshotter.ps1`. Neither tool uploads saves automatically.
 
 ## Performance and scale
 

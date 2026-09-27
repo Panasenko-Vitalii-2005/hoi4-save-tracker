@@ -1,6 +1,6 @@
 # HoI4 Autosave Snapshotter
 
-Hearts of Iron IV overwrites autosaves, which can leave too few historical files for useful Campaign Trends. This small local Windows utility preserves content-distinct autosave snapshots for later batch analysis in HoI4 Save Tracker. Private-alpha users can download the reviewed script directly from the Campaign Import panel; this repository file remains its canonical source.
+Hearts of Iron IV overwrites autosaves, which can leave too few historical files for useful Campaign Trends. This small local Windows utility preserves content-distinct autosave snapshots for later batch analysis in HoI4 Save Tracker. The [Windows GUI](../hoi4-save-snapshotter-gui/README.md) is the recommended download; this reviewed PowerShell script remains available from Campaign Import as an advanced fallback, with this repository file as its canonical source.
 
 ## Requirements and usage
 

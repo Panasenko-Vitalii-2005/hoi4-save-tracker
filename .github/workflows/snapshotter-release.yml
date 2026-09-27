@@ -1,0 +1,77 @@
+name: Release Windows Snapshotter
+
+on:
+  push:
+    tags:
+      - 'snapshotter-v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snapshotter-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Validate release tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -cnotmatch '^snapshotter-v[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw 'Snapshotter release tags must use snapshotter-vMAJOR.MINOR.PATCH.'
+          }
+
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Install .NET 9 SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '9.0.316'
+
+      - name: Test Snapshotter Core and GUI
+        shell: pwsh
+        run: dotnet run --project tools/hoi4-save-snapshotter-gui/Snapshotter.Tests/Snapshotter.Tests.csproj --configuration Release
+
+      - name: Publish self-contained Windows executable
+        shell: pwsh
+        run: |
+          dotnet publish tools/hoi4-save-snapshotter-gui/Snapshotter.Gui/Snapshotter.Gui.csproj `
+            --configuration Release --runtime win-x64 --self-contained true `
+            --output "$env:RUNNER_TEMP\snapshotter-publish" `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=none `
+            -p:ContinuousIntegrationBuild=true
+
+      - name: Verify artifact and write SHA-256
+        shell: pwsh
+        run: |
+          $artifact = Join-Path $env:RUNNER_TEMP 'snapshotter-publish\Snapshotter.Gui.exe'
+          if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
+            throw 'Snapshotter.Gui.exe was not produced by the tagged build.'
+          }
+          $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Snapshotter.Gui.exe" | Set-Content -LiteralPath "${artifact}.sha256" -Encoding ascii
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Snapshotter ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          working_directory: ${{ runner.temp }}/snapshotter-publish
+          files: |
+            Snapshotter.Gui.exe
+            Snapshotter.Gui.exe.sha256

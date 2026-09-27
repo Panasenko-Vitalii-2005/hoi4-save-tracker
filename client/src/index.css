@@ -5159,6 +5159,20 @@ button {
   flex: none;
 }
 
+.snapshotter-gui-steps {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 21px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.snapshotter-onboarding .snapshotter-security-note {
+  font-size: 11px;
+}
+
 .snapshotter-quick-start {
   padding-top: 9px;
   border-top: 1px solid var(--intel-line);

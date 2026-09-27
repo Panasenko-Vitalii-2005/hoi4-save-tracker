@@ -1,6 +1,6 @@
 # HoI4 Campaign Snapshotter for Windows
 
-A small, local Windows GUI for preserving historical HoI4 autosaves. This is an independent MVP; the production web download still offers the proven [PowerShell Snapshotter](../hoi4-save-snapshotter/README.md), which remains the behavioral reference and fallback.
+A small, local Windows GUI for preserving historical HoI4 autosaves. It is the recommended Campaign Import download; the proven [PowerShell Snapshotter](../hoi4-save-snapshotter/README.md) remains an advanced fallback and behavioral reference.
 
 ## Architecture and build
 
@@ -14,6 +14,26 @@ dotnet publish .\Snapshotter.Gui\Snapshotter.Gui.csproj -c Release -r win-x64 --
 ```
 
 The portable `Snapshotter.Gui.exe` appears in `Snapshotter.Gui\bin\Release\net9.0-windows\win-x64\publish`. Only the executable needs to be distributed; build folders and binaries are not committed. The release is Windows x64 and needs no separate .NET/Node/Python installation or administrator privileges. It is not code-signed: Windows SmartScreen may warn about an unknown publisher. Do not disable Windows security protections to run it.
+
+## Release distribution
+
+The tag-only GitHub Actions workflow at `.github/workflows/snapshotter-release.yml` runs on a `snapshotter-vMAJOR.MINOR.PATCH` tag, for example `snapshotter-v0.1.1`. It checks out that exact tag, installs .NET 9 SDK `9.0.316`, runs `Snapshotter.Tests`, and publishes a Release/win-x64/self-contained/single-file executable with the same flags shown above. It uploads exactly `Snapshotter.Gui.exe` and `Snapshotter.Gui.exe.sha256` to a non-draft, non-prerelease GitHub Release and marks it latest. The tag identifies the version; the EXE is never committed to normal Git history. The checksum is available beside the EXE in the release assets.
+
+After testing and committing an update, the future release sequence is:
+
+```powershell
+git push origin main
+git tag snapshotter-v0.1.1
+git push origin snapshotter-v0.1.1
+```
+
+Replace the example version with the next intended version. Wait for the release workflow to pass, then verify both assets and their checksum on GitHub. The existing website button uses:
+
+`https://github.com/Panasenko-Vitalii-2005/hoi4-save-tracker/releases/latest/download/Snapshotter.Gui.exe`
+
+GitHub's `latest` is **repository-wide**, not Snapshotter-specific: a later unrelated release marked latest without this asset would break that URL. Keep the newest Snapshotter release marked latest, or revisit the distribution URL before publishing unrelated releases. Drafts and prereleases do not become latest; the first GUI release must be published before deploying the new web button. There is no in-app updater or network access in the GUI.
+
+For an emergency manual build, run the test and `dotnet publish` commands above on Windows with .NET SDK `9.0.316`, then compute the EXE's SHA-256 with `Get-FileHash -Algorithm SHA256`. Once a corresponding tag is pushed, an operator can attach the EXE and checksum to that tag's GitHub Release with `gh release create <tag> <path-to-Snapshotter.Gui.exe> <path-to-Snapshotter.Gui.exe.sha256> --verify-tag --title <title> --notes <notes> --latest`. Verify the release assets before directing users to them. Do not distribute an untested local build as if it came from the tagged workflow.
 
 ## Use
 

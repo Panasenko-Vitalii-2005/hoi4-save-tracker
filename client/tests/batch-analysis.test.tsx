@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   BatchAnalysisPanel,
   SNAPSHOTTER_DOWNLOAD_PATH,
+  SNAPSHOTTER_GUI_DOWNLOAD_URL,
 } from "../src/components/analyzer/BatchAnalysisPanel";
 import { seedCsrfCookie } from "./auth-fixture";
 import { i18n } from "../src/i18n";
@@ -100,17 +101,33 @@ describe("BatchAnalysisPanel", () => {
     expect(folderInput().hasAttribute("webkitdirectory")).toBe(true);
   });
 
-  test("offers the canonical same-origin Windows snapshotter with safe English guidance", async () => {
+  test("offers the Windows GUI first and keeps the PowerShell fallback", async () => {
     await act(async () => root.render(<BatchAnalysisPanel />));
 
     const onboarding = container.querySelector(".snapshotter-onboarding")!;
-    const download = onboarding.querySelector<HTMLAnchorElement>("a[download]")!;
+    const guiDownload = onboarding.querySelector<HTMLAnchorElement>(
+      `.snapshotter-onboarding-intro a[href="${SNAPSHOTTER_GUI_DOWNLOAD_URL}"]`,
+    )!;
+    const primarySteps = onboarding.querySelector(".snapshotter-gui-steps")!;
+    const advanced = onboarding.querySelector("details")!;
+    const powershellDownload = advanced.querySelector<HTMLAnchorElement>("a[download]")!;
     expect(onboarding.textContent).toContain("Automatic campaign snapshots");
     expect(onboarding.textContent).toContain("Hearts of Iron IV overwrites autosaves");
-    expect(download.textContent).toContain("Download Snapshotter for Windows");
-    expect(download.getAttribute("href")).toBe(SNAPSHOTTER_DOWNLOAD_PATH);
-    expect(download.getAttribute("download")).toBe("hoi4-save-snapshotter.ps1");
-    expect(onboarding.querySelector("details")?.textContent).toContain("How to use");
+    expect(guiDownload.textContent).toBe("Download for Windows");
+    expect(guiDownload.getAttribute("href")).toBe(SNAPSHOTTER_GUI_DOWNLOAD_URL);
+    expect(guiDownload.hasAttribute("download")).toBe(false);
+    expect(primarySteps.textContent).toContain("Run Snapshotter.Gui.exe");
+    expect(primarySteps.textContent).toContain("Start watching");
+    expect(primarySteps.textContent).toContain("select the snapshot folder");
+    expect(primarySteps.textContent).not.toMatch(/PowerShell|SourceDir|OutputDir|Unblock-File|execution policy/i);
+    expect(onboarding.textContent).toContain("unsigned");
+    expect(onboarding.textContent).toContain("SmartScreen");
+    expect(advanced.compareDocumentPosition(guiDownload) & Node.DOCUMENT_POSITION_PRECEDING)
+      .toBeTruthy();
+    expect(advanced.querySelector("summary")?.textContent).toBe("Advanced: PowerShell version");
+    expect(powershellDownload.textContent).toBe("Download PowerShell script");
+    expect(powershellDownload.getAttribute("href")).toBe(SNAPSHOTTER_DOWNLOAD_PATH);
+    expect(powershellDownload.getAttribute("download")).toBe("hoi4-save-snapshotter.ps1");
     const command = onboarding.querySelector("pre")?.textContent ?? "";
     expect(command).toContain('-SourceDir "<YOUR_HOI4_SAVE_FOLDER>"');
     expect(command).toContain('-OutputDir "C:\\HoI4Snapshots"');
@@ -134,8 +151,19 @@ describe("BatchAnalysisPanel", () => {
 
     const onboarding = container.querySelector(".snapshotter-onboarding")!;
     expect(onboarding.textContent).toContain("Автоматические снимки кампании");
-    expect(onboarding.textContent).toContain("Скачать Snapshotter для Windows");
-    expect(onboarding.textContent).toContain("Как использовать");
+    expect(onboarding.querySelector(".snapshotter-onboarding-intro a")?.textContent)
+      .toBe("Скачать для Windows");
+    expect(onboarding.querySelector(".snapshotter-gui-steps")?.textContent)
+      .toContain("Проверьте или выберите папку сохранений HoI4");
+    expect(onboarding.querySelector(".snapshotter-gui-steps")?.textContent)
+      .toContain("Нажмите Start watching");
+    expect(onboarding.querySelector(".snapshotter-gui-steps")?.textContent)
+      .not.toMatch(/PowerShell|SourceDir|OutputDir|Unblock-File/i);
+    expect(onboarding.textContent).toContain("SmartScreen");
+    expect(onboarding.querySelector("details summary")?.textContent)
+      .toContain("Для опытных пользователей: версия PowerShell");
+    expect(onboarding.querySelector("details a[download]")?.textContent)
+      .toBe("Скачать скрипт PowerShell");
     expect(onboarding.querySelector("pre")?.textContent).toContain(
       '-SourceDir "<ПУТЬ_К_ПАПКЕ_СЕЙВОВ_HOI4>"',
     );

@@ -47,6 +47,8 @@ interface BatchAcknowledgement {
 }
 
 const PREFLIGHT_CHUNK_SIZE = 200;
+export const SNAPSHOTTER_GUI_DOWNLOAD_URL =
+  "https://github.com/Panasenko-Vitalii-2005/hoi4-save-tracker/releases/latest/download/Snapshotter.Gui.exe";
 export const SNAPSHOTTER_DOWNLOAD_PATH =
   "/downloads/hoi4-save-snapshotter.ps1";
 const STATUS_COPY = {
@@ -536,16 +538,34 @@ export const BatchAnalysisPanel = forwardRef<
             <p>{t("batch.snapshotter.explanation")}</p>
           </div>
           <a
-            className="button button-secondary"
-            href={SNAPSHOTTER_DOWNLOAD_PATH}
-            download="hoi4-save-snapshotter.ps1"
+            className="button button-primary"
+            href={SNAPSHOTTER_GUI_DOWNLOAD_URL}
           >
-            {t("batch.snapshotter.download")}
+            {t("batch.snapshotter.guiDownload")}
           </a>
         </div>
+        <ol className="snapshotter-gui-steps">
+          <li>{t("batch.snapshotter.guiSteps.download")}</li>
+          <li>{t("batch.snapshotter.guiSteps.run")}</li>
+          <li>{t("batch.snapshotter.guiSteps.saveFolder")}</li>
+          <li>{t("batch.snapshotter.guiSteps.snapshotFolder")}</li>
+          <li>{t("batch.snapshotter.guiSteps.start")}</li>
+          <li>{t("batch.snapshotter.guiSteps.keepRunning")}</li>
+          <li>{t("batch.snapshotter.guiSteps.return")}</li>
+        </ol>
+        <p className="snapshotter-security-note">
+          {t("batch.snapshotter.smartScreen")}
+        </p>
         <details className="snapshotter-quick-start">
-          <summary>{t("batch.snapshotter.howToUse")}</summary>
+          <summary>{t("batch.snapshotter.advancedTitle")}</summary>
           <div className="snapshotter-quick-start-body">
+            <a
+              className="button button-secondary"
+              href={SNAPSHOTTER_DOWNLOAD_PATH}
+              download="hoi4-save-snapshotter.ps1"
+            >
+              {t("batch.snapshotter.download")}
+            </a>
             <ol>
               <li>{t("batch.snapshotter.steps.download")}</li>
               <li>{t("batch.snapshotter.steps.openPowerShell")}</li>
