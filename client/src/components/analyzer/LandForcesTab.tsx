@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo } from "react";
 import type {
   CountryArmyHierarchySummary,
   CountryDivisionSummary,
+  CountryFieldedEquipmentSummary,
   DivisionEquipmentCatalogEntry,
   DivisionSummary,
   DivisionTemplateCatalogEntry,
@@ -13,11 +14,13 @@ import {
 import { CountryDivisionTable } from "./CountryDivisionTable";
 import { CountryLandForcesDetails } from "./CountryLandForcesDetails";
 import { useAppTranslation } from "@/i18n";
+import { deriveLegacyFieldedEquipment } from "@/lib/legacyFieldedEquipment";
 
 interface Props {
   summaries: CountryDivisionSummary[];
   templates: DivisionTemplateCatalogEntry[];
   equipment: DivisionEquipmentCatalogEntry[];
+  fieldedEquipment?: CountryFieldedEquipmentSummary[];
   hierarchies: CountryArmyHierarchySummary[];
   selectedTag: string | null;
   selectedDivisionKey: string | null;
@@ -30,6 +33,7 @@ export function LandForcesTab({
   summaries,
   templates,
   equipment,
+  fieldedEquipment,
   hierarchies,
   selectedTag,
   selectedDivisionKey,
@@ -58,6 +62,10 @@ export function LandForcesTab({
       ),
     [equipment],
   );
+  const fieldedByCountry = useMemo(
+    () => fieldedEquipment ?? deriveLegacyFieldedEquipment(summaries, equipment),
+    [fieldedEquipment, summaries, equipment],
+  );
   const divisionByRef = useMemo(() => {
     const lookup = new Map<string, DivisionSummary>();
     for (const country of summaries) {
@@ -79,6 +87,13 @@ export function LandForcesTab({
     () =>
       summaries.find((country) => country.countryTag === selectedTag) ?? null,
     [selectedTag, summaries],
+  );
+  const selectedFieldedEquipment = useMemo(
+    () =>
+      fieldedByCountry.find(
+        (country) => country.countryTag === selectedTag,
+      ) ?? null,
+    [fieldedByCountry, selectedTag],
   );
   const selectedHierarchy = selectedCountry
     ? (hierarchyByCountry.get(selectedCountry.countryTag) ?? null)
@@ -183,6 +198,7 @@ export function LandForcesTab({
             divisionByRef={divisionByRef}
             templateByRef={templateByRef}
             equipmentByRef={equipmentByRef}
+            fieldedEquipment={selectedFieldedEquipment}
             assignedRefs={assignedRefs}
             selectedDivisionKey={selectedDivisionKey}
             selectedDivision={selectedDivision}
@@ -197,10 +213,7 @@ export function LandForcesTab({
       </div>
       <footer className="land-forces-note">
         <strong>{t("land.snapshot")}</strong>
-        <span>
-          Manpower completeness uses the backend ratio; strength,
-          organization and experience remain raw HOI4 values.
-        </span>
+        <span>{t("fielded.landFooter")}</span>
       </footer>
     </>
   );

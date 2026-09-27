@@ -3959,12 +3959,25 @@ select {
 
 .land-forces-view-tabs {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 18px;
   padding: 4px;
   background: var(--paper-strong);
   border: 1px solid var(--line);
   border-radius: 12px;
+}
+
+.fielded-equipment-view > .micro-copy {
+  margin: 0 0 14px;
+}
+
+.fielded-unresolved {
+  margin-top: 20px;
+}
+
+.fielded-unresolved h3 {
+  margin: 0 0 4px;
 }
 
 .land-forces-view-tabs button {

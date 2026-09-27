@@ -402,6 +402,32 @@ export interface CountryDivisionSummary {
   divisions: DivisionSummary[];
 }
 
+export interface FieldedEquipmentVariantSummary {
+  equipmentRef: EquipmentRef;
+  definition: string;
+  variantName: string | null;
+  amount: number;
+  version: number | null;
+  creatorTag: string | null;
+  originTag: string | null;
+  obsolete: boolean;
+}
+
+export interface FieldedEquipmentDefinitionSummary {
+  definition: string;
+  amount: number;
+  variants: FieldedEquipmentVariantSummary[];
+}
+
+export interface CountryFieldedEquipmentSummary {
+  countryTag: string;
+  definitions: FieldedEquipmentDefinitionSummary[];
+  unresolvedOccurrences: Array<{
+    equipmentRef: EquipmentRef | null;
+    amount: number | null;
+  }>;
+}
+
 export interface DivisionReference {
   countryTag: string;
   divisionRef: EquipmentRef | null;
@@ -462,6 +488,8 @@ export interface AnalyzeResult {
   divisionSummaries: CountryDivisionSummary[];
   divisionTemplateCatalog: DivisionTemplateCatalogEntry[];
   divisionEquipmentCatalog: DivisionEquipmentCatalogEntry[];
+  /** Older persisted analyses predate this derived summary. */
+  fieldedEquipmentSummaries?: CountryFieldedEquipmentSummary[];
   armyHierarchySummaries: CountryArmyHierarchySummary[];
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];

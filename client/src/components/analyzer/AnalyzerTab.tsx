@@ -1148,6 +1148,7 @@ export function AnalyzerTab({
               summaries={result.divisionSummaries}
               templates={result.divisionTemplateCatalog}
               equipment={result.divisionEquipmentCatalog}
+              fieldedEquipment={result.fieldedEquipmentSummaries}
               hierarchies={result.armyHierarchySummaries}
               selectedTag={landForcesCountryTag}
               selectedDivisionKey={landForcesDivisionKey}

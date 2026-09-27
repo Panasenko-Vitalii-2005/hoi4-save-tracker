@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type {
   CountryArmyHierarchySummary,
   CountryDivisionSummary,
+  CountryFieldedEquipmentSummary,
   DivisionEquipmentCatalogEntry,
   DivisionSummary,
   DivisionTemplateCatalogEntry,
@@ -11,6 +12,7 @@ import { CountryDisplay } from "./CountryDisplay";
 import { ArmyHierarchyView } from "./ArmyHierarchyView";
 import { DivisionDetails } from "./DivisionDetails";
 import { DivisionTable } from "./DivisionTable";
+import { FieldedEquipmentView } from "./FieldedEquipmentView";
 
 interface Props {
   country: CountryDivisionSummary;
@@ -18,6 +20,7 @@ interface Props {
   divisionByRef: ReadonlyMap<string, DivisionSummary>;
   templateByRef: ReadonlyMap<string, DivisionTemplateCatalogEntry>;
   equipmentByRef: ReadonlyMap<string, DivisionEquipmentCatalogEntry>;
+  fieldedEquipment: CountryFieldedEquipmentSummary | null;
   assignedRefs: ReadonlySet<string>;
   selectedDivisionKey: string | null;
   selectedDivision: DivisionSummary | null;
@@ -32,6 +35,7 @@ export const CountryLandForcesDetails = memo(
     divisionByRef,
     templateByRef,
     equipmentByRef,
+    fieldedEquipment,
     assignedRefs,
     selectedDivisionKey,
     selectedDivision,
@@ -45,10 +49,10 @@ export const CountryLandForcesDetails = memo(
           hierarchy.grouplessArmies.length > 0 ||
           hierarchy.unassignedDivisions.length > 0),
     );
-    const [view, setView] = useState<"hierarchy" | "divisions">(
+    const [view, setView] = useState<"hierarchy" | "divisions" | "equipment">(
       hasHierarchy ? "hierarchy" : "divisions",
     );
-    const effectiveView = hasHierarchy ? view : "divisions";
+    const effectiveView = view === "hierarchy" && !hasHierarchy ? "divisions" : view;
     const armyCount = useMemo(
       () =>
         (hierarchy?.grouplessArmies.length ?? 0) +
@@ -157,6 +161,15 @@ export const CountryLandForcesDetails = memo(
             >
               {t("land.divisions")}
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={effectiveView === "equipment"}
+              className={effectiveView === "equipment" ? "active" : ""}
+              onClick={() => setView("equipment")}
+            >
+              {t("fielded.tab")}
+            </button>
           </div>
 
           {effectiveView === "hierarchy" ? (
@@ -167,6 +180,8 @@ export const CountryLandForcesDetails = memo(
               selectedDivisionKey={selectedDivisionKey}
               onSelectDivision={onSelectDivision}
             />
+          ) : effectiveView === "equipment" ? (
+            <FieldedEquipmentView summary={fieldedEquipment} />
           ) : (
             <DivisionTable
               divisions={country.divisions}
@@ -178,11 +193,13 @@ export const CountryLandForcesDetails = memo(
           )}
         </section>
 
-        <DivisionDetails
-          division={selectedDivision}
-          template={selectedTemplate}
-          equipmentByRef={equipmentByRef}
-        />
+        {effectiveView !== "equipment" && (
+          <DivisionDetails
+            division={selectedDivision}
+            template={selectedTemplate}
+            equipmentByRef={equipmentByRef}
+          />
+        )}
       </div>
     );
   },

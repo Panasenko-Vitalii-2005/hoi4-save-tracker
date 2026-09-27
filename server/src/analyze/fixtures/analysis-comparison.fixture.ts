@@ -54,6 +54,7 @@ export const comparisonResult = (
   divisionSummaries: [],
   divisionTemplateCatalog: [],
   divisionEquipmentCatalog: [],
+  fieldedEquipmentSummaries: [],
   armyHierarchySummaries: [],
   navalLosses: [],
   navalLossSummaries: [],

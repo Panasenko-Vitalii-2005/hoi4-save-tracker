@@ -21,7 +21,7 @@ export const CountryDivisionTable = memo(function CountryDivisionTable({
       <div className="panel-head">
         <h2>{t("land.countries")}</h2>
         <div className="micro-copy">
-          {countries.length.toLocaleString()} with land forces
+          {t("fielded.landCountryCount", { count: countries.length })}
         </div>
       </div>
       <div className="table-wrap">
@@ -43,7 +43,7 @@ export const CountryDivisionTable = memo(function CountryDivisionTable({
                   key={country.countryTag}
                   className={selected ? "selected" : ""}
                   aria-selected={selected}
-                  aria-label={`Inspect ${countryName} land forces`}
+                  aria-label={t("fielded.inspectCountry", { country: countryName })}
                   tabIndex={0}
                   onClick={() => onSelect(country.countryTag)}
                   onKeyDown={(event) => {

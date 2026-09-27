@@ -304,6 +304,43 @@ describe('analyzeSave division integration', () => {
     ).toBe(false);
   });
 
+  test('publishes fielded equipment separately from stockpile without inventing requirements', () => {
+    const equipmentByRef = new Map(
+      result.divisionEquipmentCatalog.map(({ equipmentRef, definition }) => [
+        `${equipmentRef.type}:${equipmentRef.id}`,
+        definition,
+      ]),
+    );
+    for (const country of result.divisionSummaries) {
+      const fielded = result.fieldedEquipmentSummaries.find(
+        ({ countryTag }) => countryTag === country.countryTag,
+      );
+      expect(fielded).toBeDefined();
+      const expected = country.divisions
+        .flatMap(({ equipment }) => equipment)
+        .filter(
+          ({ equipmentRef, amount }) =>
+            equipmentRef !== null &&
+            amount !== null &&
+            equipmentByRef.has(`${equipmentRef.type}:${equipmentRef.id}`),
+        )
+        .reduce((sum, { amount }) => sum + (amount ?? 0), 0);
+      const actual = fielded?.definitions.reduce(
+        (sum, { amount }) => sum + amount,
+        0,
+      );
+      expect(actual).toBeCloseTo(expected, 10);
+      expect(fielded).not.toHaveProperty('required');
+      expect(fielded).not.toHaveProperty('missing');
+    }
+    expect(
+      result.fieldedEquipmentSummaries.find(
+        ({ countryTag }) => countryTag === 'D04',
+      )?.unresolvedOccurrences,
+    ).toContainEqual({ equipmentRef: { type: 70, id: 999 }, amount: 0.03846 });
+    expect(result.stockpileSummaries).toEqual([]);
+  });
+
   test('deduplicates equipment metadata and keeps identical names distinct by ref', () => {
     const occurrences = result.divisionSummaries.flatMap(({ divisions }) =>
       divisions.flatMap(({ equipment }) => equipment),

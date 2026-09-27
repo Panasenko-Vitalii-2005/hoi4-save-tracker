@@ -36,6 +36,10 @@ import { aggregateNationalStockpile } from './stockpile/stockpile.aggregator';
 import { parseNationalStockpile } from './stockpile/stockpile.parser';
 import type { CountryStockpileSummary } from './stockpile/stockpile.types';
 import { aggregateDivisions } from './division/division.aggregator';
+import {
+  aggregateFieldedEquipment,
+  type CountryFieldedEquipmentSummary,
+} from './division/fielded-equipment.aggregator';
 import { parseDivisions } from './division/division.parser';
 import { parseDivisionTemplates } from './division/division-template.parser';
 import {
@@ -121,6 +125,7 @@ export interface AnalyzeResult {
   divisionSummaries: PublicCountryDivisionSummary[];
   divisionTemplateCatalog: PublicDivisionTemplate[];
   divisionEquipmentCatalog: PublicEquipmentDefinition[];
+  fieldedEquipmentSummaries: CountryFieldedEquipmentSummary[];
   armyHierarchySummaries: PublicCountryArmyHierarchySummary[];
   navalLosses: NavalLossEvent[];
   navalLossSummaries: CountryNavalLossSummary[];
@@ -1437,6 +1442,14 @@ export function analyzeSave(
   );
   const divisionTemplates = parseDivisionTemplates(content, topLevelBlocks);
   const resolvedDivisions = aggregateDivisions(divisions, divisionTemplates);
+  const fieldedEquipmentStart = performance.now();
+  const fieldedEquipmentSummaries =
+    aggregateFieldedEquipment(resolvedDivisions);
+  if (process.env.HOI4_PROFILE === '1') {
+    console.error(
+      `[PROFILE] fieldedEquipmentAggregation: ${(performance.now() - fieldedEquipmentStart).toFixed(1)} ms`,
+    );
+  }
   const armyHierarchy = parseArmyHierarchy(
     content,
     topLevelBlocks,
@@ -2019,6 +2032,7 @@ export function analyzeSave(
     divisionSummaries,
     divisionTemplateCatalog,
     divisionEquipmentCatalog,
+    fieldedEquipmentSummaries,
     armyHierarchySummaries,
     warCasualties: parsedWarCasualties,
     navalLosses,
