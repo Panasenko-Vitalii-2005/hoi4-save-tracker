@@ -47,25 +47,14 @@ export function StockpileTab({
     );
   }, [preferredCountryTag, selectedTag, summaries]);
 
-  useEffect(() => {
-    if (
-      selectedDefinitionName &&
-      selectedCountry?.definitions.some(
-        (definition) => definition.definition === selectedDefinitionName,
-      )
-    ) {
-      return;
-    }
-    setSelectedDefinitionName(
-      selectedCountry?.definitions[0]?.definition ?? null,
-    );
-  }, [selectedCountry, selectedDefinitionName]);
-
   const handleCountrySelect = useCallback((tag: string) => {
     setSelectedTag(tag);
+    setSelectedDefinitionName(null);
   }, []);
   const handleDefinitionSelect = useCallback((definition: string) => {
-    setSelectedDefinitionName(definition);
+    setSelectedDefinitionName((current) =>
+      current === definition ? null : definition,
+    );
   }, []);
 
   if (summaries.length === 0) {
@@ -85,6 +74,7 @@ export function StockpileTab({
           onSelect={handleCountrySelect}
         />
         <CountryStockpileDetails
+          key={selectedTag ?? ""}
           country={selectedCountry}
           selectedDefinition={selectedDefinition}
           onSelectDefinition={handleDefinitionSelect}
@@ -92,10 +82,6 @@ export function StockpileTab({
       </div>
       <footer className="stockpile-note">
         <strong>{t("stockpile.snapshot")}</strong>
-        <span>
-          Values may be fractional or negative because HOI4 stores internal
-          equipment accounting as signed decimals.
-        </span>
       </footer>
     </>
   );

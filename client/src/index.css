@@ -3391,6 +3391,37 @@ select {
   min-width: 620px;
 }
 
+.stockpile-definition-wrap {
+  max-height: min(70vh, 720px);
+}
+
+.stockpile-search {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.stockpile-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 11px;
+  background: var(--intel-surface-raised);
+  border: 1px solid var(--intel-line-strong);
+  border-radius: 8px;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 400;
+}
+
+.stockpile-search input:focus-visible,
+.stockpile-expand-button:focus-visible {
+  outline: 2px solid var(--accent-3);
+  outline-offset: 2px;
+}
+
 .stockpile-variant-table {
   min-width: 760px;
 }
@@ -3399,15 +3430,15 @@ select {
   min-width: 420px;
 }
 
-.stockpile-country-table tbody tr,
-.stockpile-definition-table tbody tr {
+.stockpile-country-table > tbody > tr,
+.stockpile-definition-table > tbody > tr:not(.stockpile-variant-expansion) {
   cursor: pointer;
 }
 
 .stockpile-country-table tbody tr:hover td,
 .stockpile-country-table tbody tr.selected td,
-.stockpile-definition-table tbody tr:hover td,
-.stockpile-definition-table tbody tr.selected td {
+.stockpile-definition-table > tbody > tr:not(.stockpile-variant-expansion):hover > td,
+.stockpile-definition-table > tbody > tr.selected > td {
   background: rgba(217, 79, 43, 0.08);
 }
 
@@ -3415,6 +3446,62 @@ select {
 .stockpile-definition-table tbody tr:focus-visible {
   outline: 2px solid var(--accent-2);
   outline-offset: -2px;
+}
+
+.analyzer-shell .recent-table.stockpile-definition-table tbody tr.selected td,
+.analyzer-shell .recent-table.stockpile-definition-table tbody tr.selected:hover td {
+  background: var(--intel-surface-raised);
+}
+
+.analyzer-shell .recent-table.stockpile-definition-table tbody tr.selected td:first-child {
+  box-shadow: inset 3px 0 var(--accent-3);
+}
+
+.stockpile-expand-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stockpile-expand-button > span:last-child {
+  min-width: 0;
+}
+
+.stockpile-chevron {
+  color: var(--accent-3);
+  font-size: 15px;
+  transition: transform 120ms ease;
+}
+
+.stockpile-expand-button[aria-expanded="true"] .stockpile-chevron {
+  transform: rotate(90deg);
+}
+
+.analyzer-shell .recent-table.stockpile-definition-table > tbody > .stockpile-variant-expansion > td {
+  padding: 8px 10px 12px;
+  background: var(--intel-surface-deep);
+}
+
+.stockpile-variant-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.analyzer-shell .recent-table.stockpile-variant-table th {
+  position: static;
+}
+
+.stockpile-deficit {
+  color: var(--intel-danger);
+  font-weight: 650;
 }
 
 .stockpile-country-table .numeric-cell,

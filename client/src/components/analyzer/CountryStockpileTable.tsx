@@ -20,7 +20,9 @@ export const CountryStockpileTable = memo(function CountryStockpileTable({
     <section className="panel stockpile-country-panel">
       <div className="panel-head">
         <h2>{t("stockpile.countries")}</h2>
-        <div className="micro-copy">{countries.length} with stockpile data</div>
+        <div className="micro-copy">
+          {t("stockpile.countriesWithData", { count: countries.length })}
+        </div>
       </div>
       <div className="table-wrap">
         <table className="recent-table stockpile-country-table">
@@ -45,7 +47,7 @@ export const CountryStockpileTable = memo(function CountryStockpileTable({
                     selectedTag === country.countryTag ? "selected" : ""
                   }
                   aria-selected={selectedTag === country.countryTag}
-                  aria-label={`Inspect ${countryName} stockpile`}
+                  aria-label={t("stockpile.inspectCountry", { country: countryName })}
                   onClick={() => onSelect(country.countryTag)}
                   tabIndex={0}
                   onKeyDown={(event) => {
