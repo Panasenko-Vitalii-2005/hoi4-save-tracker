@@ -567,6 +567,7 @@ export function calculateOccupiedIndustryByController(
 
 function getDirectNamedBlock(text: string, name: string): string | null {
   let depth = 0;
+  const pattern = new RegExp(`^[\\t ]*${name}\\s*=\\s*\\{`);
 
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
@@ -580,7 +581,11 @@ function getDirectNamedBlock(text: string, name: string): string | null {
     }
     if (depth !== 0 || (i > 0 && text[i - 1] !== '\n')) continue;
 
-    const match = new RegExp(`^[\\t ]*${name}\\s*=\\s*\\{`).exec(text.slice(i));
+    let candidateStart = i;
+    while (text[candidateStart] === '\t' || text[candidateStart] === ' ')
+      candidateStart++;
+    if (!text.startsWith(name, candidateStart)) continue;
+    const match = pattern.exec(text.slice(i));
     if (match) return extractBlock(text, i + match[0].length)[0];
   }
 
@@ -1398,25 +1403,42 @@ export function analyzeSave(
   } = {},
 ): AnalyzeResult {
   const t0 = performance.now();
+  const profile = process.env.HOI4_PROFILE === '1';
+  const phases: { name: string; milliseconds: number }[] = [];
+  let phaseStart = t0;
+  const finishPhase = (name: string): void => {
+    if (!profile) return;
+    const now = performance.now();
+    phases.push({
+      name,
+      milliseconds: Math.round((now - phaseStart) * 10) / 10,
+    });
+    phaseStart = now;
+  };
   const content = readSave(filePath, validateInput, uploadPolicy);
   onComparisonContext?.(parseSaveComparisonContext(content));
+  finishPhase('saveReadAndContext');
 
   const sizeMb =
     Math.round((fs.statSync(filePath).size / 1_048_576) * 100) / 100;
   const topLevelBlocks = findDirectBlocks(content, 0, content.length);
   if (validateInput) validateSaveStructure(content, topLevelBlocks);
+  finishPhase('topLevelAndValidation');
 
   const equipmentRegistry = parseEquipmentRegistry(content, topLevelBlocks);
+  finishPhase('equipmentRegistry');
   const countryProductionIndex = buildCountryProductionIndex(
     content,
     topLevelBlocks,
   );
   const countryBlockByTag = buildCountryBlockByTag(countryProductionIndex);
+  finishPhase('countryStructuralIndex');
   const subjectRelations = parseSubjectRelations(
     content,
     countryProductionIndex,
     countryBlockByTag,
   );
+  finishPhase('subjectRelations');
   const stockpileRecords = parseNationalStockpile(
     content,
     equipmentRegistry,
@@ -1424,6 +1446,7 @@ export function analyzeSave(
     countryProductionIndex,
   );
   const stockpileSummaries = aggregateNationalStockpile(stockpileRecords);
+  finishPhase('stockpile');
   const militaryProductionRecords = parseMilitaryProductionLines(
     content,
     equipmentRegistry,
@@ -1434,27 +1457,27 @@ export function analyzeSave(
   const militaryProductionSummaries = aggregateMilitaryProduction(
     militaryProductionRecords,
   );
+  finishPhase('militaryProduction');
   const divisions = parseDivisions(
     content,
     equipmentRegistry,
     topLevelBlocks,
     countryProductionIndex,
   );
+  finishPhase('divisions');
   const divisionTemplates = parseDivisionTemplates(content, topLevelBlocks);
+  finishPhase('divisionTemplates');
   const resolvedDivisions = aggregateDivisions(divisions, divisionTemplates);
-  const fieldedEquipmentStart = performance.now();
+  finishPhase('divisionAggregation');
   const fieldedEquipmentSummaries =
     aggregateFieldedEquipment(resolvedDivisions);
-  if (process.env.HOI4_PROFILE === '1') {
-    console.error(
-      `[PROFILE] fieldedEquipmentAggregation: ${(performance.now() - fieldedEquipmentStart).toFixed(1)} ms`,
-    );
-  }
+  finishPhase('fieldedEquipmentAggregation');
   const armyHierarchy = parseArmyHierarchy(
     content,
     topLevelBlocks,
     countryProductionIndex,
   );
+  finishPhase('armyHierarchy');
   const linkedArmyHierarchy = linkArmyHierarchy(
     armyHierarchy,
     resolvedDivisions,
@@ -1466,6 +1489,7 @@ export function analyzeSave(
   } = toPublicDivisionData(resolvedDivisions);
   const armyHierarchySummaries =
     toPublicArmyHierarchySummaries(linkedArmyHierarchy);
+  finishPhase('armyAndDivisionPublicMapping');
 
   const globalNavalLosses = parseGlobalNavalLossHistory(
     content,
@@ -1491,6 +1515,7 @@ export function analyzeSave(
     countrySummaries: navalKillSummaries,
     killerShipSummaries: navalKillerShipSummaries,
   } = aggregateCreditedNavalKills(navalKills);
+  finishPhase('navalHistoryAndAggregation');
 
   // ── Game date ──
   const gameDate = DATE_RE.exec(content.slice(0, 20_000))?.[1] ?? 'unknown';
@@ -1555,6 +1580,7 @@ export function analyzeSave(
       wargoalIds,
     });
   }
+  finishPhase('warRelations');
 
   // ── Equipment id → name lookup ──
   const eqLookup: Record<number, string> = {};
@@ -1609,6 +1635,7 @@ export function analyzeSave(
       }
     }
   }
+  finishPhase('statesAndPhysicalIndustry');
 
   // ── Countries block: divisions + manpowerInField + equipment ──
   const eqByCountry: Record<string, Record<string, number>> = {};
@@ -1665,10 +1692,12 @@ export function analyzeSave(
       }
     }
   }
+  finishPhase('legacyCountryMetrics');
 
   const industryContext = countriesBlock
     ? buildIndustryAnalysisContext(countriesBlock)
     : undefined;
+  finishPhase('industryContext');
   if (countriesBlock) {
     const occupiedIndustry = calculateOccupiedIndustryByController(
       industryStates,
@@ -1682,7 +1711,9 @@ export function analyzeSave(
       'healthy',
       industryContext,
     );
+    finishPhase('occupiedIndustry');
     countryIndustryByTag = parseCountryIndustryByTag(countriesBlock);
+    finishPhase('countryIndustryMetadata');
     occupiedMilFacByController = { ...occupiedIndustry.military };
     occupiedCivByController = { ...occupiedIndustry.civilian };
     healthyOccupiedMilByController = {
@@ -1724,6 +1755,7 @@ export function analyzeSave(
       'healthy',
       industryContext,
     );
+    finishPhase('ownedCivilianIndustry');
     for (const [tag, factories] of Object.entries(
       occupiedIndustry.ownedCivilian,
     )) {
@@ -1735,15 +1767,18 @@ export function analyzeSave(
       acc(healthyOwnedCivByController, tag, factories);
     }
     tradeCivByTag = calculateTradeCivilianFactories(countriesBlock);
+    finishPhase('tradeCivilianIndustry');
     governmentInExileFactoriesByTag =
       calculateGovernmentInExileFactories(countriesBlock);
+    finishPhase('governmentInExileIndustry');
     rulingLeaderTraitsByTag = parseRulingLeaderTraitsByTag(
       content,
       countriesBlock,
     );
+    finishPhase('rulingLeaderTraits');
     effectiveDockyardsByTag = calculateEffectiveDockyards(countriesBlock);
+    finishPhase('effectiveDockyards');
   }
-
   const availableCivilianByTag = countriesBlock
     ? calculateAvailableCivilianByController(
         industryStates,
@@ -1799,6 +1834,7 @@ export function analyzeSave(
       acc(healthyOwnMilByController, tag, factories);
     }
   }
+  finishPhase('industrySubjectsAndOwn');
 
   // ── Ships: fleet → task_force → logical_country ──
   for (const fm of allMatches(FLEET_RE, content)) {
@@ -1810,6 +1846,7 @@ export function analyzeSave(
       acc(shipsByTag, LOGICAL_TAG_RE.exec(tb)?.[1] ?? '???', cnt);
     }
   }
+  finishPhase('legacyFleetCounts');
 
   // ── Aircraft: air_wing_pool → air_wings → tag= ──
   for (const pm of allMatches(AIR_POOL_RE, content)) {
@@ -1821,6 +1858,7 @@ export function analyzeSave(
       acc(aircraftByTag, TAG_IN_RE.exec(ab)?.[1] ?? '???', parseInt(mc[1]));
     }
   }
+  finishPhase('legacyAircraftCounts');
 
   // ── Finalize equipment ──
   for (const tag of Object.keys(eqByCountry)) {
@@ -2017,6 +2055,10 @@ export function analyzeSave(
       0,
     ),
   };
+  finishPhase('finalAggregationAndResult');
+  if (profile) {
+    console.error(`[PROFILE] analyzeSave ${JSON.stringify({ phases })}`);
+  }
 
   return {
     game_date: gameDate,

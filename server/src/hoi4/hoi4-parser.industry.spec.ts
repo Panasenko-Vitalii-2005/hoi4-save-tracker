@@ -230,6 +230,15 @@ describe('shared Industry analysis context', () => {
     }
   });
 
+  test('direct occupation block wins over nested and similarly prefixed blocks', () => {
+    const source =
+      '\n\tAAA={\n\t\twrapper={\n\t\t\toccupation_status={ occupation={ BBB={ occupation_law_list={ 1="wrong" } } } }\n\t\t}\n\t\toccupation_status_extra={ occupation={ BBB={ occupation_law_list={ 2="wrong" } } } }\n\t\toccupation_status={\n\t\t\toccupation={ BBB={ occupation_law_list={ 3="right" } } }\n\t\t}\n\t}\n';
+    const laws =
+      buildIndustryAnalysisContext(source).occupationLawsByController.AAA;
+
+    expect([...laws.entries()]).toEqual([[3, 'right']]);
+  });
+
   test('context and states are unchanged across both gross/healthy execution orders', () => {
     const context = buildIndustryAnalysisContext(countriesBlock);
     const snapshot = () => ({
