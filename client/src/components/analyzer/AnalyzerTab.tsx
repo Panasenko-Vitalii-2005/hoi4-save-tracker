@@ -7,7 +7,13 @@ import React, {
   useRef,
 } from "react";
 import type { AnalyzeResult, CountryStats, RecentAnalysis } from "@/types";
-import { apiFetch } from "@/lib/api-client";
+import {
+  apiAnalyzeUpload,
+  apiFetch,
+  type SaveUploadProgress as UploadMeasurement,
+} from "@/lib/api-client";
+import { formatFileSize } from "@/lib/snapshot-folder";
+import { SaveUploadProgress } from "./SaveUploadProgress";
 import { SummaryGrid } from "@/components/ui/SummaryGrid";
 import {
   countryFullName,
@@ -143,16 +149,20 @@ function AnalyzerViewContext({
 function SaveBrowser({
   onSelect,
   onUpload,
+  onFileSelected,
   onBatchUpload,
   analyzing,
 }: {
   onSelect: (p: string, n: string) => void;
   onUpload: (file: File) => void;
+  onFileSelected: () => boolean;
   onBatchUpload: () => void;
   analyzing: boolean;
 }) {
-  const { t } = useAppTranslation();
+  const { t, i18n } = useAppTranslation();
   const fileInput = useRef<HTMLInputElement>(null);
+  const selectedFileRef = useRef<File | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [dir, setDir] = useState("");
   const [files, setFiles] = useState<SaveFile[]>([]);
   const [page, setPage] = useState(1);
@@ -211,10 +221,22 @@ function SaveBrowser({
         <button
           className="button button-primary analyzer-save-action"
           disabled={analyzing}
-          onClick={() => fileInput.current?.click()}
+          onClick={() => {
+            if (selectedFileRef.current) onUpload(selectedFileRef.current);
+            else fileInput.current?.click();
+          }}
         >
           {t("analysis.analyzeSave")}
         </button>
+        {selectedFile && (
+          <button
+            className="button button-secondary analyzer-save-action"
+            disabled={analyzing}
+            onClick={() => fileInput.current?.click()}
+          >
+            {t("analysis.chooseAnother")}
+          </button>
+        )}
         <button
           className="button button-secondary analyzer-save-action"
           disabled={analyzing}
@@ -231,7 +253,10 @@ function SaveBrowser({
           hidden
           onChange={(event) => {
             const file = event.target.files?.[0];
-            if (file && !analyzing) onUpload(file);
+            if (file && !analyzing && onFileSelected()) {
+              selectedFileRef.current = file;
+              setSelectedFile(file);
+            }
             event.target.value = "";
           }}
         />
@@ -243,6 +268,18 @@ function SaveBrowser({
           ↻ {t("analysis.refresh")}
         </button>
       </div>
+      {selectedFile && (
+        <div className="analyzer-selected-file">
+          <strong>{t("analysis.uploadProgress.selected", {
+            name: selectedFile.name,
+            size: formatFileSize(
+              selectedFile.size,
+              i18n.resolvedLanguage ?? i18n.language,
+            ),
+          })}</strong>
+          <span>{t("analysis.uploadProgress.selectionHint")}</span>
+        </div>
+      )}
       <div className="analyzer-save-directory">
         <div className="analyzer-save-directory-label">
           {t("analysis.localDirectory")}
@@ -386,6 +423,9 @@ export function AnalyzerTab({
     reason?: AnalysisFailure["reason"];
   }>({ type: "idle", msg: "" });
   const analysisInFlight = useRef(false);
+  const analysisRequest = useRef<AbortController | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadMeasurement | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const lastAnalysis = useRef<{
     filePath: string;
     fileName: string;
@@ -489,6 +529,8 @@ export function AnalyzerTab({
       resultRequestVersion.current++;
       openingRequest.current?.abort();
       openingRequest.current = null;
+      analysisRequest.current?.abort();
+      analysisRequest.current = null;
     },
     [],
   );
@@ -594,46 +636,69 @@ export function AnalyzerTab({
     if (analysisInFlight.current || batchRunning) return;
     analysisInFlight.current = true;
     lastAnalysis.current = { filePath, fileName, uploadedFile };
-    resultRequestVersion.current++;
+    const version = ++resultRequestVersion.current;
+    const controller = new AbortController();
+    analysisRequest.current = controller;
+    const active = () =>
+      version === resultRequestVersion.current && !controller.signal.aborted;
     openingRequest.current?.abort();
     openingRequest.current = null;
     setOpeningHash(null);
     setOpenError("");
+    setUploadProgress(null);
+    setIsUploading(!!uploadedFile);
     setStatus({
       type: "loading",
-      msg: `${t(uploadedFile ? "analysis.uploading" : "analysis.analyzing", { name: fileName })}${result ? t("analysis.previousSafe") : ""}`,
+      msg: `${uploadedFile ? `${t("analysis.uploadProgress.uploading")} ${fileName}` : t("analysis.analyzing", { name: fileName })}${result ? t("analysis.previousSafe") : ""}`,
     });
     try {
       if (uploadedFile) {
         try {
-          // Force a bounded read before fetch so a stale/unavailable browser
+          // Force a bounded read before upload so a stale/unavailable browser
           // File is not misreported as an analyzer-service outage.
           await probeUploadFile(uploadedFile);
         } catch {
+          if (!active()) return;
           lastAnalysis.current = null;
           setStatus(analysisFileReadError());
           return;
         }
       }
+      if (!active()) return;
       const formData = new FormData();
       if (uploadedFile) formData.append("file", uploadedFile);
-      const resp = await apiFetch(
-        "/api/analyze",
-        uploadedFile
-          ? { method: "POST", body: formData }
-          : {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ path: filePath }),
+      const resp = await (uploadedFile
+        ? apiAnalyzeUpload(formData, {
+            signal: controller.signal,
+            onProgress: (progress) => {
+              if (active()) setUploadProgress(progress);
             },
-      );
+            onUploaded: () => {
+              if (!active()) return;
+              setIsUploading(false);
+              setUploadProgress(null);
+              setStatus({
+                type: "loading",
+                msg: `${t("analysis.uploadProgress.analyzing")} ${fileName}${result ? t("analysis.previousSafe") : ""}`,
+              });
+            },
+          })
+        : apiFetch("/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: filePath }),
+            signal: controller.signal,
+          }));
+      if (!active()) return;
       if (!resp.ok) {
         const failure = await analysisError(resp);
+        if (!active()) return;
         if (failure.recovery === "choose-file") lastAnalysis.current = null;
         setStatus(failure);
         return;
       }
       const data: unknown = await resp.json().catch(() => null);
+      if (!active()) return;
       if (!isAnalyzeResult(data)) {
         setStatus({
           type: "error",
@@ -657,10 +722,26 @@ export function AnalyzerTab({
         type: "ok",
         msg: `✓ ${fileName}  —  ${data.parse_seconds}s · ${data.file_size_mb} MB · ${data.game_date}`,
       });
-    } catch {
-      setStatus(analysisNetworkError());
+    } catch (error) {
+      if (!active()) return;
+      setStatus(
+        error instanceof DOMException && error.name === "AbortError"
+          ? {
+              type: "error",
+              msg: t("analysis.uploadProgress.cancelled"),
+              recovery: "retry",
+            }
+          : analysisNetworkError(),
+      );
     } finally {
-      analysisInFlight.current = false;
+      if (analysisRequest.current === controller) {
+        analysisRequest.current = null;
+        analysisInFlight.current = false;
+        if (version === resultRequestVersion.current) {
+          setUploadProgress(null);
+          setIsUploading(false);
+        }
+      }
     }
   };
 
@@ -942,6 +1023,14 @@ export function AnalyzerTab({
             analyzing={status.type === "loading" || batchRunning}
             onSelect={analyze}
             onUpload={(file) => analyze("", file.name, file)}
+            onFileSelected={() => {
+              if (analysisInFlight.current || batchRunning) return false;
+              lastAnalysis.current = null;
+              setUploadProgress(null);
+              setIsUploading(false);
+              setStatus({ type: "idle", msg: "" });
+              return true;
+            }}
             onBatchUpload={() => batchPanelRef.current?.openPicker()}
           />
 
@@ -963,8 +1052,8 @@ export function AnalyzerTab({
                   <BinarySaveRecovery
                     onChooseFile={() =>
                       document
-                        .querySelector<HTMLButtonElement>(
-                          "#analyze-one-save .button-primary",
+                        .querySelector<HTMLInputElement>(
+                          '#analyze-one-save input[type="file"]',
                         )
                         ?.click()
                     }
@@ -975,14 +1064,17 @@ export function AnalyzerTab({
                       <span className="spinner" aria-hidden="true" />
                     )}
                     <span>{status.msg}</span>
+                    {status.type === "loading" && isUploading && (
+                      <SaveUploadProgress progress={uploadProgress} />
+                    )}
                     {status.recovery && status.type !== "loading" && (
                       <button
                         className="button button-secondary analyzer-status-action"
                         onClick={() => {
                           if (status.recovery === "choose-file") {
                             document
-                              .querySelector<HTMLButtonElement>(
-                                "#analyze-one-save .button-primary",
+                              .querySelector<HTMLInputElement>(
+                                '#analyze-one-save input[type="file"]',
                               )
                               ?.click();
                             return;
@@ -1015,8 +1107,8 @@ export function AnalyzerTab({
             analyzing={status.type === "loading" || batchRunning}
             onAnalyzeSave={() =>
               document
-                .querySelector<HTMLButtonElement>(
-                  "#analyze-one-save .button-primary",
+                .querySelector<HTMLInputElement>(
+                  '#analyze-one-save input[type="file"]',
                 )
                 ?.click()
             }
@@ -1712,8 +1804,8 @@ export function AnalyzerTab({
           onRetryOptions={comparisonState.retryOptions}
           onAnalyzeSave={() =>
             document
-              .querySelector<HTMLButtonElement>(
-                "#analyze-one-save .button-primary",
+              .querySelector<HTMLInputElement>(
+                '#analyze-one-save input[type="file"]',
               )
               ?.click()
           }

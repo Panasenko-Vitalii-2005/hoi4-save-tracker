@@ -2,6 +2,7 @@ import {
   forwardRef,
   useImperativeHandle,
   useMemo,
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -9,7 +10,12 @@ import {
   analyzerUnavailableMessage,
   analysisError,
 } from "@/lib/analysis-error";
-import { apiFetch } from "@/lib/api-client";
+import {
+  apiAnalyzeUpload,
+  apiFetch,
+  type SaveUploadProgress as UploadMeasurement,
+} from "@/lib/api-client";
+import { SaveUploadProgress } from "./SaveUploadProgress";
 import { useAppTranslation } from "@/i18n";
 import {
   filterSnapshotFolderFiles,
@@ -24,6 +30,7 @@ type BatchStatus =
   | "identifying"
   | "already_analyzed"
   | "queued"
+  | "uploading"
   | "analyzing"
   | "completed"
   | "failed"
@@ -55,6 +62,7 @@ const STATUS_COPY = {
   identifying: { symbol: "…", labelKey: "batch.statuses.identifying" },
   already_analyzed: { symbol: "✓", labelKey: "batch.statuses.alreadyAnalyzed" },
   queued: { symbol: "○", labelKey: "batch.statuses.queued" },
+  uploading: { symbol: "↑", labelKey: "analysis.uploadProgress.uploading" },
   analyzing: { symbol: "→", labelKey: "batch.statuses.analyzing" },
   completed: { symbol: "✓", labelKey: "batch.statuses.completed" },
   failed: { symbol: "!", labelKey: "batch.statuses.failed" },
@@ -116,6 +124,13 @@ export const BatchAnalysisPanel = forwardRef<
   const itemsRef = useRef<BatchItem[]>([]);
   const generationRef = useRef(0);
   const cancelRef = useRef(false);
+  const mounted = useRef(true);
+  const runningRef = useRef(false);
+  const runningCallback = useRef(onRunningChange);
+  runningCallback.current = onRunningChange;
+  const activeRequest = useRef<AbortController | null>(null);
+  const [uploadProgress, setUploadProgress] =
+    useState<UploadMeasurement | null>(null);
   const nextId = useRef(0);
   const [items, setItems] = useState<BatchItem[]>([]);
   const [phase, setPhase] = useState<
@@ -132,6 +147,19 @@ export const BatchAnalysisPanel = forwardRef<
   const [sampleTarget, setSampleTarget] =
     useState<SnapshotSampleTarget>(25);
 
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      generationRef.current += 1;
+      cancelRef.current = true;
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+      if (runningRef.current) runningCallback.current?.(false);
+      runningRef.current = false;
+    };
+  }, []);
+
   useImperativeHandle(ref, () => ({
     openPicker: () => inputRef.current?.click(),
   }));
@@ -139,6 +167,7 @@ export const BatchAnalysisPanel = forwardRef<
   const updateItems = (
     update: BatchItem[] | ((current: BatchItem[]) => BatchItem[]),
   ) => {
+    if (!mounted.current) return;
     setItems((current) => {
       const next = typeof update === "function" ? update(current) : update;
       itemsRef.current = next;
@@ -153,7 +182,7 @@ export const BatchAnalysisPanel = forwardRef<
       selected: items.length,
       known: count("already_analyzed"),
       queued: count("queued"),
-      analyzing: count("analyzing"),
+      analyzing: count("uploading") + count("analyzing"),
       completed: count("completed"),
       failed: count("failed"),
       invalid: count("invalid"),
@@ -204,7 +233,9 @@ export const BatchAnalysisPanel = forwardRef<
       filter === "all" ? items : items.filter((item) => item.status === filter),
     [filter, items],
   );
-  const current = items.find((item) => item.status === "analyzing");
+  const current = items.find(
+    (item) => item.status === "uploading" || item.status === "analyzing",
+  );
   const processed = items.filter((item) =>
     [
       "already_analyzed",
@@ -339,7 +370,10 @@ export const BatchAnalysisPanel = forwardRef<
   };
 
   const processIds = async (ids: number[]) => {
+    if (runningRef.current || !mounted.current) return;
+    runningRef.current = true;
     cancelRef.current = false;
+    setUploadProgress(null);
     setPhase("running");
     onRunningChange?.(true);
     let completedThisRun = 0;
@@ -351,18 +385,35 @@ export const BatchAnalysisPanel = forwardRef<
         updateItems((currentItems) =>
           currentItems.map((entry) =>
             entry.id === id
-              ? { ...entry, status: "analyzing", error: null }
+              ? { ...entry, status: "uploading", error: null }
               : entry,
           ),
         );
         let failureMessage = analyzerUnavailableMessage();
+        const controller = new AbortController();
+        activeRequest.current = controller;
+        setUploadProgress(null);
         try {
           const formData = new FormData();
           formData.append("file", item.file);
-          const response = await apiFetch("/api/analyze?response=batch", {
-            method: "POST",
-            body: formData,
+          const response = await apiAnalyzeUpload(formData, {
+            batch: true,
+            signal: controller.signal,
+            onProgress: (progress) => {
+              if (mounted.current && activeRequest.current === controller)
+                setUploadProgress(progress);
+            },
+            onUploaded: () => {
+              if (!mounted.current || activeRequest.current !== controller) return;
+              setUploadProgress(null);
+              updateItems((currentItems) =>
+                currentItems.map((entry) =>
+                  entry.id === id ? { ...entry, status: "analyzing" } : entry,
+                ),
+              );
+            },
           });
+          if (!mounted.current) break;
           if (!response.ok) {
             const safe = await analysisError(response);
             failureMessage = safe.msg;
@@ -386,7 +437,10 @@ export const BatchAnalysisPanel = forwardRef<
                 : entry,
             ),
           );
-        } catch {
+        } catch (error) {
+          if (!mounted.current) break;
+          if (error instanceof DOMException && error.name === "AbortError")
+            failureMessage = t("analysis.uploadProgress.cancelled");
           updateItems((currentItems) =>
             currentItems.map((entry) =>
               entry.id === id
@@ -398,6 +452,9 @@ export const BatchAnalysisPanel = forwardRef<
                 : entry,
             ),
           );
+        } finally {
+          if (activeRequest.current === controller) activeRequest.current = null;
+          if (mounted.current) setUploadProgress(null);
         }
         // Yield between files. The backend remains the authoritative admission
         // boundary, while this prevents a browser batch from flooding requests.
@@ -413,9 +470,13 @@ export const BatchAnalysisPanel = forwardRef<
         );
       }
     } finally {
-      setPhase("complete");
-      onRunningChange?.(false);
-      if (completedThisRun > 0) onHistoryChanged?.();
+      runningRef.current = false;
+      if (mounted.current) {
+        setPhase("complete");
+        setUploadProgress(null);
+        onRunningChange?.(false);
+        if (completedThisRun > 0) onHistoryChanged?.();
+      }
     }
   };
 
@@ -715,11 +776,18 @@ export const BatchAnalysisPanel = forwardRef<
             <div className="batch-analysis-progress" role="status">
               <span className="spinner" aria-hidden="true" />
               <div>
-                <strong>{t("batch.analyzing")}</strong>
+                <strong>
+                  {t(current?.status === "uploading"
+                    ? "analysis.uploadProgress.uploading"
+                    : "analysis.uploadProgress.analyzing")}
+                </strong>
                 <span>
                   {t("batch.processed", { processed, total: items.length })}
                 </span>
                 {current && <span>{t("batch.current", { name: current.file.name })}</span>}
+                {current?.status === "uploading" && (
+                  <SaveUploadProgress progress={uploadProgress} />
+                )}
               </div>
             </div>
           )}

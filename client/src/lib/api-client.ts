@@ -56,6 +56,14 @@ export async function apiFetch(
     headers,
     credentials: "include",
   });
+  await announceAuthFailure(response, access);
+  return response;
+}
+
+async function announceAuthFailure(
+  response: Response,
+  access: "private" | "public" = "private",
+): Promise<void> {
   if (access === "private" && response.status === 401)
     window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
   if (response.status === 403) {
@@ -72,5 +80,113 @@ export async function apiFetch(
       window.dispatchEvent(new Event(CSRF_REJECTED_EVENT));
   }
   // Never replay an unsafe operation automatically after either failure.
+}
+
+export interface SaveUploadProgress {
+  loaded: number;
+  total: number | null;
+}
+
+/** Only multipart analyze requests use XHR; other API calls keep using fetch. */
+export async function apiAnalyzeUpload(
+  body: FormData,
+  {
+    batch = false,
+    signal,
+    onProgress,
+    onUploaded,
+  }: {
+    batch?: boolean;
+    signal?: AbortSignal;
+    onProgress?: (progress: SaveUploadProgress) => void;
+    onUploaded?: () => void;
+  } = {},
+): Promise<Response> {
+  const aborted = () => new DOMException("Request aborted", "AbortError");
+  if (signal?.aborted) throw aborted();
+  const token = await ensureCsrf();
+  if (signal?.aborted) throw aborted();
+  const response = await new Promise<Response>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let settled = false;
+    let uploaded = false;
+    const cleanup = () => {
+      signal?.removeEventListener("abort", abort);
+      xhr.upload.removeEventListener("progress", progress);
+      xhr.upload.removeEventListener("load", uploadComplete);
+      xhr.removeEventListener("load", load);
+      xhr.removeEventListener("error", fail);
+      xhr.removeEventListener("timeout", fail);
+      xhr.removeEventListener("abort", cancelled);
+    };
+    const finish = (work: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      work();
+    };
+    const uploadComplete = () => {
+      if (settled || uploaded) return;
+      uploaded = true;
+      onUploaded?.();
+    };
+    const progress = (event: ProgressEvent) => {
+      if (settled || uploaded || !Number.isFinite(event.loaded) || event.loaded < 0)
+        return;
+      const total =
+        event.lengthComputable && Number.isFinite(event.total) && event.total > 0
+          ? event.total
+          : null;
+      // Do not leave a 100% upload bar visible while waiting for the server.
+      if (total !== null && event.loaded >= total) uploadComplete();
+      else onProgress?.({ loaded: event.loaded, total });
+    };
+    const load = () => {
+      try {
+        const headers = new Headers();
+        for (const line of xhr.getAllResponseHeaders().split(/\r?\n/)) {
+          const separator = line.indexOf(":");
+          if (separator > 0)
+            headers.append(
+              line.slice(0, separator).trim(),
+              line.slice(separator + 1).trim(),
+            );
+        }
+        const response = new Response(
+          [204, 205, 304].includes(xhr.status) ? null : xhr.responseText,
+          { status: xhr.status, statusText: xhr.statusText, headers },
+        );
+        finish(() => resolve(response));
+      } catch {
+        finish(() => reject(new TypeError("Analysis response unavailable")));
+      }
+    };
+    const fail = () =>
+      finish(() => reject(new TypeError("Network request failed")));
+    const cancelled = () => finish(() => reject(aborted()));
+    const abort = () => {
+      xhr.abort();
+      cancelled();
+    };
+    try {
+      // Register upload listeners before open/send for browser compatibility.
+      xhr.upload.addEventListener("progress", progress);
+      xhr.upload.addEventListener("load", uploadComplete);
+      xhr.addEventListener("load", load);
+      xhr.addEventListener("error", fail);
+      xhr.addEventListener("timeout", fail);
+      xhr.addEventListener("abort", cancelled);
+      xhr.open("POST", batch ? "/api/analyze?response=batch" : "/api/analyze");
+      xhr.withCredentials = true;
+      xhr.setRequestHeader("X-CSRF-Token", token);
+      // Browser supplies the multipart Content-Type/boundary; never set it here.
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
+      else xhr.send(body);
+    } catch (error) {
+      finish(() => reject(error));
+    }
+  });
+  await announceAuthFailure(response);
   return response;
 }

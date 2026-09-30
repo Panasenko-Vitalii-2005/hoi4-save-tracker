@@ -5,6 +5,7 @@ import { AnalyzerTab } from "../src/components/analyzer/AnalyzerTab";
 import App from "../src/App";
 import { seedCsrfCookie } from "./auth-fixture";
 import { i18n } from "../src/i18n";
+import { installUploadXhrUsingFetchFixtures, UploadXhr } from "./xhr-fixture";
 
 // Test the actual request UI; plotting and the unrelated telemetry request are not needed.
 vi.mock("react-plotly.js", () => ({
@@ -71,6 +72,7 @@ describe("analysis request lifecycle", () => {
   beforeEach(async () => {
     await i18n.changeLanguage("en");
     seedCsrfCookie();
+    installUploadXhrUsingFetchFixtures();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     requests = [];
     telemetryRequests = [];
@@ -152,22 +154,22 @@ describe("analysis request lifecycle", () => {
       requests[index].resolve(Response.json(body, { status: code })),
     );
   };
-  const chooseFile = async (
+  const selectFile = (
     file = new File(["HOI4txt"], "upload.hoi4"),
   ) => {
-    const requestCount = requests.length;
     Object.defineProperty(picker(), "files", {
       configurable: true,
       value: [file],
     });
     picker().dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const chooseFile = async (file = new File(["HOI4txt"], "upload.hoi4")) => {
+    const requestCount = requests.length;
+    selectFile(file);
+    button("Analyze Save").click();
     for (let attempt = 0; attempt < 20; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 0));
-      if (
-        requests.length > requestCount ||
-        !status().textContent?.includes("Uploading and analyzing")
-      )
-        break;
+      if (requests.length > requestCount) break;
     }
   };
 
@@ -326,7 +328,7 @@ describe("analysis request lifecycle", () => {
     await render();
     await act(async () => chooseFile());
     expect(status().textContent).toContain(
-      "Uploading and analyzing upload.hoi4",
+      "Uploading save… upload.hoi4",
     );
     const form = requests[0].init?.body as FormData;
     expect((form.get("file") as File).name).toBe("upload.hoi4");
@@ -338,6 +340,99 @@ describe("analysis request lifecycle", () => {
     await respond(1, snapshot());
     expect(date()).toBe("1944.5.1");
     expect(picker().disabled).toBe(false);
+  });
+
+  test("file selection stays local until Analyze is pressed", async () => {
+    await render();
+    await act(async () => selectFile());
+    expect(requests).toHaveLength(0);
+    expect(UploadXhr.requests).toHaveLength(0);
+    expect(status().textContent).toBe("");
+    expect(container.textContent).toContain("Selected locally: upload.hoi4");
+    expect(container.textContent).toContain("until you press Analyze Save");
+    expect(container.querySelector(".save-upload-progress")).toBeNull();
+    await act(async () => button("Analyze Save").click());
+    for (let attempt = 0; attempt < 20 && !requests.length; attempt++) await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(requests).toHaveLength(1);
+    expect(UploadXhr.requests).toHaveLength(1);
+    expect(status().textContent).toContain("Uploading save…");
+  });
+
+  test.each(["en", "ru"])("%s progress is measured and upload completion removes the bar before analysis finishes", async (language) => {
+    await i18n.changeLanguage(language);
+    await render();
+    await act(async () => selectFile());
+    expect(UploadXhr.requests).toHaveLength(0);
+    await act(async () => button(language === "ru" ? "Анализировать сохранение" : "Analyze Save").click());
+    for (let attempt = 0; attempt < 20 && !UploadXhr.requests.length; attempt++) await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    const xhr = UploadXhr.requests[0];
+    const progress = () => container.querySelector<HTMLProgressElement>(".save-upload-progress progress");
+    expect(progress()?.hasAttribute("value")).toBe(false);
+    expect(container.querySelector(".save-upload-progress strong")).toBeNull();
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 25)));
+    expect(progress()?.hasAttribute("value")).toBe(false); // No simulated advance.
+    await act(async () => xhr.progress(50, 100));
+    expect(progress()?.value).toBe(50);
+    expect(progress()?.max).toBe(100);
+    expect(container.querySelector(".save-upload-progress strong")?.textContent).toBe("50%");
+    expect(container.querySelector(".save-upload-progress")?.textContent).toContain("50 B / 100 B");
+    expect(status().textContent).toContain(language === "ru" ? "Загрузка сохранения…" : "Uploading save…");
+    await act(async () => xhr.progress(100, 100));
+    expect(progress()).toBeNull();
+    expect(status().textContent).toContain(language === "ru" ? "Анализируем сохранение…" : "Analyzing save…");
+    expect(status().textContent).not.toContain(language === "ru" ? "Загрузка сохранения…" : "Uploading save…");
+    await act(async () => { xhr.uploaded(); xhr.progress(80, 100); });
+    expect(progress()).toBeNull(); // Late progress cannot revert the stage.
+    await respond(0, snapshot());
+    expect(date()).toBe("1944.5.1");
+    expect(picker().disabled).toBe(false);
+    expect(container.querySelector(".save-upload-progress")).toBeNull();
+  });
+
+  test("unknown-length upload shows real bytes but no invented percentage", async () => {
+    await render();
+    await act(async () => chooseFile());
+    await act(async () => UploadXhr.requests[0].progress(50, 0, false));
+    expect(container.querySelector(".save-upload-progress")?.textContent).toContain("50 B sent");
+    expect(container.querySelector(".save-upload-progress strong")).toBeNull();
+    expect(container.querySelector(".save-upload-progress progress")?.hasAttribute("value")).toBe(false);
+    await act(async () => UploadXhr.requests[0].uploaded());
+    expect(status().textContent).toContain("Analyzing save…");
+    expect(container.querySelector(".save-upload-progress")).toBeNull();
+  });
+
+  test.each(["network", "abort", "rejection"])("%s failure clears progress, preserves previous result and allows a fresh selection", async (failure) => {
+    await render();
+    await start();
+    await respond(0, snapshot());
+    await act(async () => chooseFile());
+    const xhr = UploadXhr.requests[0];
+    await act(async () => xhr.progress(50, 100));
+    expect(container.querySelector(".save-upload-progress strong")?.textContent).toBe("50%");
+    if (failure === "rejection") await respond(1, { code: "FILE_TOO_LARGE", maxUploadBytes: 268435456 }, 413);
+    else await act(async () => failure === "abort" ? xhr.abort() : xhr.fail());
+    expect(container.querySelector(".save-upload-progress")).toBeNull();
+    expect(picker().disabled).toBe(false);
+    expect(date()).toBe("1944.5.1");
+    if (failure === "abort") expect(status().textContent).toContain("Analysis request cancelled");
+    if (failure === "network") expect(status().textContent).toContain("Cannot reach the analyzer service");
+    if (failure === "rejection") expect(status().textContent).toContain("Maximum upload size: 256 MiB");
+    await act(async () => selectFile(new File(["HOI4txt"], "another.hoi4")));
+    expect(status().textContent).toBe("");
+    expect(container.textContent).toContain("Selected locally: another.hoi4");
+    expect(requests).toHaveLength(2); // No re-upload merely from changing selection.
+  });
+
+  test("unmount aborts upload and ignores late completion/progress", async () => {
+    await render();
+    await act(async () => chooseFile());
+    const xhr = UploadXhr.requests[0];
+    await act(async () => root.render(null));
+    expect(xhr.aborted).toBe(true);
+    await act(async () => { xhr.progress(100, 100); xhr.uploaded(); });
+    await respond(0, snapshot());
+    expect(container.textContent).toBe("");
+    expect(telemetryRequests).toHaveLength(0);
   });
 
   test("reports an unreadable selected file before sending multipart", async () => {

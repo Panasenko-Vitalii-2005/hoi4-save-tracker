@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AnalyzerTab } from "../src/components/analyzer/AnalyzerTab";
 import { RecentAnalyses } from "../src/components/analyzer/RecentAnalyses";
 import { seedCsrfCookie } from "./auth-fixture";
+import { installUploadXhrUsingFetchFixtures } from "./xhr-fixture";
 
 vi.mock("react-plotly.js", () => ({ default: () => null }));
 
@@ -167,6 +168,7 @@ describe("Recent Analyses", () => {
 
   beforeEach(() => {
     seedCsrfCookie();
+    installUploadXhrUsingFetchFixtures();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     historyRequests = [];
     analyzeRequests = [];
@@ -251,6 +253,7 @@ describe("Recent Analyses", () => {
         value: [new File(["HOI4txt"], "autosave.hoi4")],
       });
       picker.dispatchEvent(new Event("change", { bubbles: true }));
+      container.querySelector<HTMLButtonElement>("#analyze-one-save .button-primary")!.click();
       for (let attempt = 0; attempt < 20; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 0));
         if (analyzeRequests.length > requestCount) break;
@@ -707,7 +710,7 @@ describe("Recent Analyses", () => {
     await act(async () => openRequests[0].reject(new Error("aborted")));
     expect(section().textContent).not.toContain("Could not open");
     expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      "Uploading and analyzing",
+      "Uploading save…",
     );
     await act(async () => analyzeRequests[0](Response.json(snapshot)));
     expect(resultDate()).toBe(snapshot.game_date);

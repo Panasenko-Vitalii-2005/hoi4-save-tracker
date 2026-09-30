@@ -11,6 +11,7 @@ import type {
 } from "../src/types/analysis-comparison";
 import type { RecentAnalysis } from "../src/types";
 import { seedCsrfCookie } from "./auth-fixture";
+import { installUploadXhrUsingFetchFixtures } from "./xhr-fixture";
 
 vi.mock("react-plotly.js", () => ({ default: () => null }));
 
@@ -101,6 +102,7 @@ describe("Save comparison UI", () => {
     resolve: (response: Response) => void;
   }[];
   beforeEach(() => {
+    installUploadXhrUsingFetchFixtures();
     seedCsrfCookie();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal(
@@ -808,6 +810,7 @@ describe("Save comparison UI", () => {
         value: [new File(["fixture"], "new.hoi4")],
       });
       picker.dispatchEvent(new Event("change", { bubbles: true }));
+      container.querySelector<HTMLButtonElement>("#analyze-one-save .button-primary")!.click();
       for (let attempt = 0; attempt < 20; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 0));
         if (requests.length > requestCount) break;

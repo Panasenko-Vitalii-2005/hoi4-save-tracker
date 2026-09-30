@@ -9,6 +9,7 @@ import {
 } from "../src/components/analyzer/BatchAnalysisPanel";
 import { seedCsrfCookie } from "./auth-fixture";
 import { i18n } from "../src/i18n";
+import { installUploadXhrUsingFetchFixtures, UploadXhr } from "./xhr-fixture";
 
 function hash(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
@@ -47,6 +48,7 @@ describe("BatchAnalysisPanel", () => {
   beforeEach(async () => {
     await i18n.changeLanguage("en");
     seedCsrfCookie();
+    installUploadXhrUsingFetchFixtures();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     container = document.createElement("div");
     document.body.append(container);
@@ -452,6 +454,56 @@ describe("BatchAnalysisPanel", () => {
     );
     expect(analyzed).toEqual(["one.hoi4"]);
     expect(container.textContent).toContain("Cancelled");
+  });
+
+  test("shows current-file upload/analysis stages and preserves sequential overall progress", async () => {
+    const responses: Array<(response: Response) => void> = [];
+    vi.stubGlobal("fetch", vi.fn((url: string) => url === "/api/analyze/batch/preflight"
+      ? Promise.resolve(Response.json({ knownHashes: [] }))
+      : new Promise<Response>((resolve) => responses.push(resolve))));
+    await act(async () => root.render(<BatchAnalysisPanel />));
+    await select([save("one.hoi4", "one"), save("two.hoi4", "two")]);
+    expect(UploadXhr.requests).toHaveLength(0);
+    await act(async () => button("Analyze 2 new saves").click());
+    await waitFor(() => UploadXhr.requests.length === 1);
+    const first = UploadXhr.requests[0];
+    expect(container.querySelector(".batch-analysis-progress")?.textContent).toContain("Uploading save…");
+    expect(container.querySelector(".batch-analysis-progress")?.textContent).toContain("one.hoi4");
+    await act(async () => first.progress(50, 100));
+    expect(container.querySelector(".save-upload-progress strong")?.textContent).toBe("50%");
+    await act(async () => first.uploaded());
+    expect(container.querySelector(".batch-analysis-progress")?.textContent).toContain("Analyzing save…");
+    expect(container.querySelector(".save-upload-progress")).toBeNull();
+    expect(UploadXhr.requests).toHaveLength(1); // Upload completion alone cannot start the next file.
+    await act(async () => responses[0](Response.json({ hash: hash("one"), gameDate: "1944.5.1", campaignId: null })));
+    await waitFor(() => UploadXhr.requests.length === 2);
+    expect(container.querySelector(".batch-analysis-progress")?.textContent).toContain("two.hoi4");
+    expect(container.querySelector(".batch-analysis-progress")?.textContent).toContain("1 / 2");
+    expect(container.querySelector(".save-upload-progress progress")?.hasAttribute("value")).toBe(false);
+    expect(container.querySelector(".save-upload-progress strong")).toBeNull();
+    await act(async () => responses[1](Response.json({ hash: hash("two"), gameDate: "1944.6.1", campaignId: null })));
+    await waitFor(() => container.textContent?.includes("Batch complete") === true);
+    expect(container.textContent).toContain("Completed: 2 · Failed: 0");
+    expect(container.querySelector(".save-upload-progress")).toBeNull();
+  });
+
+  test("unmount aborts current upload, releases the parent lock and sends no queued files", async () => {
+    let respond!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn((url: string) => url === "/api/analyze/batch/preflight"
+      ? Promise.resolve(Response.json({ knownHashes: [] }))
+      : new Promise<Response>((resolve) => { respond = resolve; })));
+    const running = vi.fn();
+    const history = vi.fn();
+    await act(async () => root.render(<BatchAnalysisPanel onRunningChange={running} onHistoryChanged={history} />));
+    await select([save("one.hoi4", "one"), save("two.hoi4", "two")]);
+    await act(async () => button("Analyze 2 new saves").click());
+    await waitFor(() => UploadXhr.requests.length === 1);
+    await act(async () => root.render(null));
+    expect(UploadXhr.requests[0].aborted).toBe(true);
+    expect(running.mock.calls).toEqual([[true], [false]]);
+    await act(async () => respond(Response.json({ hash: hash("one"), gameDate: "1944.5.1", campaignId: null })));
+    expect(UploadXhr.requests).toHaveLength(1);
+    expect(history).not.toHaveBeenCalled();
   });
 
   test("network failure stays local, later files continue, and Retry failed retries only that file", async () => {
