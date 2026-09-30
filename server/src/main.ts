@@ -1,9 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { configureHttpSecurity } from './http-security';
+import { configureAnalyzeRequestProfiling } from './analyze-request-profile';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  configureAnalyzeRequestProfiling(app);
   configureHttpSecurity(app);
   app.enableShutdownHooks();
   const port = process.env.PORT ?? 3001;

@@ -41,6 +41,10 @@ import type {
   AnalysisSaveFormat,
   AnalysisTelemetryCarrier,
 } from '../telemetry/product-events.types';
+import {
+  currentAnalyzeRequestProfile,
+  profileRequestPhase,
+} from '../analyze-request-profile';
 
 interface AnalyzeRequest {
   path: string;
@@ -343,9 +347,13 @@ export class AnalyzeController {
       }
     }
 
-    const saveFormat = await validateSaveFileFormat(filePath);
+    const saveFormat = await profileRequestPhase('validationMs', () =>
+      validateSaveFileFormat(filePath),
+    );
     const fileSizeBytes =
       uploadedSave?.size ?? (await fs.promises.stat(filePath)).size;
+    const profile = currentAnalyzeRequestProfile();
+    if (profile) profile.fileBytes = fileSizeBytes;
     if (attempt) {
       attempt.fileSizeBytes = fileSizeBytes;
       attempt.saveFormat = saveFormat;
@@ -369,11 +377,12 @@ export class AnalyzeController {
     let persisted = false;
     if (attempt) attempt.stage = 'persistence';
     if (!response.destroyed) {
-      persisted = await this.history.record(
-        record,
-        result,
-        comparisonContext,
-        () => this.assignOwnership(currentUser, hash, record.fileName),
+      persisted = await profileRequestPhase('persistenceMs', () =>
+        this.history.record(record, result, comparisonContext, () =>
+          profileRequestPhase('ownershipDatabaseMs', () =>
+            this.assignOwnership(currentUser, hash, record.fileName),
+          ),
+        ),
       );
     }
     if (responseMode === 'batch') {

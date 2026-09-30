@@ -18,6 +18,7 @@ import {
   unknownSaveComparisonContext,
   type SaveComparisonContext,
 } from './save-comparison-context';
+import { currentAnalyzeRequestProfile } from '../analyze-request-profile';
 
 export interface AnalyzedSave {
   result: AnalyzeResult;
@@ -43,14 +44,25 @@ export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
   }
 
   async analyzeWithContext(filePath: string): Promise<AnalyzedSave> {
+    const profile = currentAnalyzeRequestProfile();
+    const endAdmission = profile?.begin('workerAdmissionMs');
     if (this.closing || this.workers.size >= this.limit) {
+      endAdmission?.();
       throw new ServiceUnavailableException({
         code: 'ANALYZER_BUSY',
         message: SAVE_ERRORS.ANALYZER_BUSY[1],
       });
     }
+    endAdmission?.();
 
-    const worker = this.createWorker(filePath);
+    const endWorker = profile?.begin('workerMs');
+    let worker: Worker;
+    try {
+      worker = this.createWorker(filePath);
+    } catch (error) {
+      endWorker?.();
+      throw error;
+    }
     this.workers.add(worker);
 
     return new Promise<AnalyzedSave>((resolve, reject) => {
@@ -74,6 +86,9 @@ export class Hoi4AnalysisWorkerService implements OnModuleDestroy {
           worker.off('exit', onExit);
           this.workers.delete(worker);
         }
+        endWorker?.();
+        if ('analysis' in outcome)
+          profile?.workerCompleted(outcome.analysis.result.parse_seconds);
         if ('error' in outcome) reject(outcome.error);
         else resolve(outcome.analysis);
       };

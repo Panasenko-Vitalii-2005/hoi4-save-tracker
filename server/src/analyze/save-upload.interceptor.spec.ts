@@ -39,6 +39,42 @@ import { UserAnalysesService } from './user-analyses.service';
 import type { SafeUserDto } from '../auth/auth.types';
 import type { NextFunction, Request, Response } from 'express';
 import { ProductEventsService } from '../telemetry/product-events.service';
+import { configureAnalyzeRequestProfiling } from '../analyze-request-profile';
+
+interface RequestSummary {
+  requestId: string;
+  requestEnteredMs: number;
+  fileBytes: number;
+  hashPrefix: string | null;
+  cacheHit: boolean | null;
+  cacheStatus: string | null;
+  multipartCompleteMs: number | null;
+  phases: Record<string, number | null>;
+  responseBytes: number | null;
+  responseFinishedMs: number | null;
+  backendTotalMs: number;
+  statusCode: number;
+  outcome: string;
+  errorCode: string | null;
+}
+
+function requestSummaries(
+  log: jest.SpyInstance<void, unknown[]>,
+): RequestSummary[] {
+  return log.mock.calls
+    .map((call) => call[0])
+    .filter(
+      (value): value is string =>
+        typeof value === 'string' &&
+        value.startsWith('[REQUEST_PROFILE] analyze '),
+    )
+    .map(
+      (value) =>
+        JSON.parse(
+          value.slice('[REQUEST_PROFILE] analyze '.length),
+        ) as RequestSummary,
+    );
+}
 
 const USER: SafeUserDto = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -78,6 +114,7 @@ describe('Public upload boundary and cleanup', () => {
     'HOI4_UPLOAD_TIMEOUT_MS',
     'HOI4_ANALYSIS_REQUESTS',
     'HOI4_SAVES_DIR',
+    'HOI4_REQUEST_PROFILE',
   ];
   const prior = keys.map((key) => process.env[key]);
   let directory: string;
@@ -102,6 +139,7 @@ describe('Public upload boundary and cleanup', () => {
     process.env.HOI4_ANALYSIS_TIMEOUT_MS = '3000';
     process.env.HOI4_UPLOAD_TIMEOUT_MS = '1000';
     process.env.HOI4_ANALYSIS_REQUESTS = '2';
+    delete process.env.HOI4_REQUEST_PROFILE;
     warning = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
     const module = await Test.createTestingModule({
@@ -138,6 +176,7 @@ describe('Public upload boundary and cleanup', () => {
     history = module.get(RecentAnalysesService);
     results = module.get(PersistedAnalysisResultService);
     app = module.createNestApplication();
+    configureAnalyzeRequestProfiling(app);
     app.use(
       (
         request: Request & { user?: SafeUserDto },
@@ -178,6 +217,199 @@ describe('Public upload boundary and cleanup', () => {
     expect(cache['inFlight'].size).toBe(0);
     expect(await history.list()).toEqual([]);
   };
+
+  test('disabled profiling leaves successful request logging unchanged', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await send(smallSave()).expect(201);
+    expect(requestSummaries(log)).toEqual([]);
+  });
+
+  test('miss and hit each emit once at finish without changing API or telemetry', async () => {
+    process.env.HOI4_REQUEST_PROFILE = '1';
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const bytes = smallSave();
+    const a = await send(bytes).expect(201);
+    const b = await send(bytes).expect(201);
+    expect(b.body).toEqual(a.body);
+    expect(b.headers['x-analysis-hash']).toBe(a.headers['x-analysis-hash']);
+    expect(worker.created).toHaveLength(1);
+    const summaries = requestSummaries(log);
+    expect(summaries).toHaveLength(2);
+    const [miss, hit] = summaries;
+    expect(miss.requestId).not.toBe(hit.requestId);
+    expect(miss.cacheHit).toBe(false);
+    expect(miss.cacheStatus).toBe('miss');
+    expect(miss.phases.workerMs).toBeGreaterThan(0);
+    expect(miss.phases.parserMs).toEqual(expect.any(Number));
+    expect(miss.phases.workerOutsideParserMs).toEqual(expect.any(Number));
+    expect(hit.cacheHit).toBe(true);
+    expect(hit.cacheStatus).toBe('hit');
+    expect(hit.phases.workerAdmissionMs).toBeNull();
+    expect(hit.phases.workerMs).toBeNull();
+    expect(hit.phases.parserMs).toBeNull();
+    expect(hit.phases.workerOutsideParserMs).toBeNull();
+    for (const [index, summary] of summaries.entries()) {
+      const response = index === 0 ? a : b;
+      expect(summary).toMatchObject({
+        requestEnteredMs: 0,
+        fileBytes: Buffer.byteLength(bytes),
+        hashPrefix: a.headers['x-analysis-hash'].slice(0, 12),
+        outcome: 'completed',
+        statusCode: 201,
+        responseBytes: Buffer.byteLength(response.text),
+      });
+      expect(summary.multipartCompleteMs).toBeGreaterThan(0);
+      expect(summary.phases.multipartMs).toBe(summary.multipartCompleteMs);
+      expect(summary.phases.validationMs).toEqual(expect.any(Number));
+      expect(summary.phases.sha256Ms).toEqual(expect.any(Number));
+      expect(summary.phases.cacheLookupMs).toEqual(expect.any(Number));
+      expect(summary.phases.artifactLoadMs).toBeNull();
+      expect(summary.phases.artifactPersistenceMs).toBeGreaterThan(0);
+      expect(summary.phases.artifactSerializationMs).toEqual(
+        expect.any(Number),
+      );
+      expect(summary.phases.artifactCompressionMs).toEqual(expect.any(Number));
+      expect(summary.phases.historyQueueWaitMs).toEqual(expect.any(Number));
+      expect(summary.phases.historyMetadataMs).toEqual(expect.any(Number));
+      expect(summary.phases.ownershipDatabaseMs).toEqual(expect.any(Number));
+      expect(summary.phases.responsePreparationMs).toEqual(expect.any(Number));
+      expect(summary.responseFinishedMs).toBe(summary.backendTotalMs);
+      expect(summary.backendTotalMs).toBeGreaterThanOrEqual(
+        summary.multipartCompleteMs!,
+      );
+    }
+    const telemetry = app.get(ProductEventsService);
+    const started = jest.spyOn(telemetry, 'recordStarted');
+    const completed = jest.spyOn(telemetry, 'recordCompleted');
+    const rejected = jest.spyOn(telemetry, 'recordRejected');
+    const failed = jest.spyOn(telemetry, 'recordFailed');
+    expect(started).toHaveBeenCalledTimes(2);
+    expect(completed).toHaveBeenCalledTimes(2);
+    expect(rejected).not.toHaveBeenCalled();
+    expect(failed).not.toHaveBeenCalled();
+    for (const [attempt, properties] of completed.mock.calls) {
+      expect(attempt).toMatchObject({
+        stage: 'persistence',
+        terminalRecorded: true,
+      });
+      expect(Object.keys(properties)).toEqual(['totalDurationMs']);
+      expect(properties.totalDurationMs).toEqual(expect.any(Number));
+    }
+  });
+
+  test('coalesced request measures shared wait, not another Worker/parser', async () => {
+    process.env.HOI4_REQUEST_PROFILE = '1';
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const first = send(smallSave())
+      .expect(201)
+      .then((response) => response);
+    await until(() => worker.created.length === 1);
+    const second = await send(smallSave()).expect(201);
+    expect(second.body).toEqual((await first).body);
+    expect(worker.created).toHaveLength(1);
+    const summaries = requestSummaries(log);
+    expect(summaries).toHaveLength(2);
+    const waiter = summaries.find(
+      (summary) => summary.cacheStatus === 'in_flight',
+    );
+    expect(waiter).toBeDefined();
+    expect(waiter?.cacheHit).toBe(false);
+    expect(waiter?.phases.sharedAnalysisWaitMs).toBeGreaterThan(0);
+    expect(waiter?.phases.workerMs).toBeNull();
+    expect(waiter?.phases.parserMs).toBeNull();
+  });
+
+  test('multipart time includes body arrival delay before controller, not just staging', async () => {
+    process.env.HOI4_REQUEST_PROFILE = '1';
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const bytes = smallSave();
+    const prefix =
+      '--delayed\r\nContent-Disposition: form-data; name="file"; filename="save.hoi4"\r\n\r\n';
+    let req!: ClientRequest;
+    const done = new Promise<number>((resolve, reject) => {
+      req = httpRequest(
+        {
+          hostname: '127.0.0.1',
+          port,
+          path: '/api/analyze',
+          method: 'POST',
+          headers: { 'Content-Type': 'multipart/form-data; boundary=delayed' },
+        },
+        (response) => {
+          response.resume();
+          response.once('end', () => resolve(response.statusCode!));
+        },
+      );
+      req.on('error', reject);
+      openRequests.push(req);
+      req.write(prefix + bytes.slice(0, 8));
+    });
+    await until(() => boundary['sessions'].size === 1);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(requestSummaries(log)).toHaveLength(0);
+    expect(worker.created).toHaveLength(0);
+    req.end(bytes.slice(8) + '\r\n--delayed--\r\n');
+    expect(await done).toBe(201);
+    const summaries = requestSummaries(log);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].multipartCompleteMs).toBeGreaterThanOrEqual(35);
+    expect(summaries[0].fileBytes).toBe(Buffer.byteLength(bytes));
+  });
+
+  test('failure summary is bounded and contains no input, paths or auth details', async () => {
+    process.env.HOI4_REQUEST_PROFILE = '1';
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .set('Cookie', 'session=private-token')
+      .set('X-CSRF-Token', 'private-csrf')
+      .attach(
+        'file',
+        Buffer.from('confidential-save-data'),
+        'private-filename.hoi4',
+      )
+      .expect(400);
+    const summaries = requestSummaries(log);
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      outcome: 'failed',
+      errorCode: 'INVALID_SAVE',
+      statusCode: 400,
+    });
+    expect(summaries[0].phases.workerMs).toBeNull();
+    expect(summaries[0].phases.parserMs).toBeNull();
+    expect(summaries[0].hashPrefix).toBeNull();
+    const serialized = JSON.stringify(summaries);
+    for (const secret of [
+      'private-token',
+      'private-csrf',
+      'private-filename',
+      'confidential-save-data',
+      USER.email,
+      USER.id,
+      directory,
+    ])
+      expect(serialized).not.toContain(secret);
+    expect(serialized).not.toMatch(/stack|ENOENT|EPERM/);
+  });
+
+  test('multipart client abort emits exactly one close summary', async () => {
+    process.env.HOI4_REQUEST_PROFILE = '1';
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const upload = partial();
+    await until(() => readdirSync(boundary.directory).length === 1);
+    upload.req.destroy();
+    await until(
+      () =>
+        boundary['sessions'].size === 0 && requestSummaries(log).length === 1,
+    );
+    expect(requestSummaries(log)[0]).toMatchObject({
+      outcome: 'aborted',
+      responseFinishedMs: null,
+      multipartCompleteMs: null,
+    });
+    expect(worker.created).toHaveLength(0);
+  });
 
   test.each(['plain', 'zip'])(
     '%s success and cache hit clean their own uploads',

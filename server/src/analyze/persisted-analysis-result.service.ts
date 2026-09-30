@@ -14,6 +14,11 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { createGunzip, gzip, gunzip } from 'node:zlib';
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
+import {
+  currentAnalyzeRequestProfile,
+  profileRequestPhase,
+  profileRequestSync,
+} from '../analyze-request-profile';
 import { normalizeAnalysisHash } from './analysis-hash';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
 import {
@@ -229,6 +234,7 @@ export class PersistedAnalysisResultService {
     hash: string,
   ): Promise<SaveComparisonContext | null> {
     const key = this.key(hash);
+    const endLoad = currentAnalyzeRequestProfile()?.begin('artifactLoadMs');
     await this.pending;
     let source: ReturnType<typeof createReadStream> | null = null;
     let inflation: ReturnType<typeof createGunzip> | null = null;
@@ -271,11 +277,13 @@ export class PersistedAnalysisResultService {
     } finally {
       source?.destroy();
       inflation?.destroy();
+      endLoad?.();
     }
   }
 
   private async readPersisted(hash: string): Promise<PersistedAnalysis | null> {
     const key = this.key(hash);
+    const endLoad = currentAnalyzeRequestProfile()?.begin('artifactLoadMs');
     await this.pending;
     try {
       if (!(await this.checkDirectory())) return null;
@@ -316,6 +324,8 @@ export class PersistedAnalysisResultService {
         );
       }
       return null;
+    } finally {
+      endLoad?.();
     }
   }
 
@@ -326,7 +336,11 @@ export class PersistedAnalysisResultService {
     options: PersistedResultRetentionOptions = {},
   ): Promise<boolean> {
     const key = this.key(hash);
+    const profile = currentAnalyzeRequestProfile();
+    const endQueue = profile?.begin('artifactQueueWaitMs');
     return this.enqueue(async () => {
+      endQueue?.();
+      const endPersistence = profile?.begin('artifactPersistenceMs');
       try {
         const ownership = await this.ownershipProtection();
         const envelope: PersistedAnalysisResultV2 = {
@@ -338,10 +352,14 @@ export class PersistedAnalysisResultService {
             unknownSaveComparisonContext(),
           result,
         };
-        const json = JSON.stringify(envelope);
+        const json = profileRequestSync('artifactSerializationMs', () =>
+          JSON.stringify(envelope),
+        );
         if (Buffer.byteLength(json) > MAX_JSON_BYTES)
           throw new Error('Result JSON exceeds safety limit');
-        const bytes = await compress(json);
+        const bytes = await profileRequestPhase('artifactCompressionMs', () =>
+          compress(json),
+        );
         if (bytes.length > this.maxBytes)
           throw new Error('Result exceeds disk budget');
         await this.checkDirectory(true);
@@ -387,6 +405,8 @@ export class PersistedAnalysisResultService {
           'Could not persist an analysis result. Current analysis remains available; check storage permissions, space and configured limits.',
         );
         return false;
+      } finally {
+        endPersistence?.();
       }
     });
   }

@@ -7,6 +7,10 @@ import {
 } from './hoi4-analysis-worker.service';
 import type { AnalyzeResult } from './hoi4-parser';
 import type { SaveComparisonContext } from './save-comparison-context';
+import {
+  currentAnalyzeRequestProfile,
+  profileRequestPhase,
+} from '../analyze-request-profile';
 
 export async function hashSaveContents(filePath: string): Promise<string> {
   const hash = createHash('sha256');
@@ -42,7 +46,11 @@ export class AnalysisResultCacheService {
     result: AnalyzeResult;
     comparisonContext: SaveComparisonContext;
   }> {
-    const hash = await hashSaveContents(filePath);
+    const hash = await profileRequestPhase('sha256Ms', () =>
+      hashSaveContents(filePath),
+    );
+    const profile = currentAnalyzeRequestProfile();
+    if (profile) profile.hashPrefix = hash.slice(0, 12);
     return { hash, ...(await this.analyzeHash(filePath, hash)) };
   }
 
@@ -50,15 +58,28 @@ export class AnalysisResultCacheService {
     filePath: string,
     hash: string,
   ): Promise<AnalyzedSave> {
+    const profile = currentAnalyzeRequestProfile();
+    const endLookup = profile?.begin('cacheLookupMs');
     const cached = this.completed.get(hash);
     if (cached) {
+      endLookup?.();
+      if (profile) {
+        profile.cacheHit = true;
+        profile.cacheStatus = 'hit';
+      }
       this.completed.delete(hash);
       this.completed.set(hash, cached);
       return cached;
     }
 
     const pending = this.inFlight.get(hash);
-    if (pending) return pending;
+    endLookup?.();
+    if (profile) {
+      profile.cacheHit = false;
+      profile.cacheStatus = pending ? 'in_flight' : 'miss';
+    }
+    if (pending)
+      return profileRequestPhase('sharedAnalysisWaitMs', () => pending);
 
     const result = this.analysis
       .analyzeWithContext(filePath)

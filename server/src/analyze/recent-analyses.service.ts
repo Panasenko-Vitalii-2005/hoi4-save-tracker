@@ -4,6 +4,10 @@ import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, resolve, win32 } from 'node:path';
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
 import {
+  currentAnalyzeRequestProfile,
+  profileRequestPhase,
+} from '../analyze-request-profile';
+import {
   normalizeSaveComparisonContext,
   type SaveComparisonContext,
 } from '../hoi4/save-comparison-context';
@@ -265,8 +269,11 @@ export class RecentAnalysesService {
     let persisted = false;
     let onPersistedFailed = false;
     let onPersistedError: unknown;
+    const endQueue =
+      currentAnalyzeRequestProfile()?.begin('historyQueueWaitMs');
     try {
       await this.enqueue(async () => {
+        endQueue?.();
         // Read the latest pin state inside the mutation queue, not at request start.
         item.pinned =
           this.items.find((old) => old.hash === item.hash)?.pinned ?? false;
@@ -292,7 +299,9 @@ export class RecentAnalysesService {
         });
         for (const entry of next)
           entry.hasPersistedResult &&= available.has(entry.hash);
-        await this.persist(next);
+        await profileRequestPhase('historyMetadataMs', () =>
+          this.persist(next),
+        );
         this.items = next;
         persisted = next.includes(item) && item.hasPersistedResult;
         if (persisted && onPersisted)

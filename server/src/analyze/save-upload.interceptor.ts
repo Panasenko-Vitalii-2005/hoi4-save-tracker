@@ -38,6 +38,10 @@ import type {
   AnalysisTelemetryCarrier,
   ProductAnalysisErrorCode,
 } from '../telemetry/product-events.types';
+import {
+  currentAnalyzeRequestProfile,
+  profileRequestPhase,
+} from '../analyze-request-profile';
 
 interface UploadSession {
   path?: string;
@@ -210,8 +214,13 @@ export class SaveUploadInterceptor
         properties.errorCode,
       )
     )
-      await this.telemetry.recordFailed(attempt, properties);
-    else await this.telemetry.recordRejected(attempt, properties);
+      await profileRequestPhase('telemetryMs', () =>
+        this.telemetry.recordFailed(attempt, properties),
+      );
+    else
+      await profileRequestPhase('telemetryMs', () =>
+        this.telemetry.recordRejected(attempt, properties),
+      );
   }
 
   async intercept(
@@ -222,6 +231,7 @@ export class SaveUploadInterceptor
       .switchToHttp()
       .getRequest<AuthenticatedRequest & AnalysisTelemetryCarrier>();
     const response = context.switchToHttp().getResponse<Response>();
+    const profile = currentAnalyzeRequestProfile();
     const attempt: AnalysisAttemptContext = {
       flowId: randomUUID(),
       userId: request.user?.id ?? null,
@@ -230,7 +240,10 @@ export class SaveUploadInterceptor
       terminalRecorded: false,
     };
     request.productAnalysisAttempt = attempt;
-    await this.telemetry.recordStarted(attempt);
+    await profileRequestPhase('telemetryMs', () =>
+      this.telemetry.recordStarted(attempt),
+    );
+    const endAdmission = profile?.begin('admissionMs');
     const multipart = request.is('multipart/form-data');
     const closeRejectedBody = () => {
       if (!multipart || request.readableEnded || response.headersSent) return;
@@ -242,6 +255,7 @@ export class SaveUploadInterceptor
       this.closing ||
       this.sessions.size >= this.policy.maxConcurrentRequests
     ) {
+      endAdmission?.();
       closeRejectedBody();
       const error = this.exception(new SaveInputError('ANALYZER_BUSY'));
       await this.recordTerminal(attempt, error);
@@ -249,6 +263,7 @@ export class SaveUploadInterceptor
     }
     const maxBody = this.policy.maxUploadBytes + MAX_MULTIPART_OVERHEAD_BYTES;
     if (multipart && Number(request.headers['content-length']) > maxBody) {
+      endAdmission?.();
       closeRejectedBody();
       const error = this.exception(new SaveInputError('FILE_TOO_LARGE'));
       await this.recordTerminal(attempt, error);
@@ -278,6 +293,7 @@ export class SaveUploadInterceptor
       },
     };
     this.sessions.add(session);
+    endAdmission?.();
     let received = 0;
     const onData = (chunk: Buffer) => {
       received += chunk.length;
@@ -349,8 +365,10 @@ export class SaveUploadInterceptor
               session.owned = true;
             });
             session.writer = pipeline(file.stream, output).then(
-              () =>
-                callback(null, { path: filePath, size: output.bytesWritten }),
+              () => {
+                if (profile) profile.fileBytes = output.bytesWritten;
+                callback(null, { path: filePath, size: output.bytesWritten });
+              },
               (error: unknown) =>
                 callback(
                   error instanceof Error ? error : new Error('Upload failed'),
@@ -371,15 +389,18 @@ export class SaveUploadInterceptor
         delegate.intercept(context, next),
         failure,
       ]);
+      if (multipart) profile?.multipartComplete();
       uploadComplete = true;
       session.receiving = false;
       clearTimeout(timeout);
       // Await shared analysis even after disconnect: never delete the leader's file early.
       const value: unknown = await lastValueFrom(stream as Observable<unknown>);
       attempt.terminalRecorded = true;
-      await this.telemetry.recordCompleted(attempt, {
-        totalDurationMs: Math.max(0, Date.now() - attempt.startedAtMs),
-      });
+      await profileRequestPhase('telemetryMs', () =>
+        this.telemetry.recordCompleted(attempt, {
+          totalDurationMs: Math.max(0, Date.now() - attempt.startedAtMs),
+        }),
+      );
       return of(value);
     } catch (error) {
       closeRejectedBody();
@@ -393,6 +414,7 @@ export class SaveUploadInterceptor
       )
         failure = this.exception(new SaveInputError('INVALID_SAVE'));
       else failure = this.exception(error);
+      if (profile) profile.errorCode = this.errorCode(failure);
       await this.recordTerminal(attempt, failure);
       throw failure;
     } finally {
