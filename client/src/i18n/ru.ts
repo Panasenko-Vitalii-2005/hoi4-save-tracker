@@ -10,6 +10,7 @@ export const ru = {
   },
   analysis: {
     uploadProgress: {
+      preparing: "Подготавливаем файл…",
       selected: "Выбрано на устройстве: {{name}} · {{size}}",
       selectionHint: "Файл останется на вашем устройстве, пока вы не нажмёте «Анализировать сохранение».",
       uploading: "Загрузка сохранения…",

@@ -102,6 +102,7 @@ export const en = {
     lastModified: "Last modified",
     chooseAnother: "Choose another file",
     uploadProgress: {
+      preparing: "Preparing save…",
       selected: "Selected locally: {{name}} · {{size}}",
       selectionHint: "The file stays on your device until you press Analyze Save.",
       uploading: "Uploading save…",

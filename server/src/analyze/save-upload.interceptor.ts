@@ -14,8 +14,9 @@ import { createWriteStream } from 'node:fs';
 import { lstat, mkdir, opendir, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { Readable } from 'node:stream';
+import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { createGunzip } from 'node:zlib';
 import type { Request, Response } from 'express';
 import { lastValueFrom, of, type Observable } from 'rxjs';
 import {
@@ -276,6 +277,7 @@ export class SaveUploadInterceptor
       rejectUpload = reject;
     });
     void failure.catch(() => {}); // Also handle aborts during setup before Promise.race is attached.
+    const uploadAbort = new AbortController();
     const session: UploadSession = {
       owned: false,
       receiving: true,
@@ -288,6 +290,8 @@ export class SaveUploadInterceptor
         closeRejectedBody();
         request.unpipe();
         request.pause();
+        // Also stop normalization when the input stream has already ended.
+        uploadAbort.abort(error);
         session.stream?.destroy(error);
         rejectUpload(error);
       },
@@ -301,6 +305,9 @@ export class SaveUploadInterceptor
         session.abort(new SaveInputError('FILE_TOO_LARGE'));
     };
     const onAbort = () => session.abort(new SaveInputError('INVALID_SAVE'));
+    const onResponseClose = () => {
+      if (!response.writableFinished) onAbort();
+    };
     const timeout = multipart
       ? setTimeout(
           () => session.abort(new SaveInputError('UPLOAD_TIMEOUT')),
@@ -312,8 +319,10 @@ export class SaveUploadInterceptor
       request.on('data', onData);
       request.once('aborted', onAbort);
       request.once('error', onAbort);
+      response.once('close', onResponseClose);
     }
     let uploadComplete = false;
+    let fileEncoding: 'gzip' | undefined;
     try {
       if (!this.ready) throw new SaveInputError('ANALYSIS_FAILED');
       const Upload = FileInterceptor('file', {
@@ -322,18 +331,29 @@ export class SaveUploadInterceptor
           fileSize: this.policy.maxUploadBytes,
           files: 1,
           fields: 1,
-          parts: 2,
+          // Busboy emits partsLimit when the count reaches this value. Permit
+          // the marker + file, while files:1/fields:1 still bound the actual parts.
+          parts: 3,
           fieldSize: 4096,
           fieldNameSize: 64,
           headerPairs: 32,
         },
-        fileFilter: (_req, file, callback) => {
+        fileFilter: (req: Request, file, callback) => {
           file.originalname = sanitizeSaveFileName(file.originalname);
-          if (!/^.+\.hoi4$/i.test(file.originalname)) {
+          const encoding: unknown = (req.body as Record<string, unknown>)
+            ?.transportEncoding;
+          if (encoding !== undefined && encoding !== 'gzip') {
+            const error = new SaveInputError('INVALID_SAVE');
+            session.abort(error);
+            callback(error, false);
+          } else if (!/^.+\.hoi4$/i.test(file.originalname)) {
             const error = new SaveInputError('UNSUPPORTED_FILE_TYPE');
             session.abort(error);
             callback(error, false);
-          } else callback(null, true);
+          } else {
+            fileEncoding = encoding;
+            callback(null, true);
+          }
         },
         storage: {
           _handleFile: (
@@ -364,15 +384,51 @@ export class SaveUploadInterceptor
             output.once('open', () => {
               session.owned = true;
             });
-            session.writer = pipeline(file.stream, output).then(
+            let originalBytes = 0;
+            const limitOriginalBytes = new Transform({
+              transform: (chunk: Buffer, _encoding, done) => {
+                originalBytes += chunk.length;
+                // Transport compression must not enlarge the accepted plaintext limit.
+                if (originalBytes > this.policy.maxUploadBytes)
+                  done(new SaveInputError('FILE_TOO_LARGE'));
+                else if (originalBytes > this.policy.maxUncompressedBytes)
+                  done(new SaveInputError('DECOMPRESSED_SIZE_LIMIT'));
+                else done(null, chunk);
+              },
+            });
+            const writer =
+              fileEncoding === 'gzip'
+                ? pipeline(
+                    file.stream,
+                    createGunzip(),
+                    limitOriginalBytes,
+                    output,
+                    { signal: uploadAbort.signal },
+                  )
+                : pipeline(file.stream, output, { signal: uploadAbort.signal });
+            session.writer = writer.then(
               () => {
                 if (profile) profile.fileBytes = output.bytesWritten;
                 callback(null, { path: filePath, size: output.bytesWritten });
               },
-              (error: unknown) =>
-                callback(
-                  error instanceof Error ? error : new Error('Upload failed'),
-                ),
+              (error: unknown) => {
+                const code =
+                  error && typeof error === 'object' && 'code' in error
+                    ? error.code
+                    : null;
+                const failure =
+                  uploadAbort.signal.aborted &&
+                  uploadAbort.signal.reason instanceof Error
+                    ? uploadAbort.signal.reason
+                    : fileEncoding === 'gzip' &&
+                        (code === 'Z_DATA_ERROR' || code === 'Z_BUF_ERROR')
+                      ? new SaveInputError('CORRUPT_ARCHIVE')
+                      : error instanceof Error
+                        ? error
+                        : new Error('Upload failed');
+                session.abort(failure);
+                callback(failure);
+              },
             );
           },
           _removeFile: (
@@ -389,6 +445,13 @@ export class SaveUploadInterceptor
         delegate.intercept(context, next),
         failure,
       ]);
+      // Reject late/repeated markers instead of reinterpreting bytes already staged.
+      if (
+        multipart &&
+        (request.body as Record<string, unknown>)?.transportEncoding !==
+          fileEncoding
+      )
+        throw new SaveInputError('INVALID_SAVE');
       if (multipart) profile?.multipartComplete();
       uploadComplete = true;
       session.receiving = false;
@@ -422,6 +485,7 @@ export class SaveUploadInterceptor
       request.off('data', onData);
       request.off('aborted', onAbort);
       request.off('error', onAbort);
+      response.off('close', onResponseClose);
       session.receiving = false;
       await session.writer?.catch(() => this.warnCleanup());
       await this.remove(session);

@@ -6,6 +6,7 @@ import App from "../src/App";
 import { seedCsrfCookie } from "./auth-fixture";
 import { i18n } from "../src/i18n";
 import { installUploadXhrUsingFetchFixtures, UploadXhr } from "./xhr-fixture";
+import * as saveTransport from "../src/lib/save-upload-transport";
 
 // Test the actual request UI; plotting and the unrelated telemetry request are not needed.
 vi.mock("react-plotly.js", () => ({
@@ -172,6 +173,48 @@ describe("analysis request lifecycle", () => {
       if (requests.length > requestCount) break;
     }
   };
+
+  test.each(["en", "ru"])("%s selected file stays local, then preparation/upload/analysis are distinct", async (language) => {
+    await i18n.changeLanguage(language);
+    await render();
+    const file = new File(["HOI4txt"], "large.hoi4");
+    Object.defineProperties(file, {
+      size:{value:saveTransport.GZIP_MIN_SOURCE_BYTES},
+      stream:{value:()=>new ReadableStream()},
+    });
+    vi.stubGlobal("CompressionStream", class {});
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const preparation = vi.spyOn(saveTransport,"prepareSaveUpload").mockImplementation(async (_body, _signal, onPreparing) => {
+      onPreparing?.();
+      await pending;
+      const body = new FormData();
+      body.append("transportEncoding", "gzip");
+      body.append("file",new File(["compressed fixture"], file.name));
+      return body;
+    });
+    try {
+      await act(async () => selectFile(file));
+      expect(preparation).not.toHaveBeenCalled();
+      expect(UploadXhr.requests).toHaveLength(0);
+      await act(async () => button(language === "ru" ? "Анализировать сохранение" : "Analyze Save").click());
+      for (let i = 0; i < 50 && !preparation.mock.calls.length; i++)
+        await act(async () => new Promise((resolve) => setTimeout(resolve,0)));
+      expect(preparation).toHaveBeenCalledOnce();
+      expect(status().textContent).toContain(language === "ru" ? "Подготавливаем файл…" : "Preparing save…");
+      expect(container.querySelector(".save-upload-progress")).toBeNull();
+      expect(UploadXhr.requests).toHaveLength(0);
+      await act(async () => release());
+      expect(status().textContent).toContain(language === "ru" ? "Загрузка сохранения…" : "Uploading save…");
+      expect(UploadXhr.requests[0].body?.get("transportEncoding")).toBe("gzip");
+      await act(async () => UploadXhr.requests[0].progress(50,100));
+      expect(container.querySelector(".save-upload-progress strong")?.textContent).toBe("50%");
+      await act(async () => UploadXhr.requests[0].uploaded());
+      expect(status().textContent).toContain(language === "ru" ? "Анализируем сохранение…" : "Analyzing save…");
+      await respond(0,snapshot());
+      expect(date()).toBe("1944.5.1");
+    } finally { preparation.mockRestore(); }
+  });
 
   test("starts idle with enabled controls and a persistent polite status region", async () => {
     await render();

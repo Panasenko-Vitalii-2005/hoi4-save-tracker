@@ -30,6 +30,7 @@ type BatchStatus =
   | "identifying"
   | "already_analyzed"
   | "queued"
+  | "preparing"
   | "uploading"
   | "analyzing"
   | "completed"
@@ -62,6 +63,7 @@ const STATUS_COPY = {
   identifying: { symbol: "…", labelKey: "batch.statuses.identifying" },
   already_analyzed: { symbol: "✓", labelKey: "batch.statuses.alreadyAnalyzed" },
   queued: { symbol: "○", labelKey: "batch.statuses.queued" },
+  preparing: { symbol: "…", labelKey: "analysis.uploadProgress.preparing" },
   uploading: { symbol: "↑", labelKey: "analysis.uploadProgress.uploading" },
   analyzing: { symbol: "→", labelKey: "batch.statuses.analyzing" },
   completed: { symbol: "✓", labelKey: "batch.statuses.completed" },
@@ -182,7 +184,7 @@ export const BatchAnalysisPanel = forwardRef<
       selected: items.length,
       known: count("already_analyzed"),
       queued: count("queued"),
-      analyzing: count("uploading") + count("analyzing"),
+      analyzing: count("preparing") + count("uploading") + count("analyzing"),
       completed: count("completed"),
       failed: count("failed"),
       invalid: count("invalid"),
@@ -234,7 +236,8 @@ export const BatchAnalysisPanel = forwardRef<
     [filter, items],
   );
   const current = items.find(
-    (item) => item.status === "uploading" || item.status === "analyzing",
+    (item) => item.status === "preparing" ||
+      item.status === "uploading" || item.status === "analyzing",
   );
   const processed = items.filter((item) =>
     [
@@ -385,7 +388,7 @@ export const BatchAnalysisPanel = forwardRef<
         updateItems((currentItems) =>
           currentItems.map((entry) =>
             entry.id === id
-              ? { ...entry, status: "uploading", error: null }
+              ? { ...entry, status: "preparing", error: null }
               : entry,
           ),
         );
@@ -399,6 +402,12 @@ export const BatchAnalysisPanel = forwardRef<
           const response = await apiAnalyzeUpload(formData, {
             batch: true,
             signal: controller.signal,
+            onUploading: () => {
+              if (!mounted.current || activeRequest.current !== controller) return;
+              updateItems((entries) => entries.map((entry) =>
+                entry.id === id ? { ...entry, status: "uploading" } : entry,
+              ));
+            },
             onProgress: (progress) => {
               if (mounted.current && activeRequest.current === controller)
                 setUploadProgress(progress);
@@ -777,7 +786,9 @@ export const BatchAnalysisPanel = forwardRef<
               <span className="spinner" aria-hidden="true" />
               <div>
                 <strong>
-                  {t(current?.status === "uploading"
+                  {t(current?.status === "preparing"
+                    ? "analysis.uploadProgress.preparing"
+                    : current?.status === "uploading"
                     ? "analysis.uploadProgress.uploading"
                     : "analysis.uploadProgress.analyzing")}
                 </strong>

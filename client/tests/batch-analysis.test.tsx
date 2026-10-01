@@ -10,6 +10,7 @@ import {
 import { seedCsrfCookie } from "./auth-fixture";
 import { i18n } from "../src/i18n";
 import { installUploadXhrUsingFetchFixtures, UploadXhr } from "./xhr-fixture";
+import * as saveTransport from "../src/lib/save-upload-transport";
 
 function hash(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
@@ -454,6 +455,51 @@ describe("BatchAnalysisPanel", () => {
     );
     expect(analyzed).toEqual(["one.hoi4"]);
     expect(container.textContent).toContain("Cancelled");
+  });
+
+  test.each([false,true])("prepares only the current batch file; Cancel remaining=%s preserves the active request", async (cancel) => {
+    const files = [save("one.hoi4","one"),save("two.hoi4","two")];
+    for (const file of files) Object.defineProperties(file, {
+      size:{value:saveTransport.GZIP_MIN_SOURCE_BYTES}, stream:{value:()=>new ReadableStream()},
+    });
+    vi.stubGlobal("CompressionStream", class {});
+    const releases: Array<() => void> = [];
+    const responses: Array<(response:Response) => void> = [];
+    const preparation = vi.spyOn(saveTransport,"prepareSaveUpload").mockImplementation(async (original) => {
+      await new Promise<void>((resolve) => releases.push(resolve));
+      const body = new FormData();
+      body.append("transportEncoding","gzip");
+      body.append("file",new File(["compressed fixture"],(original.get("file") as File).name));
+      return body;
+    });
+    vi.stubGlobal("fetch",vi.fn((url:string) => url === "/api/analyze/batch/preflight"
+      ? Promise.resolve(Response.json({knownHashes:[]}))
+      : new Promise<Response>((resolve) => responses.push(resolve))));
+    try {
+      await act(async () => root.render(<BatchAnalysisPanel />));
+      await select(files);
+      expect(preparation).not.toHaveBeenCalled();
+      await act(async () => button("Analyze 2 new saves").click());
+      await waitFor(() => releases.length === 1);
+      expect(container.querySelector(".batch-analysis-progress")?.textContent).toContain("Preparing save…");
+      expect(UploadXhr.requests).toHaveLength(0);
+      if (cancel) await act(async () => button("Cancel remaining").click());
+      await act(async () => releases[0]());
+      await waitFor(() => UploadXhr.requests.length === 1);
+      expect(preparation).toHaveBeenCalledOnce();
+      expect(UploadXhr.requests[0].body?.get("transportEncoding")).toBe("gzip");
+      await act(async () => responses[0](Response.json({hash:hash("one"),gameDate:"1944.5.1",campaignId:null})));
+      if (!cancel) {
+        await waitFor(() => releases.length === 2);
+        expect(UploadXhr.requests).toHaveLength(1);
+        await act(async () => releases[1]());
+        await waitFor(() => UploadXhr.requests.length === 2);
+        await act(async () => responses[1](Response.json({hash:hash("two"),gameDate:"1944.5.2",campaignId:null})));
+      }
+      await waitFor(() => container.textContent?.includes("Batch complete") === true);
+      expect(preparation).toHaveBeenCalledTimes(cancel ? 1 : 2);
+      expect(UploadXhr.requests).toHaveLength(cancel ? 1 : 2);
+    } finally { preparation.mockRestore(); }
   });
 
   test("shows current-file upload/analysis stages and preserves sequential overall progress", async () => {

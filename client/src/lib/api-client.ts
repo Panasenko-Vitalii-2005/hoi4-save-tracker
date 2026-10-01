@@ -1,3 +1,5 @@
+import { canPrepareSaveUpload, prepareSaveUpload } from "./save-upload-transport";
+
 export const SESSION_EXPIRED_EVENT = "hoi4:session-expired";
 export const CSRF_REJECTED_EVENT = "hoi4:csrf-rejected";
 
@@ -93,11 +95,15 @@ export async function apiAnalyzeUpload(
   {
     batch = false,
     signal,
+    onPreparing,
+    onUploading,
     onProgress,
     onUploaded,
   }: {
     batch?: boolean;
     signal?: AbortSignal;
+    onPreparing?: () => void;
+    onUploading?: () => void;
     onProgress?: (progress: SaveUploadProgress) => void;
     onUploaded?: () => void;
   } = {},
@@ -106,6 +112,10 @@ export async function apiAnalyzeUpload(
   if (signal?.aborted) throw aborted();
   const token = await ensureCsrf();
   if (signal?.aborted) throw aborted();
+  if (canPrepareSaveUpload(body))
+    body = await prepareSaveUpload(body, signal, onPreparing);
+  if (signal?.aborted) throw aborted();
+  onUploading?.();
   const response = await new Promise<Response>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let settled = false;

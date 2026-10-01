@@ -646,10 +646,10 @@ export function AnalyzerTab({
     setOpeningHash(null);
     setOpenError("");
     setUploadProgress(null);
-    setIsUploading(!!uploadedFile);
+    setIsUploading(false);
     setStatus({
       type: "loading",
-      msg: `${uploadedFile ? `${t("analysis.uploadProgress.uploading")} ${fileName}` : t("analysis.analyzing", { name: fileName })}${result ? t("analysis.previousSafe") : ""}`,
+      msg: `${uploadedFile ? `${t("analysis.uploadProgress.preparing")} ${fileName}` : t("analysis.analyzing", { name: fileName })}${result ? t("analysis.previousSafe") : ""}`,
     });
     try {
       if (uploadedFile) {
@@ -670,6 +670,14 @@ export function AnalyzerTab({
       const resp = await (uploadedFile
         ? apiAnalyzeUpload(formData, {
             signal: controller.signal,
+            onUploading: () => {
+              if (!active()) return;
+              setIsUploading(true);
+              setStatus({
+                type: "loading",
+                msg: `${t("analysis.uploadProgress.uploading")} ${fileName}${result ? t("analysis.previousSafe") : ""}`,
+              });
+            },
             onProgress: (progress) => {
               if (active()) setUploadProgress(progress);
             },

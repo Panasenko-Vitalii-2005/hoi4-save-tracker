@@ -8,6 +8,7 @@ import {
   writeFileSync,
   utimesSync,
   mkdirSync,
+  WriteStream,
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -18,6 +19,10 @@ import {
 } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Worker } from 'node:worker_threads';
+import { gzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
+import zlib from 'node:zlib';
+import { Transform } from 'node:stream';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AnalyzeController } from './analyze.controller';
@@ -81,6 +86,7 @@ const USER: SafeUserDto = {
   email: 'upload@example.com',
   createdAt: '2026-01-01T00:00:00.000Z',
 };
+const gunzipDescriptor = Object.getOwnPropertyDescriptor(zlib, 'createGunzip')!;
 
 class TestWorker extends Hoi4AnalysisWorkerService {
   created: Worker[] = [];
@@ -193,6 +199,7 @@ describe('Public upload boundary and cleanup', () => {
     port = (server.address() as AddressInfo).port;
   });
   afterEach(async () => {
+    Object.defineProperty(zlib, 'createGunzip', gunzipDescriptor);
     for (const req of openRequests.splice(0)) req.destroy();
     if (!closed) await app.close();
     expect(readdirSync(boundary.directory)).toEqual([]);
@@ -217,6 +224,271 @@ describe('Public upload boundary and cleanup', () => {
     expect(cache['inFlight'].size).toBe(0);
     expect(await history.list()).toEqual([]);
   };
+
+  const sendGzip = (bytes: Buffer, encoding = 'gzip') =>
+    request(app.getHttpServer())
+      .post('/api/analyze')
+      .field('transportEncoding', encoding)
+      .attach('file', bytes, {
+        filename: 'save.hoi4',
+        contentType: 'application/octet-stream',
+      });
+
+  test.each(['plain-first', 'gzip-first'])(
+    '%s transport preserves original bytes, SHA, result and metadata on cache hit',
+    async (order) => {
+      const bytes = Buffer.from(smallSave('# Möwe 日本語\n'));
+      const staged: Buffer[] = [];
+      const original = cache.analyzeWithHash.bind(cache);
+      jest.spyOn(cache, 'analyzeWithHash').mockImplementation((path) => {
+        staged.push(readFileSync(path));
+        return original(path);
+      });
+      const plain = () => send(bytes);
+      const gzip = () => sendGzip(gzipSync(bytes));
+      const first = await (order === 'plain-first' ? plain() : gzip()).expect(
+        201,
+      );
+      const second = await (order === 'plain-first' ? gzip() : plain()).expect(
+        201,
+      );
+      expect(staged).toEqual([bytes, bytes]);
+      expect(first.headers['x-analysis-hash']).toBe(
+        createHash('sha256').update(bytes).digest('hex'),
+      );
+      expect(second.headers['x-analysis-hash']).toBe(
+        first.headers['x-analysis-hash'],
+      );
+      expect(second.body).toEqual(first.body);
+      expect(worker.created).toHaveLength(1);
+      expect((await history.list())[0]).toMatchObject({
+        fileSizeBytes: bytes.length,
+        fileName: 'save.hoi4',
+      });
+      expect(readdirSync(boundary.directory)).toEqual([]);
+    },
+  );
+
+  test('gzip transport works with the existing batch acknowledgement contract', async () => {
+    const bytes = Buffer.from(smallSave());
+    const response = await sendGzip(gzipSync(bytes))
+      .query({ response: 'batch' })
+      .expect(201);
+    expect(response.body).toMatchObject({
+      hash: createHash('sha256').update(bytes).digest('hex'),
+      gameDate: '1944.5.1',
+    });
+    expect(response.body).not.toHaveProperty('by_country');
+  });
+
+  test.each(['br', 'identity', '', 'GZIP'])(
+    'unsupported marker %j is rejected before Worker',
+    async (marker) => {
+      await sendGzip(gzipSync(Buffer.from(smallSave())), marker).expect(400);
+      expect(worker.created).toHaveLength(0);
+      await emptyStores();
+    },
+  );
+
+  test('late and duplicate transport markers are rejected, not reinterpreted', async () => {
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .attach('file', Buffer.from(smallSave()), 'save.hoi4')
+      .field('transportEncoding', 'gzip')
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/api/analyze')
+      .field('transportEncoding', 'gzip')
+      .field('transportEncoding', 'gzip')
+      .attach('file', gzipSync(Buffer.from(smallSave())), 'save.hoi4')
+      .expect(400);
+    expect(worker.created).toHaveLength(0);
+  });
+
+  test('gzip without the explicit marker is never auto-detected', async () => {
+    await send(gzipSync(Buffer.from(smallSave()))).expect(400);
+    expect(worker.created).toHaveLength(0);
+  });
+
+  test.each(['malformed', 'truncated', 'crc'])(
+    '%s gzip is rejected safely and releases admission',
+    async (kind) => {
+      const gzip = gzipSync(Buffer.from(smallSave()));
+      const bytes =
+        kind === 'malformed'
+          ? Buffer.from('not gzip')
+          : kind === 'truncated'
+            ? gzip.subarray(0, gzip.length - 8)
+            : Buffer.from(gzip);
+      if (kind === 'crc') bytes[bytes.length - 8] ^= 1;
+      const response = await sendGzip(bytes).expect(400);
+      expect(response.body).toMatchObject({ code: 'CORRUPT_ARCHIVE' });
+      expect(response.text).not.toMatch(/stack|Z_DATA|Z_BUF|\/tmp\/|C:\\/);
+      expect(worker.created).toHaveLength(0);
+      await emptyStores();
+      await send(smallSave()).expect(201);
+    },
+  );
+
+  test('transport gzip cannot increase the existing plaintext size limit, including false ISIZE', async () => {
+    const gzip = gzipSync(Buffer.from('HOI4txt\n' + 'A'.repeat(1024 * 1024)));
+    gzip.writeUInt32LE(1, gzip.length - 4);
+    const response = await sendGzip(gzip).expect(413);
+    expect(response.body).toMatchObject({ code: 'FILE_TOO_LARGE' });
+    expect(worker.created).toHaveLength(0);
+    await emptyStores();
+  });
+
+  test('the independent uncompressed limit also applies when smaller than upload limit', async () => {
+    boundary.policy.maxUncompressedBytes = 1024;
+    const response = await sendGzip(
+      gzipSync(Buffer.from('HOI4txt\n' + 'A'.repeat(2000))),
+    ).expect(413);
+    expect(response.body).toMatchObject({ code: 'DECOMPRESSED_SIZE_LIMIT' });
+    expect(worker.created).toHaveLength(0);
+    await emptyStores();
+  });
+
+  test('compressed byte cap rejects large gzip headers even for a tiny original save', async () => {
+    const gzip = gzipSync(Buffer.from(smallSave()));
+    const header = Buffer.from(gzip.subarray(0, 10));
+    header[3] |= 8; // Valid FNAME header: metadata must not bypass the wire cap.
+    const bytes = Buffer.concat([
+      header,
+      Buffer.alloc(8192, 65),
+      Buffer.from([0]),
+      gzip.subarray(10),
+    ]);
+    await sendGzip(bytes).expect(413);
+    expect(worker.created).toHaveLength(0);
+    await emptyStores();
+  });
+
+  test('binary rejection remains unchanged after gzip normalization', async () => {
+    const response = await sendGzip(gzipSync(binarySave())).expect(422);
+    expect(response.body).toMatchObject({ code: 'UNSUPPORTED_BINARY_SAVE' });
+    expect(worker.created).toHaveLength(0);
+    await emptyStores();
+  });
+
+  test('disconnect during gzip normalization cleans up and releases admission', async () => {
+    const req = httpRequest({
+      hostname: '127.0.0.1',
+      port,
+      path: '/api/analyze',
+      method: 'POST',
+      headers: { 'Content-Type': 'multipart/form-data; boundary=gzabort' },
+    });
+    req.on('error', () => {});
+    openRequests.push(req);
+    req.write(
+      '--gzabort\r\nContent-Disposition: form-data; name="transportEncoding"\r\n\r\ngzip\r\n--gzabort\r\nContent-Disposition: form-data; name="file"; filename="save.hoi4"\r\n\r\n',
+    );
+    req.write(gzipSync(Buffer.from(smallSave())).subarray(0, 16));
+    await until(() => readdirSync(boundary.directory).length === 1);
+    req.destroy();
+    await until(
+      () =>
+        boundary['sessions'].size === 0 &&
+        readdirSync(boundary.directory).length === 0,
+    );
+    expect(worker.created).toHaveLength(0);
+    await sendGzip(gzipSync(Buffer.from(smallSave()))).expect(201);
+  });
+
+  test('normalization never writes a chunk exceeding the original-byte cap', async () => {
+    const writes = jest.spyOn(WriteStream.prototype, '_write');
+    await sendGzip(gzipSync(Buffer.alloc(128 * 1024, 65))).expect(413);
+    // Gunzip's first output chunk already exceeds this test's 4096-byte cap.
+    expect(writes).not.toHaveBeenCalled();
+    expect(worker.created).toHaveLength(0);
+  });
+
+  test.each(['disconnect', 'timeout'])(
+    '%s stops normalization even after the complete multipart input has arrived',
+    async (kind) => {
+      let flushing = false;
+      const delayed = new Transform({
+        transform(_chunk, _encoding, done) {
+          done(null, Buffer.from(smallSave()));
+        },
+        flush() {
+          flushing = true;
+        }, // Controlled delayed native inflater completion.
+      });
+      // Node's factory is read-only but configurable; replace only this one call.
+      Object.defineProperty(zlib, 'createGunzip', {
+        ...gunzipDescriptor,
+        value: () => {
+          Object.defineProperty(zlib, 'createGunzip', gunzipDescriptor);
+          return delayed;
+        },
+      });
+      const body = Buffer.concat([
+        Buffer.from(
+          '--gzflush\r\nContent-Disposition: form-data; name="transportEncoding"\r\n\r\ngzip\r\n--gzflush\r\nContent-Disposition: form-data; name="file"; filename="save.hoi4"\r\n\r\n',
+        ),
+        gzipSync(Buffer.from(smallSave())),
+        Buffer.from('\r\n--gzflush--\r\n'),
+      ]);
+      let req!: ClientRequest;
+      const status = new Promise<number>((resolve) => {
+        req = httpRequest(
+          {
+            hostname: '127.0.0.1',
+            port,
+            path: '/api/analyze',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'multipart/form-data; boundary=gzflush',
+              'Content-Length': body.length,
+            },
+          },
+          (response) => {
+            response.resume();
+            response.once('end', () => resolve(response.statusCode!));
+          },
+        );
+        req.on('error', () => resolve(0));
+        openRequests.push(req);
+        req.end(body);
+      });
+      await until(() => flushing);
+      if (kind === 'disconnect') req.destroy();
+      else expect(await status).toBe(408);
+      await until(() => boundary['sessions'].size === 0);
+      expect(delayed.destroyed).toBe(true);
+      expect(readdirSync(boundary.directory)).toEqual([]);
+      expect(worker.created).toHaveLength(0);
+      await send(smallSave()).expect(201);
+    },
+  );
+
+  test('normalization disk failure is safe, cleans its file and releases admission', async () => {
+    jest
+      .spyOn(WriteStream.prototype, '_write')
+      .mockImplementationOnce((_chunk, _encoding, done) => {
+        done(Object.assign(new Error('private disk path'), { code: 'ENOSPC' }));
+      });
+    const response = await sendGzip(gzipSync(Buffer.from(smallSave()))).expect(
+      500,
+    );
+    expect(response.body).toMatchObject({ code: 'ANALYSIS_FAILED' });
+    expect(response.text).not.toMatch(/private disk|ENOSPC|stack/);
+    expect(readdirSync(boundary.directory)).toEqual([]);
+    expect(boundary['sessions'].size).toBe(0);
+    await emptyStores();
+    await sendGzip(gzipSync(Buffer.from(smallSave()))).expect(201);
+  });
+
+  test('the absolute cap covers all concatenated gzip members', async () => {
+    const member = gzipSync(Buffer.alloc(1000, 65));
+    await sendGzip(
+      Buffer.concat([member, member, member, member, member]),
+    ).expect(413);
+    expect(worker.created).toHaveLength(0);
+    await emptyStores();
+  });
 
   test('disabled profiling leaves successful request logging unchanged', async () => {
     const log = jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -504,29 +776,43 @@ describe('Public upload boundary and cleanup', () => {
       await emptyStores();
     },
   );
-  test('crash and timeout both clean files, release capacity, avoid stores and permit retry', async () => {
-    worker.script = 'process.exit(7)';
-    expect((await send(smallSave()).expect(500)).body).toMatchObject({
-      code: 'ANALYSIS_FAILED',
-    });
-    await emptyStores();
-    worker.script = 'while(true) {}';
-    const response = await send(smallSave()).expect(504);
-    expect(response.body).toMatchObject({ code: 'ANALYSIS_TIMEOUT' });
-    await emptyStores();
-    expect(readdirSync(boundary.directory)).toEqual([]);
-    worker.script = null;
-    await send(smallSave()).expect(201);
-  }, 10000);
-  test('persistence and history failures do not prevent upload cleanup', async () => {
-    jest.spyOn(results, 'save').mockResolvedValueOnce(false);
-    await send(smallSave()).expect(201);
-    expect(readdirSync(boundary.directory)).toEqual([]);
-    jest
-      .spyOn(history as unknown as { persist: () => Promise<void> }, 'persist')
-      .mockRejectedValue(new Error('private path'));
-    await send(smallSave('mod=1')).expect(201);
-  });
+  test.each(['plain', 'gzip'])(
+    '%s crash and timeout both clean files, release capacity, avoid stores and permit retry',
+    async (kind) => {
+      const upload = (text: string) =>
+        kind === 'gzip' ? sendGzip(gzipSync(Buffer.from(text))) : send(text);
+      worker.script = 'process.exit(7)';
+      expect((await upload(smallSave()).expect(500)).body).toMatchObject({
+        code: 'ANALYSIS_FAILED',
+      });
+      await emptyStores();
+      worker.script = 'while(true) {}';
+      const response = await upload(smallSave()).expect(504);
+      expect(response.body).toMatchObject({ code: 'ANALYSIS_TIMEOUT' });
+      await emptyStores();
+      expect(readdirSync(boundary.directory)).toEqual([]);
+      worker.script = null;
+      await upload(smallSave()).expect(201);
+    },
+    10000,
+  );
+  test.each(['plain', 'gzip'])(
+    '%s persistence and history failures do not prevent upload cleanup',
+    async (kind) => {
+      const upload = (text: string) =>
+        kind === 'gzip' ? sendGzip(gzipSync(Buffer.from(text))) : send(text);
+      jest.spyOn(results, 'save').mockResolvedValueOnce(false);
+      await upload(smallSave()).expect(201);
+      expect(readdirSync(boundary.directory)).toEqual([]);
+      jest
+        .spyOn(
+          history as unknown as { persist: () => Promise<void> },
+          'persist',
+        )
+        .mockRejectedValue(new Error('private path'));
+      await upload(smallSave('mod=1')).expect(201);
+    },
+  );
   test('JSON path types cannot throw an unhandled trim exception', async () => {
     await request(app.getHttpServer())
       .post('/api/analyze')
