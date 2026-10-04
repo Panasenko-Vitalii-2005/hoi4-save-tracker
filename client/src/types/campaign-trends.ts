@@ -27,7 +27,11 @@ export interface CampaignTrendSnapshot {
   analyzedAt: string;
   gameVersion: string | null;
   metrics: CampaignTrendMetrics;
-  countries: { tag: string; metrics: CountryTrendMetrics }[];
+  countries: {
+    tag: string;
+    metrics: CountryTrendMetrics;
+    economy?: import("./economy").EconomyLedger;
+  }[];
 }
 
 export interface CampaignTrend {
@@ -67,4 +71,7 @@ export type EquipmentTrendMetric =
 
 export type GlobalTrendMetric = keyof CampaignTrendMetrics;
 export type CountryTrendMetric = keyof CountryTrendMetrics;
-export type TrendMetric = GlobalTrendMetric | CountryTrendMetric;
+export type TrendMetric =
+  | GlobalTrendMetric
+  | CountryTrendMetric
+  | import("./economy").EconomyTrendMetric;

@@ -5,10 +5,16 @@ import {
   type SaveComparisonContext,
 } from '../hoi4/save-comparison-context';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
+import { ECONOMY_RESOURCES } from '../hoi4/economy/economy.types';
+import {
+  ECONOMY_LEDGER_METRICS,
+  projectEconomyLedgers,
+} from './economy-ledger-projection';
 import type {
   AnalysisComparisonDto,
   CountryEquipmentProductionComparison,
   CountryComparison,
+  CountryEconomyComparison,
   EquipmentDefinitionComparison,
   NumericDiff,
   SnapshotPresence,
@@ -283,6 +289,34 @@ export function compareAnalysisResults(
   baseContext: SaveComparisonContext = unknownSaveComparisonContext(),
   targetContext: SaveComparisonContext = unknownSaveComparisonContext(),
 ): AnalysisComparisonDto {
+  const baseEconomy = projectEconomyLedgers(base);
+  const targetEconomy = projectEconomyLedgers(target);
+  const economy = [...new Set([...baseEconomy.keys(), ...targetEconomy.keys()])]
+    .sort()
+    .map((countryTag): CountryEconomyComparison => {
+      const resources = ECONOMY_RESOURCES.map((resource) => ({
+        resource,
+        ...Object.fromEntries(
+          ECONOMY_LEDGER_METRICS.map((metric) => [
+            metric,
+            numericDiff(
+              baseEconomy.get(countryTag)?.[resource][metric],
+              targetEconomy.get(countryTag)?.[resource][metric],
+            ),
+          ]),
+        ),
+      })) as CountryEconomyComparison['resources'];
+      return {
+        countryTag,
+        resources,
+        hasChanges: resources.some((row) =>
+          ECONOMY_LEDGER_METRICS.some((metric) => changed(row[metric])),
+        ),
+      };
+    });
+  const economyChanges = new Map(
+    economy.map((country) => [country.countryTag, country.hasChanges]),
+  );
   const equipmentProduction = compareEquipmentProduction(base, target);
   const equipmentChanges = new Map(
     equipmentProduction.map(({ countryTag, hasChanges }) => [
@@ -317,7 +351,8 @@ export function compareAnalysisResults(
           !left ||
           !right ||
           Object.values(metrics).some(changed) ||
-          equipmentChanges.get(tag) === true,
+          equipmentChanges.get(tag) === true ||
+          economyChanges.get(tag) === true,
         ...metrics,
       };
     });
@@ -359,10 +394,12 @@ export function compareAnalysisResults(
     hasChanges:
       countries.some((country) => country.hasChanges) ||
       equipmentProduction.some((country) => country.hasChanges) ||
+      economy.some((country) => country.hasChanges) ||
       Object.values(summary).some(changed),
     summary,
     countries,
     equipmentProduction,
+    economy,
   };
 }
 

@@ -8,6 +8,22 @@ export const ECONOMY_RESOURCES = [
   "coal",
 ] as const;
 export type EconomyResource = (typeof ECONOMY_RESOURCES)[number];
+
+export const ECONOMY_LEDGER_METRICS = [
+  "extracted",
+  "imported",
+  "exportAllocation",
+  "projectDemand",
+  "productionDemand",
+  "serializedBalance",
+] as const;
+export type EconomyLedgerMetric = (typeof ECONOMY_LEDGER_METRICS)[number];
+export type EconomyLedger = Record<
+  EconomyResource,
+  Record<EconomyLedgerMetric, number | null>
+>;
+export type EconomyTrendMetric =
+  `economy.${EconomyResource}.${EconomyLedgerMetric}`;
 export type EconomyResourceMap = Record<EconomyResource, number | null>;
 
 export interface EconomyReference {

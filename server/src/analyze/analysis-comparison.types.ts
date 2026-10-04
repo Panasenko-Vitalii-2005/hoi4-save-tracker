@@ -51,6 +51,17 @@ export interface CountryComparison {
   calculatedWarCasualtiesTotal: NumericDiff;
 }
 
+export interface CountryEconomyComparison {
+  countryTag: string;
+  hasChanges: boolean;
+  resources: ({
+    resource: import('../hoi4/economy/economy.types').EconomyResource;
+  } & Record<
+    import('./economy-ledger-projection').EconomyLedgerMetric,
+    NumericDiff
+  >)[];
+}
+
 export interface AnalysisComparisonDto {
   baseHash: string;
   targetHash: string;
@@ -74,4 +85,5 @@ export interface AnalysisComparisonDto {
   };
   countries: CountryComparison[];
   equipmentProduction: CountryEquipmentProductionComparison[];
+  economy?: CountryEconomyComparison[];
 }

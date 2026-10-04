@@ -1,0 +1,17 @@
+.economy-comparison-resources {
+  display: grid;
+  gap: 10px;
+}
+
+.economy-comparison-resource summary {
+  cursor: pointer;
+  line-height: 1.6;
+}
+
+.economy-comparison-resource .table-wrap {
+  margin-top: 12px;
+}
+
+.economy-comparison-resource table {
+  min-width: 440px;
+}

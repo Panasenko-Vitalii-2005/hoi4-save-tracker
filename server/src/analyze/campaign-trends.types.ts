@@ -23,6 +23,7 @@ export interface CountryTrendMetrics {
 export interface CampaignTrendCountry {
   tag: string;
   metrics: CountryTrendMetrics;
+  economy?: import('./economy-ledger-projection').EconomyLedger;
 }
 
 export interface CampaignTrendSnapshot {

@@ -34,13 +34,26 @@ import {
 } from "@/lib/utils";
 import { analyzerUnavailableMessage } from "@/lib/analysis-error";
 import { appLocale, i18n, useAppTranslation } from "@/i18n";
+import {
+  ECONOMY_TREND_METRICS,
+  ECONOMY_BALANCE_METRICS,
+  ECONOMY_METRIC_LABEL_KEYS,
+  economyMetricDefinition,
+  economyTrendValue,
+} from "@/lib/economy-metrics";
+import { rawEconomyValue } from "@/lib/economy-display";
+import { EconomyTrendMetricOptions } from "./EconomyTrendMetricOptions";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
 type TrendScope = "global" | "country";
 type TrendMode = "overview" | "equipment";
 type XMode = "game_date" | "sequence";
-type PresetName = "Military Growth" | "Industry Growth" | "World Overview";
+type PresetName =
+  | "Military Growth"
+  | "Industry Growth"
+  | "World Overview"
+  | "Economy Overview";
 
 interface TrendSettings {
   scope: TrendScope;
@@ -120,6 +133,7 @@ const METRICS: readonly MetricDefinition[] = [
     global: false,
     country: true,
   },
+  ...ECONOMY_TREND_METRICS,
 ];
 
 const METRIC_LABEL_KEYS = {
@@ -138,6 +152,7 @@ const PRESET_LABEL_KEYS = {
   "Military Growth": "campaign.presets.military",
   "Industry Growth": "campaign.presets.industry",
   "World Overview": "campaign.presets.world",
+  "Economy Overview": "campaign.presets.economy",
 } as const;
 
 const PRESETS: Record<PresetName, TrendPreset> = {
@@ -152,6 +167,10 @@ const PRESETS: Record<PresetName, TrendPreset> = {
   "World Overview": {
     metrics: ["activeCountries", "divisions", "aircraft", "ships"],
     normalize: true,
+  },
+  "Economy Overview": {
+    metrics: ECONOMY_BALANCE_METRICS,
+    normalize: false,
   },
 };
 
@@ -290,6 +309,8 @@ function metricValue(
 ): number | null {
   if (scope === "global")
     return snapshot.metrics[metric as GlobalTrendMetric] ?? null;
+  if (economyMetricDefinition(metric))
+    return economyTrendValue(snapshot, countryTag, metric);
   const country = snapshot.countries.find(({ tag }) => tag === countryTag);
   return country?.metrics[metric as CountryTrendMetric] ?? null;
 }
@@ -405,7 +426,12 @@ export function CampaignTrends({
 }) {
   const { t } = useAppTranslation();
   const metricLabel = useCallback(
-    (metric: TrendMetric) => t(METRIC_LABEL_KEYS[metric]),
+    (metric: TrendMetric) => {
+      const economy = economyMetricDefinition(metric);
+      return economy
+        ? `${t(`economy.resources.${economy.resource}`)} · ${t(ECONOMY_METRIC_LABEL_KEYS[economy.metric])}`
+        : t(METRIC_LABEL_KEYS[metric as keyof typeof METRIC_LABEL_KEYS]);
+    },
     [t],
   );
   const equipmentMetricLabel = useCallback(
@@ -706,7 +732,11 @@ export function CampaignTrends({
         y: displayed,
         customdata: snapshots.map((snapshot, index) => [
           snapshot.fileName,
-          raw[index] === null ? t("campaign.unavailable") : formatValue(raw[index]),
+          raw[index] === null
+            ? t("campaign.unavailable")
+            : economyMetricDefinition(metric)
+              ? rawEconomyValue(raw[index])
+              : formatValue(raw[index]),
           snapshot.gameDate,
         ]),
         connectgaps: false,
@@ -846,11 +876,13 @@ export function CampaignTrends({
   });
 
   const applyPreset = (preset: PresetName) => {
-    const allowed = availableMetrics(settings.scope);
+    const scope = preset === "Economy Overview" ? "country" : settings.scope;
+    const allowed = availableMetrics(scope);
     const metrics = PRESETS[preset].metrics.filter((key) =>
       allowed.some((metric) => metric.key === key),
     );
     updateSettings({
+      scope,
       preset,
       metrics,
       normalize: PRESETS[preset].normalize,
@@ -1092,7 +1124,7 @@ export function CampaignTrends({
                     {(Object.keys(PRESETS) as PresetName[]).map((preset) => (
                       <option key={preset} value={preset}>{t(PRESET_LABEL_KEYS[preset])}</option>
                     ))}
-                    <option>{t("campaign.custom")}</option>
+                    <option value="Custom">{t("campaign.custom")}</option>
                   </select>
                 </label>
               )}
@@ -1213,7 +1245,7 @@ export function CampaignTrends({
                 <details className="campaign-control-menu">
                   <summary>{t("campaign.metricCount", { count: effectiveMetrics.length })}</summary>
                   <div className="campaign-metric-menu">
-                    {supported.map((metric) => (
+                    {supported.filter((metric) => !economyMetricDefinition(metric.key)).map((metric) => (
                       <label key={metric.key}>
                         <input
                           type="checkbox"
@@ -1231,6 +1263,13 @@ export function CampaignTrends({
                         <span>{metricLabel(metric.key)}</span>
                       </label>
                     ))}
+                    {settings.scope === "country" && (
+                      <EconomyTrendMetricOptions
+                        metrics={effectiveMetrics}
+                        label={metricLabel}
+                        onChange={(metrics) => updateSettings({ metrics, preset: "Custom" })}
+                      />
+                    )}
                   </div>
                 </details>
               )}
@@ -1348,6 +1387,10 @@ export function CampaignTrends({
                 {t("campaign.normalizedExplanation")}
               </p>
             )}
+            {trendMode === "overview" &&
+              effectiveMetrics.some((metric) => economyMetricDefinition(metric)) && (
+                <p className="campaign-context-note">{t("economy.serializedNote")}</p>
+              )}
             {settings.movingAverage > 1 && (
               <p className="campaign-context-note">
                 {t("campaign.movingAverageExplanation")}

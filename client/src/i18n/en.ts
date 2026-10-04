@@ -783,6 +783,7 @@ export const en = {
       military: "Military Growth",
       industry: "Industry Growth",
       world: "World Overview",
+      economy: "Economy Overview",
     },
   },
 };

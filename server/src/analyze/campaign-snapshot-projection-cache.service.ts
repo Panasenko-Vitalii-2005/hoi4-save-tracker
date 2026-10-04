@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { projectEconomyLedgers } from './economy-ledger-projection';
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
 import type { SaveComparisonContext } from '../hoi4/save-comparison-context';
 import {
@@ -77,6 +78,7 @@ function globalMetrics(result: AnalyzeResult): CampaignTrendMetrics {
 
 function trendCountries(result: AnalyzeResult): CampaignTrendCountry[] {
   const seen = new Set<string>();
+  const economy = projectEconomyLedgers(result);
   return result.by_country
     .filter((country) => {
       if (!country || typeof country.tag !== 'string' || seen.has(country.tag))
@@ -86,6 +88,9 @@ function trendCountries(result: AnalyzeResult): CampaignTrendCountry[] {
     })
     .map((country) => ({
       tag: country.tag,
+      ...(economy.has(country.tag)
+        ? { economy: economy.get(country.tag) }
+        : {}),
       metrics: {
         divisions: finite(country.divisions),
         manpowerInField: finite(country.manpowerInField),

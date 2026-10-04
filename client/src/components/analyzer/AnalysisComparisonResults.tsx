@@ -16,6 +16,7 @@ import {
   prettyJson,
 } from "@/lib/data-export";
 import { EquipmentProductionComparisonPanel } from "./EquipmentProductionComparisonPanel";
+import { EconomyComparisonPanel } from "./EconomyComparisonPanel";
 
 type CountryMetricKey = keyof Omit<
   CountryComparison,
@@ -591,6 +592,13 @@ export function AnalysisComparisonResults({
       <EquipmentProductionComparisonPanel
         countryTag={selected?.tag ?? null}
         comparison={selectedEquipmentProduction}
+      />
+      <EconomyComparisonPanel
+        renderDelta={(diff) => <DeltaValue diff={diff} />}
+        countryTag={selected?.tag ?? null}
+        comparison={
+          data.economy?.find(({ countryTag }) => countryTag === selected?.tag) ?? null
+        }
       />
     </section>
   );

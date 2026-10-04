@@ -1,0 +1,16 @@
+.campaign-control-menu .campaign-metric-menu {
+  max-height: min(560px, 65vh);
+  overflow-y: auto;
+}
+
+.campaign-economy-metrics {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--campaign-line-strong);
+}
+
+.campaign-economy-metrics summary {
+  padding: 6px;
+  cursor: pointer;
+}

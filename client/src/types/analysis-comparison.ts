@@ -50,6 +50,15 @@ export interface CountryComparison {
   calculatedWarCasualtiesTotal: NumericDiff;
 }
 
+export interface CountryEconomyComparison {
+  countryTag: string;
+  hasChanges: boolean;
+  resources: ({ resource: import("./economy").EconomyResource } & Record<
+    import("./economy").EconomyLedgerMetric,
+    NumericDiff
+  >)[];
+}
+
 export interface AnalysisComparisonDto {
   baseHash: string;
   targetHash: string;
@@ -57,10 +66,7 @@ export interface AnalysisComparisonDto {
   targetGameDate: string | null;
   context: {
     chronology:
-      | "target_after_base"
-      | "same_date"
-      | "target_before_base"
-      | "unknown";
+      "target_after_base" | "same_date" | "target_before_base" | "unknown";
     sameAnalysis: boolean;
     campaignCompatibility: "same" | "different" | "unknown";
     gameVersionCompatibility: "same" | "different" | "unknown";
@@ -76,4 +82,5 @@ export interface AnalysisComparisonDto {
   };
   countries: CountryComparison[];
   equipmentProduction: CountryEquipmentProductionComparison[];
+  economy?: CountryEconomyComparison[];
 }
