@@ -7,6 +7,8 @@ import { promisify } from 'node:util';
 import { gzip, gunzip } from 'node:zlib';
 import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
 import type { AnalysisOwnershipService } from './analysis-ownership.service';
+import { parseEconomy } from '../hoi4/economy/economy.parser';
+import { economyFixture } from '../hoi4/economy/fixtures/economy.fixture';
 import {
   PersistedAnalysisResultService,
   type PersistedAnalysisResultV1,
@@ -69,6 +71,30 @@ describe('PersistedAnalysisResultService', () => {
       result,
     );
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('round-trips additive Economy fields without normalizing serialized inconsistencies', async () => {
+    result.economy = parseEconomy(economyFixture('C'));
+    await service.save(hash('economy'), result);
+    const reopened = await new PersistedAnalysisResultService().get(
+      hash('economy'),
+    );
+    expect(reopened?.economy).toEqual(result.economy);
+    expect(
+      reopened?.economy?.commercialTrades.find(
+        (trade) => trade.exporterTag === 'RKB',
+      )?.deliveredRaw,
+    ).toBe(32);
+  });
+
+  test('legacy results without Economy remain readable without fake zero data or backfill', async () => {
+    delete result.economy;
+    await service.save(hash('legacy-economy'), result);
+    const reopened = await new PersistedAnalysisResultService().get(
+      hash('legacy-economy'),
+    );
+    expect(reopened).toEqual(result);
+    expect(reopened).not.toHaveProperty('economy');
   });
 
   test('writes a gzip UTF-8 versioned envelope with exact hash and timestamp', async () => {

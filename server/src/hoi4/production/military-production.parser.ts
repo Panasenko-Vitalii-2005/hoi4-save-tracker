@@ -71,7 +71,7 @@ function readBracedBlock(
   return { bodyEnd: end, nextOffset: end, complete: false };
 }
 
-function findDirectAnonymousBlocks(
+export function findDirectAnonymousBlocks(
   text: string,
   start: number,
   end: number,

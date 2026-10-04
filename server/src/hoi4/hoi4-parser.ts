@@ -29,6 +29,8 @@ import { readSaveText, validateSaveStructure } from './save-container';
 import type { SaveUploadPolicy } from './save-upload.policy';
 import { aggregateMilitaryProduction } from './production/military-production.aggregator';
 import { parseMilitaryProductionLines } from './production/military-production.parser';
+import { parseEconomy } from './economy/economy.parser';
+import type { EconomyAnalysis } from './economy/economy.types';
 import type { CountryMilitaryProductionSummary } from './production/production.types';
 import { parseShipHistoryNavalLosses } from './naval-loss/ship-history.parser';
 import { parseEquipmentRegistry } from './stockpile/equipment-registry.parser';
@@ -121,6 +123,8 @@ export interface AnalyzeResult {
   equipment_by_country: Record<string, Record<string, number>>;
   world_equipment: Record<string, number>;
   stockpileSummaries: CountryStockpileSummary[];
+  /** Additive: legacy persisted analyses may not contain Economy data. */
+  economy?: EconomyAnalysis;
   militaryProductionSummaries: CountryMilitaryProductionSummary[];
   divisionSummaries: PublicCountryDivisionSummary[];
   divisionTemplateCatalog: PublicDivisionTemplate[];
@@ -1458,6 +1462,8 @@ export function analyzeSave(
     militaryProductionRecords,
   );
   finishPhase('militaryProduction');
+  const economy = parseEconomy(content, countryProductionIndex);
+  finishPhase('economy');
   const divisions = parseDivisions(
     content,
     equipmentRegistry,
@@ -2070,6 +2076,7 @@ export function analyzeSave(
     equipment_by_country: eqByCountry,
     world_equipment: worldEqSorted,
     stockpileSummaries,
+    economy,
     militaryProductionSummaries,
     divisionSummaries,
     divisionTemplateCatalog,
