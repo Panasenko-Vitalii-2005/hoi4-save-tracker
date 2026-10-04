@@ -86,5 +86,28 @@ The controls are from HoI4 1.19.2.0.3eb1 (85f4). Validated trades include
 POR -> GER Tungsten (48, 6/6 CIC, land), INS -> GER Rubber (5.57792,
 0.69724 convoy-loss efficiency, 9/9 convoys) and RKB -> GER Steel.
 SWE -> GER state 918 rights retain raw 39.2 Tungsten / 43.68 Steel / 16.8 Chromium.
-No frontend, Industry, Stockpile, Fielded Equipment, ownership or API endpoint
-semantics are changed by this phase.
+Industry, Stockpile, Fielded Equipment, ownership and existing API endpoint
+semantics are unchanged.
+
+## Frontend presentation (Phase 2B)
+
+The analyzer's Economy & Trade tab presents the six resources in EN/RU. Its
+Exported column reads `exportAllocation`, and Balance reads `serializedBalance`
+directly; neither is recalculated from displayed numbers. Null appears as `—`,
+distinct from zero. The main table formats numbers to at most two decimal places;
+hover titles and expanded national details retain exact raw values. Commercial
+delivery and rights-origin quantities are displayed exactly in their separate
+tables. Required/lent CIV and the two efficiency fields remain distinct.
+
+Country selection follows the existing player-country preference where reliable
+metadata is available; explicit selection persists between analysis tabs. Rights
+show state IDs, not guessed state names or inferred national contributions.
+Missing legacy Economy data has an unavailable state, not fabricated zero rows.
+No Economy Compare, Trends, exports, runtime shortage detection or simulation is
+added. The existing telemetry section allowlist is unchanged; Economy navigation
+does not emit an unsupported section event.
+
+Frontend regression tests reuse the backend's compact derived controls. Opt-in
+read-only checks against all three local real saves can be run from `client` with
+`HOI4_ECONOMY_REAL_SAVES=1 npm test -- tests/economy.test.tsx` (set the environment
+variable using the syntax of your shell). No real saves are redistributed.

@@ -1,0 +1,118 @@
+.economy-panel,
+.economy-empty {
+  min-width: 0;
+}
+.economy-head {
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.economy-head .compact-field {
+  min-width: 0;
+  max-width: 100%;
+}
+.economy-head select {
+  max-width: 100%;
+}
+.economy-note {
+  margin: 12px 0;
+  max-width: 90ch;
+}
+.economy-table-scroll {
+  max-width: 100%;
+}
+.economy-resource-table {
+  min-width: 720px;
+}
+.economy-resource-table .numeric-cell,
+.economy-resource-detail .numeric-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.economy-negative {
+  color: var(--intel-danger);
+  font-weight: 650;
+}
+.economy-expand-button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.economy-expand-button > span {
+  color: var(--accent-3);
+}
+.economy-expand-button:focus-visible,
+.economy-additional > summary:focus-visible {
+  outline: 2px solid var(--accent-3);
+  outline-offset: 4px;
+}
+.economy-resource-detail {
+  display: grid;
+  gap: 22px;
+  padding: 16px 4px;
+  min-width: 0;
+}
+.economy-resource-detail h3 {
+  margin: 0 0 8px;
+}
+.economy-resource-detail p {
+  margin: 8px 0 12px;
+}
+.economy-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.economy-facts dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.economy-facts dd {
+  margin: 4px 0 0;
+  font-family: "IBM Plex Mono", monospace;
+  overflow-wrap: anywhere;
+}
+.economy-additional > summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.economy-trade-table {
+  min-width: 800px;
+}
+.economy-rights-table {
+  min-width: 700px;
+}
+.economy-cell-note {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+  white-space: normal;
+}
+.economy-expansion .recent-table th {
+  position: static;
+}
+.economy-expansion > td {
+  background: var(--intel-surface-deep);
+}
+@media (max-width: 600px) {
+  .economy-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .economy-head select {
+    width: 100%;
+  }
+  .economy-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -765,6 +765,9 @@ describe("analysis request lifecycle", () => {
 
     await render();
     await act(async () => button("Production").click());
+    await act(async () => button("Economy & Trade").click());
+    expect(container.textContent).toContain("Economy data unavailable");
+    // No unsupported/renamed section ID is sent; existing events remain unchanged.
     await act(async () => button("Overview").click());
     await act(async () => Promise.resolve());
     expect(

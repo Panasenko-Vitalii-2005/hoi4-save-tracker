@@ -27,6 +27,7 @@ import { WarCasualtiesTab } from "./WarCasualtiesTab";
 import { NavalLossesTab } from "./NavalLossesTab";
 import { ProductionTab } from "./ProductionTab";
 import { StockpileTab } from "./StockpileTab";
+import { EconomyTab } from "./EconomyTab";
 import { LandForcesTab } from "./LandForcesTab";
 import { CountryDisplay } from "./CountryDisplay";
 import { RecentAnalyses, type RecentComparisonState } from "./RecentAnalyses";
@@ -104,9 +105,9 @@ function isSaveBrowserData(
   );
 }
 type SortCol = keyof CountryStats;
-type AnalysisView = AnalysisSection;
+type AnalysisView = AnalysisSection | "economy";
 
-const ANALYZER_VIEW_KEY: Record<AnalysisView, string> = {
+const ANALYZER_VIEW_KEY: Record<AnalysisSection, string> = {
   overview: "overview",
   "war-casualties": "warCasualties",
   "naval-losses": "navalLosses",
@@ -127,13 +128,16 @@ function AnalyzerViewContext({
   sectionRef?: React.Ref<HTMLElement>;
 }) {
   const { t } = useAppTranslation();
-  const key = ANALYZER_VIEW_KEY[view];
+  const prefix =
+    view === "economy"
+      ? "economy"
+      : `analysis.views.${ANALYZER_VIEW_KEY[view]}`;
   return (
     <section className="analyzer-view-context" ref={sectionRef}>
       <div>
-        <span>{t(`analysis.views.${key}.eyebrow`)}</span>
-        <h2>{t(`analysis.views.${key}.title`)}</h2>
-        <p>{t(`analysis.views.${key}.description`)}</p>
+        <span>{t(`${prefix}.eyebrow`)}</span>
+        <h2>{t(`${prefix}.title`)}</h2>
+        <p>{t(`${prefix}.description`)}</p>
       </div>
       <div className="analyzer-view-side">
         <div className="analyzer-view-date">
@@ -470,6 +474,7 @@ export function AnalyzerTab({
   >(undefined);
   const [analysisView, setAnalysisView] =
     useState<AnalysisView>("overview");
+  const [economyCountryTag, setEconomyCountryTag] = useState<string | null>(null);
   const [productionCountryTag, setProductionCountryTag] = useState<
     string | null
   >(null);
@@ -491,7 +496,8 @@ export function AnalyzerTab({
 
   useEffect(() => {
     const hash = resultSource.analysisHash;
-    if (readOnly || !result || !hash) return;
+    // Economy is not in the existing telemetry section allowlist.
+    if (readOnly || !result || !hash || analysisView === "economy") return;
     void trackAnalysisEvent(
       "analysis_section_viewed",
       hash,
@@ -551,6 +557,12 @@ export function AnalyzerTab({
     setResultSource(source);
     setReportOpen(false);
     setAnalysisView("overview");
+    setEconomyCountryTag(
+      resolvePreferredCountryTag(
+        data.economy?.countrySummaries.map(({ countryTag }) => countryTag) ?? [],
+        source.playerCountryTag,
+      ),
+    );
     setEqCountry(initialEqCountry);
     setProductionCountryTag(
       resolvePreferredCountryTag(
@@ -1166,6 +1178,14 @@ export function AnalyzerTab({
               {t("analysis.sections.stockpile")}
             </button>
             <button
+              className={`tab-btn${analysisView === "economy" ? " active" : ""}`}
+              onClick={() => setAnalysisView("economy")}
+              role="tab"
+              aria-selected={analysisView === "economy"}
+            >
+              {t("economy.title")}
+            </button>
+            <button
               className={`tab-btn${analysisView === "production" ? " active" : ""}`}
               onClick={() => setAnalysisView("production")}
               role="tab"
@@ -1230,6 +1250,13 @@ export function AnalyzerTab({
             <StockpileTab
               summaries={result.stockpileSummaries ?? []}
               preferredCountryTag={resultSource.playerCountryTag}
+            />
+          ) : analysisView === "economy" ? (
+            <EconomyTab
+              economy={result.economy}
+              preferredCountryTag={resultSource.playerCountryTag}
+              selectedTag={economyCountryTag}
+              onSelectedTagChange={setEconomyCountryTag}
             />
           ) : analysisView === "production" ? (
             <ProductionTab

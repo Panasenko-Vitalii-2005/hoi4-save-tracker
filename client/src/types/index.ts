@@ -1,3 +1,5 @@
+import type { EconomyAnalysis } from "./economy";
+
 export interface RecentAnalysis {
   hash: string;
   fileName: string;
@@ -484,6 +486,8 @@ export interface AnalyzeResult {
   equipment_by_country: Record<string, Record<string, number>>;
   world_equipment: Record<string, number>;
   stockpileSummaries: CountryStockpileSummary[];
+  /** Older persisted analyses may not contain serialized Economy data. */
+  economy?: EconomyAnalysis;
   militaryProductionSummaries: CountryMilitaryProductionSummary[];
   divisionSummaries: CountryDivisionSummary[];
   divisionTemplateCatalog: DivisionTemplateCatalogEntry[];
