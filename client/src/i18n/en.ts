@@ -1,4 +1,7 @@
+import { enIntelligence } from "./intelligence";
+
 export const en = {
+  intelligence: enIntelligence,
   common: {
     language: "Language",
     english: "English",

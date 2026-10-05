@@ -1,6 +1,8 @@
 import type { TranslationResources } from "./en";
+import { ruIntelligence } from "./intelligence";
 
 export const ru = {
+  intelligence: ruIntelligence,
   common: {
     language: "Язык", english: "English", russian: "Русский", loading: "Загрузка…", retry: "Повторить", cancel: "Отмена", close: "Закрыть", delete: "Удалить", save: "Сохранить", copy: "Копировать", copied: "Скопировано", share: "Поделиться", remove: "Удалить", unavailable: "Недоступно", none: "Нет", unknown: "Неизвестно", yes: "Да", no: "Нет", search: "Поиск", actions: "Действия", export: "Экспорт", exportFailed: "Не удалось создать файл экспорта. Повторите попытку.", print: "Печать", downloadCsv: "Скачать CSV", downloadJson: "Скачать JSON", toggleTheme: "Сменить тему", switchDark: "Включить тёмную тему", switchLight: "Включить светлую тему", country: "Страна", date: "Дата", gameDate: "Игровая дата", analyzed: "Проанализировано", filename: "Имя файла", result: "Результат", available: "Доступен", notAvailable: "Недоступен", partial: "Неполные данные", obsolete: "Устаревший", selectCountry: "Выберите страну", countriesCount: "Стран: {{count}}", shipsCount: "Кораблей: {{count}}", unnamedShip: "Корабль без имени", numberUnavailable: "—",
   },

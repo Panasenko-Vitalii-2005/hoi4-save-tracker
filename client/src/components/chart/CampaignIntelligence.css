@@ -1,0 +1,106 @@
+.campaign-intelligence {
+  min-width: 0;
+}
+.intelligence-note,
+.intelligence-version {
+  color: var(--muted);
+}
+.intelligence-window {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.intelligence-window .field,
+.intelligence-window select {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.intelligence-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.intelligence-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.intelligence-card h3 {
+  margin: 0.7rem 0;
+}
+.intelligence-severity {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+.intelligence-severity.attention {
+  border-style: dashed;
+}
+.intelligence-facts {
+  display: grid;
+  gap: 0.7rem;
+}
+.intelligence-facts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}
+.intelligence-facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  display: grid;
+  gap: 0.2rem;
+  text-align: right;
+}
+.intelligence-definition,
+.intelligence-sources code {
+  display: block;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.intelligence-evidence {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+.intelligence-evidence ol,
+.intelligence-evidence ul {
+  padding-left: 1.2rem;
+}
+.intelligence-evidence-record {
+  margin: 1rem 0;
+}
+.intelligence-raw {
+  font-variant-numeric: tabular-nums;
+}
+.intelligence-coverage {
+  margin-top: 1rem;
+}
+.intelligence-coverage summary {
+  cursor: pointer;
+}
+.intelligence-version {
+  display: block;
+  margin-top: 0.8rem;
+}
+@media (max-width: 1050px) {
+  .intelligence-cards {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 600px) {
+  .intelligence-window {
+    grid-template-columns: 1fr;
+  }
+  .intelligence-facts > div {
+    grid-template-columns: 1fr;
+  }
+  .intelligence-facts dd {
+    text-align: left;
+  }
+}

@@ -43,6 +43,7 @@ import {
 } from "@/lib/economy-metrics";
 import { rawEconomyValue } from "@/lib/economy-display";
 import { EconomyTrendMetricOptions } from "./EconomyTrendMetricOptions";
+import { CampaignIntelligence } from "./CampaignIntelligence";
 
 const Plot = React.lazy(() => import("react-plotly.js"));
 
@@ -1176,7 +1177,7 @@ export function CampaignTrends({
                   {t("campaign.equipment")}
                 </button>
               </div>
-              {(settings.scope === "country" || trendMode === "equipment") && (
+              {countries.length > 0 && (
                 <label className="field compact-field campaign-country-field">
                   <span>{t("campaign.country")}</span>
                   <select
@@ -1508,6 +1509,8 @@ export function CampaignTrends({
               </div>
             )}
           </section>
+
+          <CampaignIntelligence campaign={campaign} countryTag={countryTag} />
 
           <section
             className="panel campaign-timeline"
