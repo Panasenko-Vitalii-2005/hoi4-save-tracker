@@ -29,7 +29,7 @@ export class CampaignTrendsDataChangedError extends Error {
 
 type GameDate = readonly [number, number, number];
 
-function gameDate(value: unknown): GameDate | null {
+export function gameDate(value: unknown): GameDate | null {
   if (typeof value !== 'string') return null;
   const match = /^(\d+)\.(\d{1,2})\.(\d{1,2})$/.exec(value);
   if (!match) return null;
@@ -43,7 +43,7 @@ function gameDate(value: unknown): GameDate | null {
     : null;
 }
 
-function compareDates(left: GameDate, right: GameDate): number {
+export function compareDates(left: GameDate, right: GameDate): number {
   for (let index = 0; index < left.length; index++) {
     if (left[index] !== right[index]) return left[index] - right[index];
   }
@@ -179,6 +179,21 @@ export class CampaignTrendsService {
     private readonly results: PersistedAnalysisResultService,
     private readonly projections: CampaignSnapshotProjectionCacheService,
   ) {}
+
+  /** Reuse the same artifact consistency/cache boundary for authorized consumers.
+   * Membership is re-authorized by list() on every retry, not frozen at entry.
+   */
+  async withAuthorizedProjections<T>(
+    list: () => Promise<RecentAnalysis[]>,
+    build: (
+      items: readonly RecentAnalysis[],
+      projections: ReadonlyMap<string, CampaignSnapshotProjection>,
+    ) => T | Promise<T>,
+  ): Promise<T> {
+    return this.withStableInventory(list, async (items, inventory) =>
+      build(items, await this.loadAvailable(items, inventory)),
+    );
+  }
 
   async build(
     visibleItems?: readonly RecentAnalysis[],

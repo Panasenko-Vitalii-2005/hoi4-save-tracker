@@ -52,6 +52,14 @@ export interface CampaignSnapshotProjection {
   metrics: CampaignTrendMetrics;
   countries: CampaignTrendCountry[];
   equipmentCountries: CampaignEquipmentCountryProjection[];
+  /** Internal-only facts for intelligence; not added to existing Trends DTOs. */
+  intelligence: {
+    domains: { economy: boolean; stockpile: boolean; production: boolean };
+    productionCountries: {
+      countryTag: string;
+      activeFactories: number | null;
+    }[];
+  };
 }
 
 function finite(value: unknown): number | null {
@@ -213,6 +221,19 @@ export function projectSnapshot(
     metrics: globalMetrics(result),
     countries: trendCountries(result),
     equipmentCountries: projectEquipmentCountries(result),
+    intelligence: {
+      domains: {
+        economy: result.economy !== undefined && result.economy !== null,
+        stockpile: Array.isArray(result.stockpileSummaries),
+        production: Array.isArray(result.militaryProductionSummaries),
+      },
+      productionCountries: (result.militaryProductionSummaries ?? []).map(
+        (country) => ({
+          countryTag: country.countryTag,
+          activeFactories: finite(country.activeFactories),
+        }),
+      ),
+    },
   };
 }
 

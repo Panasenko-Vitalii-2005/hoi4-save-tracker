@@ -20,6 +20,8 @@ import { SharedAnalysesController } from './analyze/shared-analyses.controller';
 import { SharedAnalysesService } from './analyze/shared-analyses.service';
 import { CampaignTrendsController } from './analyze/campaign-trends.controller';
 import { CampaignTrendsService } from './analyze/campaign-trends.service';
+import { CampaignIntelligenceController } from './analyze/intelligence/campaign-intelligence.controller';
+import { CampaignIntelligenceService } from './analyze/intelligence/campaign-intelligence.service';
 import { CampaignSnapshotProjectionCacheService } from './analyze/campaign-snapshot-projection-cache.service';
 import { BatchAnalysisController } from './analyze/batch-analysis.controller';
 import { DatabaseModule } from './database/database.module';
@@ -47,6 +49,7 @@ import { ClientProductEventsController } from './telemetry/client-product-events
     AnalyzeController,
     SharedAnalysesController,
     CampaignTrendsController,
+    CampaignIntelligenceController,
     BatchAnalysisController,
     HealthController,
     SavesController,
@@ -62,6 +65,7 @@ import { ClientProductEventsController } from './telemetry/client-product-events
     AnalysisComparisonService,
     CampaignSnapshotProjectionCacheService,
     CampaignTrendsService,
+    CampaignIntelligenceService,
     SaveUploadInterceptor,
     AnalysisOwnershipRepository,
     AnalysisOwnershipService,
