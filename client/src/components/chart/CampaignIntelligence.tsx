@@ -22,6 +22,12 @@ import {
   supportedInsight,
 } from "@/lib/campaign-intelligence";
 import "./CampaignIntelligence.css";
+import {
+  generalLimits,
+  groupCoverage,
+  signedDelta,
+  metricIdentity,
+} from "@/lib/intelligence-presentation";
 
 function Snapshot({
   hash,
@@ -62,15 +68,22 @@ function Metric({ metric }: { metric: MetricKey }) {
   );
 }
 
-function Qualifiers({ codes }: { codes: string[] }) {
+function Qualifiers({
+  codes,
+  technical = false,
+}: {
+  codes: string[];
+  technical?: boolean;
+}) {
   const { t, i18n } = useAppTranslation();
   return (
     <ul>
-      {[...new Set(codes)].map((code) => (
-        <li key={code}>
+      {(technical ? codes : [...new Set(codes)]).map((code, index) => (
+        <li key={`${code}-${index}`}>
           {i18n.exists(`intelligence.quality.${code}`)
             ? t(`intelligence.quality.${code}`)
             : t("intelligence.unknownQualifier")}
+          {technical && <code className="intelligence-definition">{code}</code>}
         </li>
       ))}
     </ul>
@@ -88,6 +101,9 @@ function EvidenceRecord({
   const operationKey = `intelligence.operations.${entry.operation}`;
   return (
     <li className="intelligence-evidence-record">
+      <code className="intelligence-definition">
+        {entry.id} · {entry.layer}
+      </code>
       <strong>
         {entry.metric ? (
           <Metric metric={entry.metric} />
@@ -95,6 +111,11 @@ function EvidenceRecord({
           t("intelligence.coOccurrence")
         )}
       </strong>
+      {entry.metric && (
+        <code className="intelligence-definition">
+          {metricIdentity(entry.metric)}
+        </code>
+      )}
       <div>
         {i18n.exists(operationKey)
           ? t(operationKey)
@@ -107,6 +128,7 @@ function EvidenceRecord({
       {entry.missingReason && (
         <div>{t(`intelligence.quality.metric_${entry.missingReason}`)}</div>
       )}
+      <Qualifiers codes={entry.qualifiers} technical />
       <ul className="intelligence-sources">
         {entry.sources.map((source, index) => (
           <li key={`${source.snapshotHash}-${source.resultPath}-${index}`}>
@@ -135,14 +157,20 @@ export function IntelligenceCard({
 }) {
   const { t } = useAppTranslation();
   const [expanded, setExpanded] = useState(false);
+  const [technical, setTechnical] = useState(false);
   const evidenceId = useId();
+  const technicalId = useId();
   const supported = supportedInsight(insight);
   const signals = supported
     ? insight.signalIds.flatMap((id) =>
         data.signals.filter((signal) => signal.id === id),
       )
     : [];
-  const evidenceIds = new Set(insight.evidenceIds);
+  const rootEvidenceIds = [
+    ...insight.evidenceIds,
+    ...signals.flatMap((signal) => signal.evidenceIds),
+  ];
+  const evidenceIds = new Set(rootEvidenceIds);
   // Include input facts, retaining backend order rather than inventing a presentation ranking.
   const byId = new Map(data.evidence.map((entry) => [entry.id, entry]));
   const visit = (id: string) => {
@@ -153,7 +181,7 @@ export function IntelligenceCard({
       }
     }
   };
-  insight.evidenceIds.forEach(visit);
+  rootEvidenceIds.forEach(visit);
   const evidence = data.evidence.filter((entry) => evidenceIds.has(entry.id));
   const params = {
     ...insight.messageParams,
@@ -195,8 +223,7 @@ export function IntelligenceCard({
                 {rawEconomyValue(signal.summary.endValue)}
               </span>
               <span>
-                {t("intelligence.delta")}:{" "}
-                {rawEconomyValue(signal.summary.delta)}
+                {t("intelligence.delta")}: {signedDelta(signal.summary.delta)}
               </span>
             </dd>
           </div>
@@ -227,7 +254,10 @@ export function IntelligenceCard({
         className="button button-secondary"
         aria-expanded={expanded}
         aria-controls={evidenceId}
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => {
+          setExpanded((value) => !value);
+          setTechnical(false);
+        }}
       >
         {t(
           expanded ? "intelligence.hideEvidence" : "intelligence.showEvidence",
@@ -235,29 +265,208 @@ export function IntelligenceCard({
       </button>
       {expanded && (
         <div id={evidenceId} className="intelligence-evidence">
+          <h4>{t("intelligence.evidenceSummary")}</h4>
+          <dl className="intelligence-facts intelligence-summary">
+            {signals.map((signal) => (
+              <div key={signal.id}>
+                <dt>
+                  <Metric metric={signal.metric} />
+                </dt>
+                <dd>
+                  <span>
+                    <Snapshot hash={data.window.baseHash} campaign={campaign} />{" "}
+                    · {rawEconomyValue(signal.summary.startValue)}
+                  </span>
+                  <span>
+                    <Snapshot
+                      hash={data.window.targetHash}
+                      campaign={campaign}
+                    />{" "}
+                    · {rawEconomyValue(signal.summary.endValue)}
+                  </span>
+                  <span>
+                    {t("intelligence.delta")}:{" "}
+                    {signedDelta(signal.summary.delta)}
+                  </span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {supported && (
+            <p>
+              {insight.catalogId === "INDUSTRY_ALLOCATION_EXPANSION"
+                ? t("intelligence.bothIncreased")
+                : t(insight.messageKey, params)}
+            </p>
+          )}
           <p>
             {t("intelligence.qualityLabel")}:{" "}
             {t(`intelligence.confidence.${insight.confidence.level}`)}
           </p>
-          <Qualifiers
-            codes={[
-              ...insight.qualifiers,
-              ...insight.confidence.reasons,
-              ...evidence.flatMap((entry) => entry.qualifiers),
-            ]}
-          />
-          <ol>
-            {evidence.map((entry) => (
-              <EvidenceRecord
-                key={entry.id}
-                entry={entry}
-                campaign={campaign}
+          <button
+            type="button"
+            className="button button-secondary"
+            aria-expanded={technical}
+            aria-controls={technicalId}
+            onClick={() => setTechnical((value) => !value)}
+          >
+            {t(
+              technical
+                ? "intelligence.hideTechnical"
+                : "intelligence.showTechnical",
+            )}
+          </button>
+          {technical && (
+            <div id={technicalId} className="intelligence-technical">
+              <h4>{t("intelligence.technicalEvidence")}</h4>
+              <Qualifiers
+                codes={[...insight.qualifiers, ...insight.confidence.reasons]}
+                technical
               />
-            ))}
-          </ol>
+              <ol>
+                {evidence.map((entry) => (
+                  <EvidenceRecord
+                    key={entry.id}
+                    entry={entry}
+                    campaign={campaign}
+                  />
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
       )}
     </article>
+  );
+}
+
+export function IntelligenceCoverage({
+  data,
+  campaign,
+}: {
+  data: CampaignIntelligenceDto;
+  campaign: CampaignTrend;
+}) {
+  const { t } = useAppTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const groups = groupCoverage(data.coverageIssues);
+  const limits = generalLimits(data);
+  if (!limits.length && !data.coverageIssues.length) return null;
+  return (
+    <section className="intelligence-coverage">
+      <h3>{t("intelligence.coverage")}</h3>
+      {!!limits.length && (
+        <div className="intelligence-general">
+          <h4>{t("intelligence.generalLimits")}</h4>
+          <Qualifiers codes={limits} />
+        </div>
+      )}
+      {!!groups.length && (
+        <>
+          <h4>{t("intelligence.metricCoverage")}</h4>
+          <div className="intelligence-coverage-groups">
+            {groups.map((group) => (
+              <div
+                key={`${group.domain}:${group.reason}`}
+                className="intelligence-coverage-group"
+              >
+                <strong>{t(`intelligence.domains.${group.domain}`)}</strong>
+                {group.domain === "economy" &&
+                group.reason === "metric_legacy" ? (
+                  <p>{t("intelligence.legacyEconomy")}</p>
+                ) : (
+                  <Qualifiers codes={[group.reason]} />
+                )}
+                <p>
+                  {t("intelligence.observationCount", {
+                    count: group.issues.length,
+                  })}
+                </p>
+                {!!group.definitions.size && (
+                  <p>
+                    {t("intelligence.definitionCount", {
+                      count: group.definitions.size,
+                    })}
+                  </p>
+                )}
+                {!group.definitions.size && (
+                  <p>
+                    {t("intelligence.identityCount", {
+                      count: group.identities.size,
+                    })}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {!!data.coverageIssues.length && (
+        <>
+          <button
+            type="button"
+            className="button button-secondary"
+            aria-expanded={expanded}
+            aria-controls={id}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {t(
+              expanded
+                ? "intelligence.hideAffected"
+                : "intelligence.showAffected",
+            )}
+          </button>
+          {expanded && (
+            <div id={id} className="intelligence-affected">
+              <ul>
+                {data.coverageIssues.map((issue, index) => (
+                  <li key={index}>
+                    {issue.metric && <Metric metric={issue.metric} />}
+                    {issue.metric && (
+                      <code className="intelligence-definition">
+                        {metricIdentity(issue.metric)}
+                      </code>
+                    )}
+                    {issue.snapshotHash && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        <Snapshot
+                          hash={issue.snapshotHash}
+                          campaign={campaign}
+                        />
+                      </>
+                    )}
+                    <Qualifiers codes={[issue.code]} technical />
+                    {issue.metric && (
+                      <Qualifiers
+                        technical
+                        codes={data.series
+                          .filter(
+                            (series) =>
+                              metricIdentity(series.key) ===
+                              metricIdentity(issue.metric!),
+                          )
+                          .flatMap((series) =>
+                            series.observations
+                              .filter(
+                                (observation) =>
+                                  observation.snapshotHash ===
+                                  issue.snapshotHash,
+                              )
+                              .flatMap((observation) => observation.qualifiers),
+                          )}
+                      />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -464,29 +673,7 @@ export function CampaignIntelligence({
                 ))}
               </div>
             )}
-            {!!data.coverageIssues.length && (
-              <details className="intelligence-coverage">
-                <summary>{t("intelligence.coverage")}</summary>
-                <ul>
-                  {data.coverageIssues.map((issue, index) => (
-                    <li key={index}>
-                      <Qualifiers codes={[issue.code]} />
-                      {issue.metric && <Metric metric={issue.metric} />}
-                      {issue.snapshotHash && (
-                        <>
-                          {" "}
-                          ·{" "}
-                          <Snapshot
-                            hash={issue.snapshotHash}
-                            campaign={campaign}
-                          />
-                        </>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
+            <IntelligenceCoverage data={data} campaign={campaign} />
             <small className="intelligence-version">
               {t("intelligence.algorithm", { version: data.algorithmVersion })}
             </small>

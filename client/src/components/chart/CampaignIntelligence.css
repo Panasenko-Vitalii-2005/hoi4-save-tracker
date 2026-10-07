@@ -80,9 +80,35 @@
 }
 .intelligence-coverage {
   margin-top: 1rem;
+  overflow-wrap: anywhere;
 }
-.intelligence-coverage summary {
-  cursor: pointer;
+.intelligence-coverage-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+.intelligence-coverage-group {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.8rem;
+}
+.intelligence-coverage-group p {
+  margin: 0.5rem 0;
+}
+.intelligence-affected li {
+  margin: 0.8rem 0;
+}
+.intelligence-summary > div {
+  grid-template-columns: 1fr;
+}
+.intelligence-summary dd {
+  text-align: left;
+}
+.intelligence-technical {
+  border-top: 1px solid var(--line);
+  margin-top: 1rem;
 }
 .intelligence-version {
   display: block;

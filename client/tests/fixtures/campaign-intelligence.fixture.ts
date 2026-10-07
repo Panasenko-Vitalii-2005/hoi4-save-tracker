@@ -254,3 +254,136 @@ export function intelligenceFixture(): CampaignIntelligenceDto {
   });
   return data;
 }
+
+/** Observed acceptance window, plus a faithful nine-record dependency graph. */
+export function acceptanceFixture(legacyEndpoints = 2) {
+  const data = intelligenceFixture();
+  const campaign = campaignFixture();
+  campaign.snapshots = [campaign.snapshots[0], campaign.snapshots[2]];
+  campaign.snapshots[0].gameDate = "1944.4.1";
+  campaign.snapshots[1].gameDate = "1944.5.1";
+  data.window.baseGameDate = "1944.4.1";
+  data.window.targetGameDate = "1944.5.1";
+  data.window.snapshotHashes = [hash("a"), hash("c")];
+  data.insights = [data.insights[0]];
+  data.signals = data.signals.slice(0, 2);
+  data.evidence = [];
+  for (const [index, signal] of data.signals.entries()) {
+    const [startValue, endValue, delta] =
+      index === 0 ? [280, 286, 6] : [285, 292, 7];
+    Object.assign(signal.summary, {
+      startValue,
+      endValue,
+      delta,
+      observedCount: 2,
+    });
+    signal.evidenceIds = [`${signal.id}-signal`];
+    const facts = [startValue, endValue].map((value, endpoint) => ({
+      id: `${signal.id}-fact-${endpoint}`,
+      layer: "persisted_fact" as const,
+      metric: signal.metric,
+      sources: [
+        {
+          snapshotHash: hash(endpoint ? "c" : "a"),
+          resultPath: `recorded.${signal.metric.id}`,
+          basis: "persisted_aggregate" as const,
+        },
+      ],
+      rawValues: [value],
+      operation: "read_projection",
+      inputEvidenceIds: [],
+      qualifiers: [
+        "serialized_state_at_save_time",
+        "allocation_is_not_realized_output",
+      ],
+    }));
+    data.evidence.push(
+      ...facts,
+      {
+        id: `${signal.id}-delta`,
+        layer: "derived_arithmetic",
+        metric: signal.metric,
+        sources: facts.flatMap((fact) => fact.sources),
+        rawValues: [startValue, endValue, delta],
+        operation: "target_minus_base",
+        inputEvidenceIds: facts.map((fact) => fact.id),
+        qualifiers: ["serialized_state_at_save_time"],
+      },
+      {
+        id: `${signal.id}-signal`,
+        layer: "temporal_signal",
+        metric: signal.metric,
+        sources: facts.flatMap((fact) => fact.sources),
+        rawValues: [startValue, endValue, delta],
+        operation: "increase",
+        inputEvidenceIds: [`${signal.id}-delta`],
+        qualifiers: ["serialized_state_at_save_time"],
+      },
+    );
+  }
+  data.evidence.push({
+    id: "co-occurrence",
+    layer: "co_occurrence",
+    sources: [],
+    rawValues: [],
+    operation: "and_endpoint_signals",
+    inputEvidenceIds: data.signals.map((signal) => `${signal.id}-signal`),
+    qualifiers: ["serialized_state_at_save_time"],
+  });
+  data.insights[0].evidenceIds = ["co-occurrence"];
+  data.summaries = data.signals.map((signal) => signal.summary);
+  data.series = data.series.slice(0, 2).map((series, index) => ({
+    ...series,
+    observations: [hash("a"), hash("c")].map((snapshotHash, endpoint) => ({
+      snapshotHash,
+      sources: [],
+      qualifiers: [],
+      status: "observed" as const,
+      value: endpoint
+        ? data.signals[index].summary.endValue!
+        : data.signals[index].summary.startValue!,
+    })),
+  }));
+  data.coverageIssues.push({ code: "available_authorized_history_only" });
+  for (const [id, count] of [
+    ["production.activeFactories", 11],
+    ["stockpile.balance", 14],
+  ] as const) {
+    for (let i = 0; i < count; i++)
+      data.coverageIssues.push({
+        code: "metric_absent",
+        metric: {
+          id,
+          countryTag: "GER",
+          equipmentDefinition:
+            i === 0
+              ? "modded__tank"
+              : i === 1
+                ? "modded_tank"
+                : `equipment_${i}`,
+        },
+        snapshotHash: hash("a"),
+      });
+  }
+  for (const endpoint of ["a", "c"].slice(0, legacyEndpoints)) {
+    for (const resource of [
+      "aluminium",
+      "rubber",
+      "tungsten",
+      "steel",
+      "chromium",
+      "coal",
+    ] as const) {
+      for (const id of [
+        "economy.productionDemand",
+        "economy.serializedBalance",
+      ] as const)
+        data.coverageIssues.push({
+          code: "metric_legacy",
+          metric: { id, countryTag: "GER", resource },
+          snapshotHash: hash(endpoint),
+        });
+    }
+  }
+  return { data, campaign };
+}

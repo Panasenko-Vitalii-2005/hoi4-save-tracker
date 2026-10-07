@@ -9,6 +9,7 @@ import {
   isCampaignIntelligenceDto,
 } from "../src/lib/campaign-intelligence";
 import { rawEconomyValue } from "../src/lib/economy-display";
+import { formatEquipmentDefinition } from "../src/lib/utils";
 import { i18n } from "../src/i18n";
 import { enIntelligence, ruIntelligence } from "../src/i18n/intelligence";
 import {
@@ -21,7 +22,12 @@ import {
   intelligenceFixture,
   trendsFixture,
   hash,
+  acceptanceFixture,
 } from "./fixtures/campaign-intelligence.fixture";
+import {
+  groupCoverage,
+  generalLimits,
+} from "../src/lib/intelligence-presentation";
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
@@ -292,6 +298,8 @@ describe("Campaign Intelligence frontend", () => {
     expect(
       document.getElementById(button.getAttribute("aria-controls")!),
     ).not.toBeNull();
+    expect(container.querySelector(".intelligence-evidence-record")).toBeNull();
+    await click(container.querySelector(".intelligence-evidence button")!);
     expect(text()).toContain(hash("a"));
     expect(text()).toContain(hash("c"));
     expect(text()).toContain("121 → 164 → 43");
@@ -304,6 +312,7 @@ describe("Campaign Intelligence frontend", () => {
     data.evidence[0].rawValues = [null, 0, 5.57792];
     await render();
     await click(container.querySelector("button")!);
+    await click(container.querySelector(".intelligence-evidence button")!);
     expect(text()).toContain("— → 0 → 5.57792");
   });
   test("crossing shows backend snapshot bracket, never invented intermediate crossing date", async () => {
@@ -398,5 +407,222 @@ describe("Campaign Intelligence frontend", () => {
     expect(defaultIntelligenceWindow(campaign).baseHash).toBe("");
     expect(intelligenceDay("1941.2.29")).toBeNull();
     expect(intelligenceDay("1944.2.29")).not.toBeNull();
+  });
+  test("acceptance first expansion is concise, second retains nine proof records in backend order", async () => {
+    ({ data, campaign } = acceptanceFixture());
+    await render();
+    const card = container.querySelector(".intelligence-card")!;
+    expect(card.textContent).toContain("280 → 286");
+    expect(card.textContent).toContain("Change: +6");
+    expect(card.textContent).toContain("285 → 292");
+    expect(card.textContent).toContain("Change: +7");
+    await click(card.querySelector("button")!);
+    expect(card.textContent).toContain(enIntelligence.bothIncreased);
+    expect(card.textContent).toContain("01.04.1944");
+    expect(card.textContent).toContain("01.05.1944");
+    expect(card.querySelectorAll(".intelligence-evidence-record")).toHaveLength(
+      0,
+    );
+    const button = card.querySelector<HTMLButtonElement>(
+      ".intelligence-evidence button",
+    )!;
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    await click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      document.getElementById(button.getAttribute("aria-controls")!),
+    ).not.toBeNull();
+    expect(
+      [
+        ...card.querySelectorAll(
+          ".intelligence-evidence-record > code:first-child",
+        ),
+      ].map((el) => el.textContent?.split(" · ")[0]),
+    ).toEqual(data.evidence.map((entry) => entry.id));
+    expect(card.textContent).toContain("280 → 286 → 6");
+    expect(card.textContent).toContain(
+      "recorded.industry.effectiveMilitaryFactories",
+    );
+    expect(card.textContent).toContain("allocation_is_not_realized_output");
+    await click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(card.querySelectorAll(".intelligence-evidence-record")).toHaveLength(
+      0,
+    );
+  });
+  test.each([1, 2])(
+    "legacy endpoint count %s groups exact observations without claiming global absence",
+    async (endpoints) => {
+      ({ data, campaign } = acceptanceFixture(endpoints));
+      await render();
+      const groups = groupCoverage(data.coverageIssues);
+      expect(
+        groups.find((group) => group.domain === "production")?.definitions.size,
+      ).toBe(11);
+      expect(
+        groups.find((group) => group.domain === "stockpile")?.definitions.size,
+      ).toBe(14);
+      expect(
+        groups.find((group) => group.domain === "economy")?.issues,
+      ).toHaveLength(endpoints * 12);
+      const coverage = container.querySelector(".intelligence-coverage")!;
+      expect(coverage.textContent).toContain(enIntelligence.legacyEconomy);
+      expect(coverage.textContent).toContain(
+        `Affected metric observations: ${endpoints * 12}`,
+      );
+      expect(coverage.textContent).not.toContain("modded__tank");
+      expect(coverage.textContent).not.toContain("Steel · 0");
+      const button = coverage.querySelector("button")!;
+      await click(button);
+      expect(button.getAttribute("aria-expanded")).toBe("true");
+      expect(
+        document.getElementById(button.getAttribute("aria-controls")!),
+      ).not.toBeNull();
+      expect(
+        coverage.querySelectorAll(".intelligence-affected > ul > li"),
+      ).toHaveLength(data.coverageIssues.length);
+      expect(coverage.textContent).toContain("modded__tank");
+      expect(coverage.textContent).toContain("modded_tank");
+      expect(coverage.textContent).toContain("01.04.1944");
+      await click(button);
+      expect(button.getAttribute("aria-expanded")).toBe("false");
+      expect(coverage.querySelector(".intelligence-affected")).toBeNull();
+    },
+  );
+  test("general limits deduplicate across proof records and stay separate from metric coverage", async () => {
+    ({ data, campaign } = acceptanceFixture());
+    await render();
+    const general = container.querySelector(".intelligence-general")!;
+    expect(general.querySelectorAll("li")).toHaveLength(
+      generalLimits(data).length,
+    );
+    expect(
+      general.textContent?.split(
+        enIntelligence.quality.serialized_state_at_save_time,
+      ),
+    ).toHaveLength(2);
+    expect(general.textContent).not.toContain(
+      enIntelligence.quality.metric_absent,
+    );
+    expect(
+      container.querySelectorAll(".intelligence-coverage-group"),
+    ).toHaveLength(3);
+    expect(
+      groupCoverage(data.coverageIssues)[0].definitions.has("modded__tank"),
+    ).toBe(true);
+    expect(
+      groupCoverage(data.coverageIssues)[0].definitions.has("modded_tank"),
+    ).toBe(true);
+  });
+  test.each(["en", "ru"])(
+    "all six compact evidence summaries and disclosures localize in %s",
+    async (language) => {
+      await i18n.changeLanguage(language);
+      await render();
+      const messages = language === "en" ? enIntelligence : ruIntelligence;
+      for (const card of container.querySelectorAll(".intelligence-card")) {
+        await click(card.querySelector("button")!);
+        expect(
+          card.querySelectorAll(".intelligence-summary > div"),
+        ).toHaveLength(2);
+        expect(card.textContent).toContain(messages.showTechnical);
+        expect(
+          card.querySelectorAll(".intelligence-evidence-record"),
+        ).toHaveLength(0);
+        expect(card.textContent).not.toMatch(
+          /caused|fully utilized|losses exceeded|trade failed/i,
+        );
+      }
+      expect(text()).toContain(messages.generalLimits);
+      expect(text()).toContain(messages.showAffected);
+    },
+  );
+  test("compact summary trusts backend null, zero and exact decimals without recomputing delta", async () => {
+    const summary = data.signals[0].summary;
+    summary.startValue = null;
+    summary.endValue = 0;
+    summary.delta = null;
+    await render();
+    await click(container.querySelector(".intelligence-card button")!);
+    const compact = container.querySelector(".intelligence-summary")!;
+    expect(compact.textContent).toContain(" · —");
+    expect(compact.textContent).toContain(" · 0");
+    expect(compact.textContent).toContain("Change: —");
+    expect(text()).toContain("9.57792");
+  });
+  test("reopening human evidence leaves technical disclosure collapsed", async () => {
+    await render();
+    const button = container.querySelector<HTMLButtonElement>(
+      ".intelligence-card button",
+    )!;
+    await click(button);
+    await click(container.querySelector(".intelligence-evidence button")!);
+    await click(button);
+    await click(button);
+    expect(container.querySelector(".intelligence-technical")).toBeNull();
+  });
+  test("grouping preserves inputs and ignores display labels and property order", () => {
+    ({ data } = acceptanceFixture());
+    const before = JSON.stringify(data);
+    const groups = groupCoverage(data.coverageIssues);
+    expect(groups.map((group) => group.domain)).toEqual([
+      "production",
+      "stockpile",
+      "economy",
+    ]);
+    expect(groups[2].identities.size).toBe(12);
+    expect(formatEquipmentDefinition("modded__tank")).toBe(
+      formatEquipmentDefinition("modded_tank"),
+    );
+    const duplicate = {
+      code: "metric_legacy",
+      metric: {
+        resource: "steel" as const,
+        countryTag: "GER",
+        id: "economy.productionDemand" as const,
+      },
+      snapshotHash: hash("a"),
+    };
+    expect(
+      groupCoverage([...data.coverageIssues, duplicate])[2].identities.size,
+    ).toBe(12);
+    expect(JSON.stringify(data)).toBe(before);
+  });
+  test.each(["en", "ru"])(
+    "coverage counts and legacy explanation localize in %s",
+    async (language) => {
+      ({ data, campaign } = acceptanceFixture());
+      await i18n.changeLanguage(language);
+      await render();
+      const messages = language === "en" ? enIntelligence : ruIntelligence;
+      expect(text()).toContain(messages.legacyEconomy);
+      expect(text()).toContain(
+        messages.observationCount.replace("{{count}}", "24"),
+      );
+      expect(text()).toContain(
+        messages.definitionCount.replace("{{count}}", "11"),
+      );
+      expect(text()).toContain(
+        messages.definitionCount.replace("{{count}}", "14"),
+      );
+      expect(text()).toContain(messages.metricCoverage);
+      expect(text()).not.toContain("intelligence.");
+    },
+  );
+  test("technical detail preserves per-record repeated and unknown qualifiers", async () => {
+    data.evidence[0].qualifiers = [
+      "serialized_state_at_save_time",
+      "serialized_state_at_save_time",
+      "future_limit_code",
+    ];
+    await render();
+    await click(container.querySelector(".intelligence-card button")!);
+    await click(container.querySelector(".intelligence-evidence button")!);
+    const record = container.querySelector(".intelligence-evidence-record")!;
+    expect(
+      record.textContent?.split("serialized_state_at_save_time"),
+    ).toHaveLength(3);
+    expect(record.textContent).toContain("future_limit_code");
+    expect(record.textContent).toContain(enIntelligence.unknownQualifier);
   });
 });
