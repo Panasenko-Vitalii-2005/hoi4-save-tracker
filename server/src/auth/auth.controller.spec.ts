@@ -10,6 +10,7 @@ import {
   AuthValidationError,
   DuplicateEmailError,
   InvalidCredentialsError,
+  RegistrationNotInvitedError,
 } from './auth.errors';
 import { AuthService } from './auth.service';
 import { CsrfService } from './csrf.service';
@@ -90,6 +91,7 @@ describe('AuthController', () => {
   });
 
   test.each([
+    [new RegistrationNotInvitedError(), 403],
     [new AuthValidationError('A valid email address is required'), 400],
     [new DuplicateEmailError(), 409],
     [new AuthUnavailableError(), 503],

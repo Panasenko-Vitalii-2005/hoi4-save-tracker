@@ -5,6 +5,7 @@ import {
   SESSION_EXPIRED_EVENT,
 } from "@/lib/api-client";
 import { useAppTranslation } from "@/i18n";
+import { rateLimitMessage } from "@/lib/rate-limit";
 import "./auth.css";
 
 interface AuthUser {
@@ -71,6 +72,21 @@ function AuthForm({
         "public",
       );
       if (!response.ok) {
+        if (response.status === 429) {
+          setError(rateLimitMessage(response));
+          return;
+        }
+        const body: unknown = await response.json().catch(() => null);
+        if (
+          response.status === 403 &&
+          body &&
+          typeof body === "object" &&
+          "code" in body &&
+          body.code === "REGISTRATION_NOT_INVITED"
+        ) {
+          setError(t("auth.invitationRequired"));
+          return;
+        }
         setError(
           response.status === 409 && register
             ? t("auth.conflict")
@@ -97,12 +113,10 @@ function AuthForm({
     <main className="auth-page">
       <section className="panel auth-panel" aria-labelledby="auth-title">
         <div className="eyebrow">HoI4 Save Tracker</div>
-        <h1 id="auth-title">{register ? t("auth.createTitle") : t("auth.signInTitle")}</h1>
-        <p>
-          {expired
-            ? t("auth.expired")
-            : t("auth.intro")}
-        </p>
+        <h1 id="auth-title">
+          {register ? t("auth.createTitle") : t("auth.signInTitle")}
+        </h1>
+        <p>{expired ? t("auth.expired") : t("auth.intro")}</p>
         <form onSubmit={submit} aria-busy={busy}>
           <label htmlFor="auth-email">{t("auth.email")}</label>
           <input
@@ -137,7 +151,11 @@ function AuthForm({
             disabled={busy}
             type="submit"
           >
-            {busy ? t("auth.wait") : register ? t("auth.create") : t("auth.signIn")}
+            {busy
+              ? t("auth.wait")
+              : register
+                ? t("auth.create")
+                : t("auth.signIn")}
           </button>
         </form>
         <button
@@ -148,9 +166,7 @@ function AuthForm({
             setError("");
           }}
         >
-          {register
-            ? t("auth.existing")
-            : t("auth.newHere")}
+          {register ? t("auth.existing") : t("auth.newHere")}
         </button>
       </section>
     </main>
@@ -204,8 +220,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setStatus("signed-out");
       setMessage("");
     };
-    const csrfFailure = () =>
-      setMessage(t("auth.csrf"));
+    const csrfFailure = () => setMessage(t("auth.csrf"));
     window.addEventListener(SESSION_EXPIRED_EVENT, endSession);
     window.addEventListener(CSRF_REJECTED_EVENT, csrfFailure);
     return () => {
@@ -281,9 +296,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           inert={status !== "ready"}
         >
           <div className="auth-account">
-            <span>
-              {t("auth.signedInAs", { email: user.email })}
-            </span>
+            <span>{t("auth.signedInAs", { email: user.email })}</span>
             <button
               className="button button-secondary"
               disabled={loggingOut}

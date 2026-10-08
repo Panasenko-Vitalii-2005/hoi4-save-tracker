@@ -1,10 +1,20 @@
 import { i18n } from "@/i18n";
+import { rateLimitMessage } from "./rate-limit";
 
 const ERROR_CODES = new Set([
-  "EMPTY_FILE", "UNSUPPORTED_FILE_TYPE", "INVALID_SAVE", "CORRUPT_ARCHIVE",
-  "UNSUPPORTED_SAVE", "UNSUPPORTED_BINARY_SAVE", "DECOMPRESSED_SIZE_LIMIT",
-  "UPLOAD_TIMEOUT", "ANALYSIS_TIMEOUT", "ANALYZER_BUSY", "PERSISTENCE_FAILED",
-  "ANALYSIS_FAILED", "SAVE_NOT_FOUND",
+  "EMPTY_FILE",
+  "UNSUPPORTED_FILE_TYPE",
+  "INVALID_SAVE",
+  "CORRUPT_ARCHIVE",
+  "UNSUPPORTED_SAVE",
+  "UNSUPPORTED_BINARY_SAVE",
+  "DECOMPRESSED_SIZE_LIMIT",
+  "UPLOAD_TIMEOUT",
+  "ANALYSIS_TIMEOUT",
+  "ANALYZER_BUSY",
+  "PERSISTENCE_FAILED",
+  "ANALYSIS_FAILED",
+  "SAVE_NOT_FOUND",
 ]);
 
 function message(code: string): string {
@@ -37,6 +47,8 @@ const CHOOSE_ANOTHER_FILE = new Set([
 export async function analysisError(
   response: Response,
 ): Promise<AnalysisFailure> {
+  if (response.status === 429)
+    return { type: "busy", recovery: "retry", msg: rateLimitMessage(response) };
   // Only allowlisted codes/numeric limits are consumed. Never render server messages/stacks.
   const body: unknown = await response.json().catch(() => null);
   const data =
@@ -53,7 +65,12 @@ export async function analysisError(
         Number.isSafeInteger(limit) &&
         limit > 0 &&
         limit <= 0x7fffffff
-          ? i18n.t("analysis.errors.maxUpload", { size: (limit / 1048576).toLocaleString(i18n.resolvedLanguage === "ru" ? "ru-RU" : "en-US", { maximumFractionDigits: 2 }) })
+          ? i18n.t("analysis.errors.maxUpload", {
+              size: (limit / 1048576).toLocaleString(
+                i18n.resolvedLanguage === "ru" ? "ru-RU" : "en-US",
+                { maximumFractionDigits: 2 },
+              ),
+            })
           : ""),
     };
   }

@@ -1,5 +1,8 @@
 import { Logger, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { APP_GUARD } from '@nestjs/core';
+import { AbuseProtectionService } from '../security/abuse-protection.service';
+import { AbuseProtectionGuard } from '../security/abuse-protection.guard';
 import { readFile, readdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -37,6 +40,7 @@ const userDto = (id: string): SafeUserDto => ({
 
 describe('bounded external-alpha capacity (synthetic uploads only)', () => {
   const keys = [
+    'HOI4_ABUSE_PROTECTION_ENABLED',
     'HOI4_UPLOAD_DIRECTORY',
     'HOI4_RECENT_ANALYSES_FILE',
     'HOI4_ANALYSIS_RESULTS_DIR',
@@ -93,6 +97,9 @@ describe('bounded external-alpha capacity (synthetic uploads only)', () => {
     const module = await Test.createTestingModule({
       controllers: [AnalyzeController],
       providers: [
+        AbuseProtectionService,
+        AbuseProtectionGuard,
+        { provide: APP_GUARD, useExisting: AbuseProtectionGuard },
         SaveUploadInterceptor,
         { provide: AnalysisResultCacheService, useValue: cache },
         { provide: RecentAnalysesService, useValue: recent },
@@ -115,6 +122,7 @@ describe('bounded external-alpha capacity (synthetic uploads only)', () => {
       ],
     }).compile();
     app = module.createNestApplication();
+    app.use(module.get(AbuseProtectionService).middleware);
     // Test-only authentication; public auth/CSRF has its own regression suites.
     app.use(
       (
@@ -131,6 +139,7 @@ describe('bounded external-alpha capacity (synthetic uploads only)', () => {
   }
 
   beforeEach(async () => {
+    process.env.HOI4_ABUSE_PROTECTION_ENABLED = 'true';
     directory = await mkdtemp(join(tmpdir(), 'hoi4-alpha-capacity-'));
     process.env.HOI4_UPLOAD_DIRECTORY = join(directory, 'uploads');
     process.env.HOI4_RECENT_ANALYSES_FILE = join(directory, 'recent.json');
@@ -182,6 +191,18 @@ describe('bounded external-alpha capacity (synthetic uploads only)', () => {
       true,
     );
   }
+
+  test('throttled valid multipart upload performs no staging, computation, persistence or ownership writes', async () => {
+    const limits = app.get(AbuseProtectionService);
+    for (let i = 0; i < 120; i++)
+      expect(limits.identityLimit('upload', '0')).toBeNull();
+    const response = await send(0, 0).expect(429);
+    expect(response.body).toMatchObject({ code: 'RATE_LIMITED' });
+    expect(response.headers['retry-after']).toBeDefined();
+    expect(worker.analyzeWithContext).not.toHaveBeenCalled();
+    expect(await users.list('0')).toEqual([]);
+    await cleanUploadsAndArtifacts(0);
+  });
 
   test('500 distinct owned snapshots survive turnover, exact quota rejection and non-destructive capacity recovery', async () => {
     for (let user = 0; user < 20; user++)

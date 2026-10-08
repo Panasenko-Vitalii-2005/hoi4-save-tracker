@@ -80,8 +80,10 @@ describe('HTTP session security boundary', () => {
   };
   const originalOrigin = process.env.HOI4_CORS_ORIGIN;
   const originalLocal = process.env.HOI4_LOCAL_SAVES_ENABLED;
+  const originalAbuse = process.env.HOI4_ABUSE_PROTECTION_ENABLED;
 
   beforeAll(async () => {
+    process.env.HOI4_ABUSE_PROTECTION_ENABLED = 'true';
     process.env.HOI4_CORS_ORIGIN = ORIGIN;
     process.env.HOI4_LOCAL_SAVES_ENABLED = 'false';
     auth = {
@@ -162,6 +164,9 @@ describe('HTTP session security boundary', () => {
     if (originalLocal === undefined)
       delete process.env.HOI4_LOCAL_SAVES_ENABLED;
     else process.env.HOI4_LOCAL_SAVES_ENABLED = originalLocal;
+    if (originalAbuse === undefined)
+      delete process.env.HOI4_ABUSE_PROTECTION_ENABLED;
+    else process.env.HOI4_ABUSE_PROTECTION_ENABLED = originalAbuse;
   });
 
   async function csrf() {

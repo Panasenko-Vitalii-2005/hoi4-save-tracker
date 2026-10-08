@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api-client";
 import { sharedAnalysisTelemetryHeaders } from "@/lib/product-telemetry";
 import { AnalyzerTab } from "./AnalyzerTab";
 import { useAppTranslation } from "@/i18n";
+import { rateLimitMessage } from "@/lib/rate-limit";
 
 const PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
 
@@ -48,26 +49,21 @@ export function SharedAnalysisPage({ publicId }: { publicId: string }) {
           },
           "public",
         );
+        if (response.status === 429) {
+          if (active) setFailure(rateLimitMessage(response));
+          return;
+        }
         if (response.status === 404 || response.status === 410) {
-          if (active)
-            setFailure(
-              t("share.invalidOrRevoked"),
-            );
+          if (active) setFailure(t("share.invalidOrRevoked"));
           return;
         }
         if (!response.ok) {
-          if (active)
-            setFailure(
-              t("share.temporarilyUnavailable"),
-            );
+          if (active) setFailure(t("share.temporarilyUnavailable"));
           return;
         }
         const data: unknown = await response.json().catch(() => null);
         if (!isAnalyzeResult(data)) {
-          if (active)
-            setFailure(
-              t("share.unreadable"),
-            );
+          if (active) setFailure(t("share.unreadable"));
           return;
         }
         if (active) {

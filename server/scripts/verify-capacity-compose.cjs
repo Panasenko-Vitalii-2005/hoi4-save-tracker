@@ -7,6 +7,10 @@ const { resolve } = require('node:path');
 
 const root = resolve(__dirname, '../..');
 const defaults = {
+  HOI4_REGISTRATION_INVITE_ONLY: 'false',
+  HOI4_REGISTRATION_ALLOWLIST: '',
+  HOI4_ABUSE_PROTECTION_ENABLED: 'false',
+  HOI4_TRUSTED_PROXY_CIDRS: '',
   HOI4_ANALYSIS_RESULTS_MAX_BYTES: '134217728',
   HOI4_RECENT_ANALYSES_LIMIT: '200',
   HOI4_SHARED_ANALYSES_LIMIT: '1000',
@@ -22,6 +26,10 @@ const defaults = {
   HOI4_ANALYSIS_REQUESTS: '2',
 };
 const overrides = {
+  HOI4_REGISTRATION_INVITE_ONLY: 'true',
+  HOI4_REGISTRATION_ALLOWLIST: 'invited@example.invalid',
+  HOI4_ABUSE_PROTECTION_ENABLED: 'true',
+  HOI4_TRUSTED_PROXY_CIDRS: '172.28.0.0/24',
   HOI4_ANALYSIS_RESULTS_MAX_BYTES: '2147483648',
   HOI4_RECENT_ANALYSES_LIMIT: '101',
   HOI4_SHARED_ANALYSES_LIMIT: '77',
@@ -91,7 +99,7 @@ for (const alpha of [false, true]) {
         key,
       );
     console.log(
-      `PASS ${alpha ? 'private-alpha' : 'local'} ${custom ? 'overrides' : 'defaults'}: ${Object.keys(expected).length} capacity settings`,
+      `PASS ${alpha ? 'private-alpha' : 'local'} ${custom ? 'overrides' : 'defaults'}: ${Object.keys(expected).length} capacity/security settings`,
     );
   }
 }

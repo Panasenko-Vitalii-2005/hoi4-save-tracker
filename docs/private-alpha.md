@@ -4,7 +4,8 @@ This profile is intentionally limited to **2–5 trusted users**, **one Linux VP
 
 Expansion to a controlled 20-user external alpha is conditional on the
 [A3 capacity gate](external-alpha-capacity.md), including actual VPS disk/RAM
-and backup headroom. The original sizing/defaults below are not that guarantee.
+and backup headroom, and [B2 admission/proxy enablement](external-alpha-admission.md).
+The original sizing/defaults below are not that guarantee.
 
 The production operator runbook, bounded recovery procedures, incident closure
 checklist, and non-destructive Phase 1D drill are in
@@ -767,4 +768,4 @@ For a full-data restore, use a maintenance window and fresh or explicitly emptie
 
 ## Private-alpha boundaries
 
-This profile does not provide per-user quotas, abuse/rate controls, an application registration allowlist, atomic cross-store snapshots, an off-site retention policy, restore orchestration, multi-instance coordination, distributed locking, or public-beta operations. The repository Caddy profile supports a temporary Basic Auth outer gate, but the current production VPS deliberately removes it through the documented local override. Application authentication, sessions, ownership, CSRF, and public-share boundaries remain the product security boundary.
+Opt-in B2 registration admission and bounded abuse controls are documented in [external-alpha-admission.md](external-alpha-admission.md); operators must enable and verify them before external invitations. This profile still does not provide per-user quotas, atomic cross-store snapshots, an off-site retention policy, restore orchestration, multi-instance coordination, distributed locking, or public-beta operations. The repository Caddy profile supports a temporary Basic Auth outer gate, but the current production VPS deliberately removes it through the documented local override. Application authentication, sessions, ownership, CSRF, and public-share boundaries remain the product security boundary.

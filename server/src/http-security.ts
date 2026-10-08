@@ -1,5 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
+import { trustedProxyCidrs } from './security/alpha-security.config';
+import { AbuseProtectionService } from './security/abuse-protection.service';
 
 export const DEFAULT_FRONTEND_ORIGIN = 'http://localhost:5173';
 
@@ -29,11 +31,21 @@ export function allowedFrontendOrigin(
 }
 
 export function configureHttpSecurity(app: INestApplication): void {
+  const proxies = trustedProxyCidrs();
+  // Trust only known immediate proxies; Express walks the chain right-to-left.
+  const http = app.getHttpAdapter().getInstance() as {
+    set: (name: string, value: string[] | boolean) => void;
+  };
+  http.set('trust proxy', proxies.length ? proxies : false);
   app.enableCors({
     origin: allowedFrontendOrigin(),
     credentials: true,
     allowedHeaders: ['Content-Type', 'X-CSRF-Token'],
-    exposedHeaders: ['X-Analysis-Hash', 'X-Analysis-Persistence'],
+    exposedHeaders: [
+      'X-Analysis-Hash',
+      'X-Analysis-Persistence',
+      'Retry-After',
+    ],
   });
   app.use((_request: Request, response: Response, next: NextFunction) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -41,4 +53,7 @@ export function configureHttpSecurity(app: INestApplication): void {
     response.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });
+  // Installed before Nest's body parser/guards/interceptors. Invalid requests
+  // consume the IP/global budget without doing password/upload/worker work.
+  app.use(app.get(AbuseProtectionService).middleware);
 }

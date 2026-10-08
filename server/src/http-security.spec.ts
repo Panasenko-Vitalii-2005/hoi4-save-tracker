@@ -11,12 +11,18 @@ describe('HTTP security configuration', () => {
     configureHttpSecurity({
       enableCors,
       use: jest.fn(),
+      getHttpAdapter: () => ({ getInstance: () => ({ set: jest.fn() }) }),
+      get: () => ({ middleware: jest.fn() }),
     } as unknown as INestApplication);
     expect(enableCors).toHaveBeenCalledWith({
       origin: allowedFrontendOrigin(),
       credentials: true,
       allowedHeaders: ['Content-Type', 'X-CSRF-Token'],
-      exposedHeaders: ['X-Analysis-Hash', 'X-Analysis-Persistence'],
+      exposedHeaders: [
+        'X-Analysis-Hash',
+        'X-Analysis-Persistence',
+        'Retry-After',
+      ],
     });
   });
   test('uses the Vite development origin by default', () => {

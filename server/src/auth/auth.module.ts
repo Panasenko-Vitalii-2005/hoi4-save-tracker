@@ -15,6 +15,8 @@ import { SessionRepository } from './session.repository';
 import { SessionTokenService } from './session-token.service';
 import { UserRepository } from './user.repository';
 import { SessionGuard } from './session.guard';
+import { AbuseProtectionService } from '../security/abuse-protection.service';
+import { AbuseProtectionGuard } from '../security/abuse-protection.guard';
 
 @Module({
   imports: [DatabaseModule],
@@ -30,6 +32,10 @@ import { SessionGuard } from './session.guard';
     CsrfService,
     SessionGuard,
     { provide: APP_GUARD, useExisting: SessionGuard },
+    AbuseProtectionService,
+    AbuseProtectionGuard,
+    { provide: APP_GUARD, useExisting: AbuseProtectionGuard },
   ],
+  exports: [AbuseProtectionService],
 })
 export class AuthModule {}

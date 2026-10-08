@@ -3,6 +3,8 @@ import { enIntelligence } from "./intelligence";
 export const en = {
   intelligence: enIntelligence,
   common: {
+    rateLimited: "Too many requests. Wait a little, then try again. Nothing was saved by this rejected request.",
+    rateLimitedWait: "Too many requests. Wait {{seconds}} seconds, then try again. Nothing was saved by this rejected request.",
     language: "Language",
     english: "English",
     russian: "Русский",
@@ -52,6 +54,7 @@ export const en = {
     saveAnalyzer: "Save Analyzer",
   },
   auth: {
+    invitationRequired: "This alpha is invitation-only. Ask the operator to authorize your email, then try again. Existing accounts can still sign in.",
     createTitle: "Create an account",
     signInTitle: "Sign in",
     expired: "Your session ended. Sign in again to continue.",

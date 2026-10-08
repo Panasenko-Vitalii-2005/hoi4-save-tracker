@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -11,9 +12,16 @@ import {
   DuplicateEmailError,
   InvalidCredentialsError,
   InvalidSessionError,
+  RegistrationNotInvitedError,
 } from './auth.errors';
 
 export function authHttpError(error: unknown): never {
+  if (error instanceof RegistrationNotInvitedError) {
+    throw new ForbiddenException({
+      code: 'REGISTRATION_NOT_INVITED',
+      message: 'Registration requires an invitation from the alpha operator.',
+    });
+  }
   if (error instanceof AuthValidationError) {
     throw new BadRequestException(error.message);
   }

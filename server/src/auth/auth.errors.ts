@@ -3,3 +3,4 @@ export class DuplicateEmailError extends Error {}
 export class InvalidCredentialsError extends Error {}
 export class InvalidSessionError extends Error {}
 export class AuthUnavailableError extends Error {}
+export class RegistrationNotInvitedError extends Error {}

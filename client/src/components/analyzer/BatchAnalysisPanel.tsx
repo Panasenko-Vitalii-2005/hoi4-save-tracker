@@ -16,6 +16,7 @@ import {
   type SaveUploadProgress as UploadMeasurement,
 } from "@/lib/api-client";
 import { SaveUploadProgress } from "./SaveUploadProgress";
+import { rateLimitMessage } from "@/lib/rate-limit";
 import { useAppTranslation } from "@/i18n";
 import {
   filterSnapshotFolderFiles,
@@ -57,8 +58,7 @@ interface BatchAcknowledgement {
 const PREFLIGHT_CHUNK_SIZE = 200;
 export const SNAPSHOTTER_GUI_DOWNLOAD_URL =
   "https://github.com/Panasenko-Vitalii-2005/hoi4-save-tracker/releases/latest/download/Snapshotter.Gui.exe";
-export const SNAPSHOTTER_DOWNLOAD_PATH =
-  "/downloads/hoi4-save-snapshotter.ps1";
+export const SNAPSHOTTER_DOWNLOAD_PATH = "/downloads/hoi4-save-snapshotter.ps1";
 const STATUS_COPY = {
   identifying: { symbol: "…", labelKey: "batch.statuses.identifying" },
   already_analyzed: { symbol: "✓", labelKey: "batch.statuses.alreadyAnalyzed" },
@@ -146,8 +146,7 @@ export const BatchAnalysisPanel = forwardRef<
   const [filter, setFilter] = useState<"all" | BatchStatus>("all");
   const [folderSelectionMade, setFolderSelectionMade] = useState(false);
   const [snapshotFiles, setSnapshotFiles] = useState<File[]>([]);
-  const [sampleTarget, setSampleTarget] =
-    useState<SnapshotSampleTarget>(25);
+  const [sampleTarget, setSampleTarget] = useState<SnapshotSampleTarget>(25);
 
   useEffect(() => {
     mounted.current = true;
@@ -221,9 +220,13 @@ export const BatchAnalysisPanel = forwardRef<
         counts.known ? `${t("batch.alreadyAnalyzed")}: ${counts.known}` : "",
         `${t("batch.statuses.completed")}: ${counts.completed}`,
         `${t("batch.statuses.failed")}: ${counts.failed}`,
-        counts.cancelled ? `${t("batch.statuses.cancelled")}: ${counts.cancelled}` : "",
+        counts.cancelled
+          ? `${t("batch.statuses.cancelled")}: ${counts.cancelled}`
+          : "",
         counts.invalid ? `${t("batch.invalid")}: ${counts.invalid}` : "",
-        counts.duplicates ? `${t("batch.duplicates")}: ${counts.duplicates}` : "",
+        counts.duplicates
+          ? `${t("batch.duplicates")}: ${counts.duplicates}`
+          : "",
       ]
         .filter(Boolean)
         .join(" · "),
@@ -236,8 +239,10 @@ export const BatchAnalysisPanel = forwardRef<
     [filter, items],
   );
   const current = items.find(
-    (item) => item.status === "preparing" ||
-      item.status === "uploading" || item.status === "analyzing",
+    (item) =>
+      item.status === "preparing" ||
+      item.status === "uploading" ||
+      item.status === "analyzing",
   );
   const processed = items.filter((item) =>
     [
@@ -270,6 +275,7 @@ export const BatchAnalysisPanel = forwardRef<
       } catch {
         throw new Error(analyzerUnavailableMessage());
       }
+      if (response.status === 429) throw new Error(rateLimitMessage(response));
       if (!response.ok) throw new Error(preflightUnavailable);
       const value: unknown = await response.json();
       if (
@@ -346,8 +352,7 @@ export const BatchAnalysisPanel = forwardRef<
     } catch (error: unknown) {
       if (generation !== generationRef.current) return;
       setPreflightError(
-        error instanceof Error &&
-          error.message === analyzerUnavailableMessage()
+        error instanceof Error && error.message === analyzerUnavailableMessage()
           ? error.message
           : preflightUnavailable,
       );
@@ -363,8 +368,7 @@ export const BatchAnalysisPanel = forwardRef<
       await runPreflight(itemsRef.current, generation);
     } catch (error: unknown) {
       setPreflightError(
-        error instanceof Error &&
-          error.message === analyzerUnavailableMessage()
+        error instanceof Error && error.message === analyzerUnavailableMessage()
           ? error.message
           : preflightUnavailable,
       );
@@ -403,17 +407,21 @@ export const BatchAnalysisPanel = forwardRef<
             batch: true,
             signal: controller.signal,
             onUploading: () => {
-              if (!mounted.current || activeRequest.current !== controller) return;
-              updateItems((entries) => entries.map((entry) =>
-                entry.id === id ? { ...entry, status: "uploading" } : entry,
-              ));
+              if (!mounted.current || activeRequest.current !== controller)
+                return;
+              updateItems((entries) =>
+                entries.map((entry) =>
+                  entry.id === id ? { ...entry, status: "uploading" } : entry,
+                ),
+              );
             },
             onProgress: (progress) => {
               if (mounted.current && activeRequest.current === controller)
                 setUploadProgress(progress);
             },
             onUploaded: () => {
-              if (!mounted.current || activeRequest.current !== controller) return;
+              if (!mounted.current || activeRequest.current !== controller)
+                return;
               setUploadProgress(null);
               updateItems((currentItems) =>
                 currentItems.map((entry) =>
@@ -428,8 +436,7 @@ export const BatchAnalysisPanel = forwardRef<
             failureMessage = safe.msg;
             throw new Error(safe.msg);
           }
-          failureMessage =
-            t("analysis.responseUnreadable");
+          failureMessage = t("analysis.responseUnreadable");
           const acknowledgement: unknown = await response.json();
           if (!validAcknowledgement(acknowledgement, item.hash)) {
             throw new Error(failureMessage);
@@ -462,7 +469,8 @@ export const BatchAnalysisPanel = forwardRef<
             ),
           );
         } finally {
-          if (activeRequest.current === controller) activeRequest.current = null;
+          if (activeRequest.current === controller)
+            activeRequest.current = null;
           if (mounted.current) setUploadProgress(null);
         }
         // Yield between files. The backend remains the authoritative admission
@@ -539,14 +547,18 @@ export const BatchAnalysisPanel = forwardRef<
         <div className="batch-analysis-source-actions">
           <button
             className="button button-secondary"
-            disabled={disabled || phase === "running" || phase === "identifying"}
+            disabled={
+              disabled || phase === "running" || phase === "identifying"
+            }
             onClick={() => inputRef.current?.click()}
           >
             {t("analysis.importCampaign")}
           </button>
           <button
             className="button button-secondary"
-            disabled={disabled || phase === "running" || phase === "identifying"}
+            disabled={
+              disabled || phase === "running" || phase === "identifying"
+            }
             onClick={() => folderInputRef.current?.click()}
           >
             {t("batch.selectSnapshotFolder")}
@@ -671,7 +683,9 @@ export const BatchAnalysisPanel = forwardRef<
       {folderSelectionMade && (
         <div className="snapshot-folder-review" aria-live="polite">
           {snapshotFiles.length === 0 ? (
-            <p className="snapshot-folder-empty">{t("batch.noSnapshotsFound")}</p>
+            <p className="snapshot-folder-empty">
+              {t("batch.noSnapshotsFound")}
+            </p>
           ) : (
             <>
               <div className="snapshot-folder-controls">
@@ -683,14 +697,14 @@ export const BatchAnalysisPanel = forwardRef<
                       setSampleTarget(
                         event.target.value === "all"
                           ? "all"
-                          : (Number(event.target.value) as SnapshotSampleTarget),
+                          : (Number(
+                              event.target.value,
+                            ) as SnapshotSampleTarget),
                       )
                     }
                   >
                     <option value={10}>10</option>
-                    <option value={25}>
-                      25 — {t("batch.recommended")}
-                    </option>
+                    <option value={25}>25 — {t("batch.recommended")}</option>
                     <option value={50}>50</option>
                     <option value="all">{t("batch.allSnapshots")}</option>
                   </select>
@@ -744,9 +758,7 @@ export const BatchAnalysisPanel = forwardRef<
 
       {phase === "idle" ? (
         folderSelectionMade ? null : (
-          <div className="batch-analysis-drop-hint">
-            {t("batch.body")}
-          </div>
+          <div className="batch-analysis-drop-hint">{t("batch.body")}</div>
         )
       ) : (
         <>
@@ -786,16 +798,20 @@ export const BatchAnalysisPanel = forwardRef<
               <span className="spinner" aria-hidden="true" />
               <div>
                 <strong>
-                  {t(current?.status === "preparing"
-                    ? "analysis.uploadProgress.preparing"
-                    : current?.status === "uploading"
-                    ? "analysis.uploadProgress.uploading"
-                    : "analysis.uploadProgress.analyzing")}
+                  {t(
+                    current?.status === "preparing"
+                      ? "analysis.uploadProgress.preparing"
+                      : current?.status === "uploading"
+                        ? "analysis.uploadProgress.uploading"
+                        : "analysis.uploadProgress.analyzing",
+                  )}
                 </strong>
                 <span>
                   {t("batch.processed", { processed, total: items.length })}
                 </span>
-                {current && <span>{t("batch.current", { name: current.file.name })}</span>}
+                {current && (
+                  <span>{t("batch.current", { name: current.file.name })}</span>
+                )}
                 {current?.status === "uploading" && (
                   <SaveUploadProgress progress={uploadProgress} />
                 )}
@@ -876,16 +892,24 @@ export const BatchAnalysisPanel = forwardRef<
                       setFilter(event.target.value as "all" | BatchStatus)
                     }
                   >
-                    <option value="all">{t("batch.allFiles", { count: items.length })}</option>
-                    <option value="queued">{t("batch.queuedCount", { count: counts.queued })}</option>
+                    <option value="all">
+                      {t("batch.allFiles", { count: items.length })}
+                    </option>
+                    <option value="queued">
+                      {t("batch.queuedCount", { count: counts.queued })}
+                    </option>
                     <option value="completed">
                       {t("batch.completedCount", { count: counts.completed })}
                     </option>
                     <option value="already_analyzed">
                       {t("batch.knownCount", { count: counts.known })}
                     </option>
-                    <option value="failed">{t("batch.failedCount", { count: counts.failed })}</option>
-                    <option value="invalid">{t("batch.invalidCount", { count: counts.invalid })}</option>
+                    <option value="failed">
+                      {t("batch.failedCount", { count: counts.failed })}
+                    </option>
+                    <option value="invalid">
+                      {t("batch.invalidCount", { count: counts.invalid })}
+                    </option>
                   </select>
                 </label>
                 <div className="batch-analysis-toolbar-actions">

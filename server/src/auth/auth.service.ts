@@ -7,6 +7,7 @@ import {
   DuplicateEmailError,
   InvalidCredentialsError,
   InvalidSessionError,
+  RegistrationNotInvitedError,
 } from './auth.errors';
 import { normalizeEmail, validatePassword } from './auth.config';
 import { PasswordService } from './password.service';
@@ -15,9 +16,11 @@ import { SessionTokenService } from './session-token.service';
 import type { AuthSessionResult, SafeUserDto } from './auth.types';
 import { safeUser } from './auth.types';
 import { UserRepository } from './user.repository';
+import { registrationAdmission } from '../security/alpha-security.config';
 
 @Injectable()
 export class AuthService {
+  private readonly invitedEmails = registrationAdmission();
   constructor(
     private readonly database: DatabaseService,
     private readonly users: UserRepository,
@@ -54,6 +57,9 @@ export class AuthService {
   ): Promise<AuthSessionResult> {
     this.requireDatabase();
     const normalizedEmail = normalizeEmail(email);
+    if (this.invitedEmails && !this.invitedEmails.has(normalizedEmail)) {
+      throw new RegistrationNotInvitedError();
+    }
     const validPassword = validatePassword(password);
     const passwordHash = await this.passwords.hash(validPassword);
     const session = this.newSession();

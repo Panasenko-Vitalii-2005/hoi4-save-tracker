@@ -5,6 +5,7 @@ import {
   DuplicateEmailError,
   InvalidCredentialsError,
   InvalidSessionError,
+  RegistrationNotInvitedError,
 } from './auth.errors';
 import { AuthService } from './auth.service';
 import type { SessionRecord, UserRecord } from './auth.types';
@@ -55,8 +56,30 @@ describe('AuthService', () => {
     Pick<SessionTokenService, 'generate' | 'hash' | 'valid'>
   >;
   let auth: AuthService;
+  const originalInviteOnly = process.env.HOI4_REGISTRATION_INVITE_ONLY;
+  const originalAllowlist = process.env.HOI4_REGISTRATION_ALLOWLIST;
+
+  const createAuth = () =>
+    new AuthService(
+      database as unknown as DatabaseService,
+      users as unknown as UserRepository,
+      sessions as unknown as SessionRepository,
+      passwords,
+      tokens,
+      3600,
+    );
+
+  afterEach(() => {
+    if (originalInviteOnly === undefined)
+      delete process.env.HOI4_REGISTRATION_INVITE_ONLY;
+    else process.env.HOI4_REGISTRATION_INVITE_ONLY = originalInviteOnly;
+    if (originalAllowlist === undefined)
+      delete process.env.HOI4_REGISTRATION_ALLOWLIST;
+    else process.env.HOI4_REGISTRATION_ALLOWLIST = originalAllowlist;
+  });
 
   beforeEach(() => {
+    process.env.HOI4_REGISTRATION_INVITE_ONLY = 'false';
     database = {
       available: jest.fn().mockReturnValue(true),
       transaction: jest.fn(async (operation) => operation(executor)),
@@ -89,6 +112,52 @@ describe('AuthService', () => {
       tokens,
       3600,
     );
+  });
+
+  test('invite-only registration normalizes authorized email without granting admin privileges', async () => {
+    process.env.HOI4_REGISTRATION_INVITE_ONLY = 'true';
+    process.env.HOI4_REGISTRATION_ALLOWLIST = ' USER@EXAMPLE.COM ';
+    auth = createAuth();
+    users.create.mockResolvedValue(user());
+    await expect(
+      auth.register('user@example.com', 'valid password'),
+    ).resolves.toHaveProperty('user.email', 'user@example.com');
+    expect(users.create).toHaveBeenCalledWith(
+      'user@example.com',
+      'encoded-password-hash',
+      executor,
+    );
+  });
+
+  test('uninvited registration is rejected before hashing, user/ownership/session writes', async () => {
+    process.env.HOI4_REGISTRATION_INVITE_ONLY = 'true';
+    process.env.HOI4_REGISTRATION_ALLOWLIST = 'invited@example.invalid';
+    auth = createAuth();
+    await expect(
+      auth.register('user@example.com', 'valid password'),
+    ).rejects.toBeInstanceOf(RegistrationNotInvitedError);
+    expect(passwords.hash).not.toHaveBeenCalled();
+    expect(users.create).not.toHaveBeenCalled();
+    expect(sessions.create).not.toHaveBeenCalled();
+  });
+
+  test('empty controlled allowlist denies signup but preserves existing login and sessions', async () => {
+    process.env.HOI4_REGISTRATION_INVITE_ONLY = 'true';
+    process.env.HOI4_REGISTRATION_ALLOWLIST = '';
+    auth = createAuth();
+    await expect(
+      auth.register('user@example.com', 'valid password'),
+    ).rejects.toBeInstanceOf(RegistrationNotInvitedError);
+    users.findByEmail.mockResolvedValue(user());
+    passwords.verify.mockResolvedValue(true);
+    await expect(
+      auth.login('user@example.com', 'valid password'),
+    ).resolves.toHaveProperty('user.id', user().id);
+    sessions.findByTokenHash.mockResolvedValue(session());
+    users.findById.mockResolvedValue(user());
+    await expect(
+      auth.authenticateSession('r'.repeat(43)),
+    ).resolves.toHaveProperty('id', user().id);
   });
 
   test('registers normalized identity and session atomically', async () => {
