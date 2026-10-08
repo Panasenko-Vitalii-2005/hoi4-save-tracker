@@ -93,12 +93,12 @@ describe('offline support safeguards', () => {
     expect(database.transaction).not.toHaveBeenCalled();
   });
   test('retention work is bounded and reports backlog, never touches artifacts/canonical analyses', async () => {
-    const query = jest.fn(async (sql: string) => {
+    const query = jest.fn((sql: string) => {
       if (sql.startsWith('SELECT now()'))
-        return { rows: [{ cutoff: new Date('2026-01-01') }] };
+        return Promise.resolve({ rows: [{ cutoff: new Date('2026-01-01') }] });
       if (sql.startsWith('SELECT EXISTS'))
-        return { rows: [{ remaining: true }] };
-      return { rowCount: RETENTION_BATCH_SIZE, rows: [] };
+        return Promise.resolve({ rows: [{ remaining: true }] });
+      return Promise.resolve({ rowCount: RETENTION_BATCH_SIZE, rows: [] });
     });
     const transaction = jest.fn(
       async (work: (client: { query: typeof query }) => Promise<unknown>) =>

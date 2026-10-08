@@ -10,7 +10,7 @@ export function publicSupportEmail(
   if (
     !email ||
     email.length > 254 ||
-    !/^[A-Za-z0-9.!#$%&'*+\-\/=^_`{|}~]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(
+    !/^[A-Za-z0-9.!#$%&'*+\-/=^_`{|}~]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(
       email,
     )
   )

@@ -297,15 +297,13 @@ describeDatabase('B3 isolated PostgreSQL account and privacy lifecycle', () => {
       "INSERT INTO analyses(content_hash,file_size_bytes,parse_duration_ms,division_count,save_format) VALUES($1,100,1,0,'plain_text')",
       [H],
     );
-    jest
-      .spyOn(database, 'query')
-      .mockResolvedValueOnce({
-        rows: [{ cutoff }],
-        rowCount: 1,
-        command: 'SELECT',
-        oid: 0,
-        fields: [],
-      });
+    jest.spyOn(database, 'query').mockResolvedValueOnce({
+      rows: [{ cutoff }],
+      rowCount: 1,
+      command: 'SELECT',
+      oid: 0,
+      fields: [],
+    });
     expect(await purgeOldProductEvents(database)).toEqual({
       retentionDays: 90,
       removed: 1,
@@ -315,15 +313,13 @@ describeDatabase('B3 isolated PostgreSQL account and privacy lifecycle', () => {
       2,
     );
     expect((await pool.query('SELECT id FROM analyses')).rowCount).toBe(1);
-    jest
-      .spyOn(database, 'query')
-      .mockResolvedValueOnce({
-        rows: [{ cutoff }],
-        rowCount: 1,
-        command: 'SELECT',
-        oid: 0,
-        fields: [],
-      });
+    jest.spyOn(database, 'query').mockResolvedValueOnce({
+      rows: [{ cutoff }],
+      rowCount: 1,
+      command: 'SELECT',
+      oid: 0,
+      fields: [],
+    });
     expect(await purgeOldProductEvents(database)).toMatchObject({
       removed: 0,
       backlogRemaining: false,
