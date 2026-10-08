@@ -40,6 +40,7 @@ describeDatabase('PostgreSQL metadata schema', () => {
       expect.objectContaining({ version: '0004', applied: true }),
       expect.objectContaining({ version: '0005', applied: true }),
       expect.objectContaining({ version: '0006', applied: true }),
+      expect.objectContaining({ version: '0007', applied: true }),
     ]);
     await expect(migrationStatus(pool)).resolves.toEqual([
       expect.objectContaining({ version: '0001', applied: true }),
@@ -48,6 +49,7 @@ describeDatabase('PostgreSQL metadata schema', () => {
       expect.objectContaining({ version: '0004', applied: true }),
       expect.objectContaining({ version: '0005', applied: true }),
       expect.objectContaining({ version: '0006', applied: true }),
+      expect.objectContaining({ version: '0007', applied: true }),
     ]);
   });
 

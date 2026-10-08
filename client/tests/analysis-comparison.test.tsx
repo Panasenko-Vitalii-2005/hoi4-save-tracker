@@ -202,9 +202,60 @@ describe("Save comparison UI", () => {
   };
   const results = () =>
     container.querySelector('[aria-label="Comparison results"]')!;
+  test("C1 counts a successfully displayed known chronological Compare, not loading or incompatible selections", async () => {
+    sessionStorage.clear();
+    sessionStorage.setItem(
+      "hoi4:product-telemetry:session:v1",
+      "22222222-2222-4222-8222-222222222222",
+    );
+    await render();
+    await choose();
+    await click("Compare");
+    expect(requests.some((r) => r.url.includes("campaign-review"))).toBe(false);
+    const data = response();
+    data.context.campaignCompatibility = "same";
+    data.context.gameVersionCompatibility = "same";
+    await finish(data);
+    const recorded = requests.filter((r) => r.url.includes("campaign-review"));
+    expect(recorded).toHaveLength(1);
+    expect(JSON.parse(String(recorded[0].init?.body))).toMatchObject({
+      eventName: "campaign_review_opened",
+      viewKind: "compare",
+      baseHash: data.baseHash,
+      targetHash: data.targetHash,
+    });
+    recorded[0].resolve(new Response(null, { status: 202 }));
+    await click("Compare");
+    data.context.gameVersionCompatibility = "different";
+    await finish(data);
+    expect(
+      requests.filter((r) => r.url.includes("campaign-review")),
+    ).toHaveLength(1);
+  });
   const comparisonRows = () => [
     ...results().querySelectorAll(".comparison-country-table tbody tr"),
   ];
+  test("C1 does not count an empty comparison with no comparable numeric observations", async () => {
+    sessionStorage.clear();
+    sessionStorage.setItem(
+      "hoi4:product-telemetry:session:v1",
+      "22222222-2222-4222-8222-222222222222",
+    );
+    await render();
+    await choose();
+    await click("Compare");
+    const data = response();
+    data.context.campaignCompatibility = "same";
+    data.summary = Object.fromEntries(
+      Object.keys(data.summary).map((k) => [k, diff(null, null)]),
+    ) as AnalysisComparisonDto["summary"];
+    data.countries = [];
+    data.equipmentProduction = [];
+    await finish(data);
+    expect(
+      requests.filter((r) => r.url.includes("campaign-review")),
+    ).toHaveLength(0);
+  });
   const countryRow = (tag: string) =>
     comparisonRows().find(
       (item) => item.querySelector(".comparison-country-tag")?.textContent === tag,

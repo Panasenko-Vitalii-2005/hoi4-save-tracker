@@ -7,6 +7,7 @@ import { AnalysisOwnershipService } from '../analyze/analysis-ownership.service'
 import type { SafeUserDto } from '../auth/auth.types';
 import { ClientProductEventsController } from './client-product-events.controller';
 import { ProductEventsService } from './product-events.service';
+import { CampaignReviewService } from './campaign-review.service';
 
 const HASH = 'a'.repeat(64);
 const SESSION_ID = '22222222-2222-4222-8222-222222222222';
@@ -23,16 +24,20 @@ describe('ClientProductEventsController', () => {
     recordAnalysisOpened: jest.fn().mockResolvedValue(true),
     recordAnalysisSectionViewed: jest.fn().mockResolvedValue(true),
     recordAnalysisShared: jest.fn().mockResolvedValue(true),
+    recordCampaignReview: jest.fn().mockResolvedValue(true),
   };
+  const reviews = { eligible: jest.fn().mockResolvedValue(true) };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     ownership.hasOwnership.mockResolvedValue(true);
+    reviews.eligible.mockResolvedValue(true);
     const moduleRef = await Test.createTestingModule({
       controllers: [ClientProductEventsController],
       providers: [
         { provide: AnalysisOwnershipService, useValue: ownership },
         { provide: ProductEventsService, useValue: events },
+        { provide: CampaignReviewService, useValue: reviews },
       ],
     }).compile();
     app = moduleRef.createNestApplication();
@@ -97,6 +102,8 @@ describe('ClientProductEventsController', () => {
     'analysis_upload_rejected',
     'analysis_completed',
     'analysis_failed',
+    'analysis_persisted',
+    'campaign_review_opened',
     'shared_analysis_opened',
     'arbitrary_event',
   ])('rejects backend-only or unsupported event %s', async (eventName) => {
@@ -147,5 +154,59 @@ describe('ClientProductEventsController', () => {
         clientSessionId: 'fingerprint-or-user-agent',
       })
       .expect(400);
+  });
+  test.each(['compare', 'trends', 'intelligence'])(
+    'accepts bounded %s review only after ownership/artifact eligibility',
+    async (viewKind) => {
+      const body = {
+        eventName: 'campaign_review_opened',
+        baseHash: HASH,
+        targetHash: 'b'.repeat(64),
+        clientSessionId: SESSION_ID,
+        viewKind,
+      };
+      await request(app.getHttpServer())
+        .post('/api/product-events/campaign-review')
+        .send(body)
+        .expect(202);
+      expect(reviews.eligible).toHaveBeenCalledWith(
+        USER.id,
+        HASH,
+        'b'.repeat(64),
+      );
+      expect(events.recordCampaignReview).toHaveBeenCalledWith(
+        USER.id,
+        HASH,
+        'b'.repeat(64),
+        SESSION_ID,
+        viewKind,
+      );
+      reviews.eligible.mockResolvedValue(false);
+      await request(app.getHttpServer())
+        .post('/api/product-events/campaign-review')
+        .send(body)
+        .expect(404);
+    },
+  );
+  test.each([
+    { viewKind: 'unbounded' },
+    { filename: 'private.hoi4' },
+    { occurredAt: '1999-01-01' },
+    { userId: USER.id },
+    { targetHash: 'forged' },
+    { insightCount: 999 },
+  ])('rejects forged/arbitrary review payload %j', async (extra) => {
+    await request(app.getHttpServer())
+      .post('/api/product-events/campaign-review')
+      .send({
+        eventName: 'campaign_review_opened',
+        baseHash: HASH,
+        targetHash: 'b'.repeat(64),
+        clientSessionId: SESSION_ID,
+        viewKind: 'trends',
+        ...extra,
+      })
+      .expect(400);
+    expect(reviews.eligible).not.toHaveBeenCalled();
   });
 });

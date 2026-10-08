@@ -462,6 +462,9 @@ export class SaveUploadInterceptor
       await profileRequestPhase('telemetryMs', () =>
         this.telemetry.recordCompleted(attempt, {
           totalDurationMs: Math.max(0, Date.now() - attempt.startedAtMs),
+          ...(attempt.persistenceOutcome
+            ? { persistenceOutcome: attempt.persistenceOutcome }
+            : {}),
         }),
       );
       return of(value);

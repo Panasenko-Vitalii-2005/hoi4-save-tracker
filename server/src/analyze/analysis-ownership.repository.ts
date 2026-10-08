@@ -36,15 +36,17 @@ export class AnalysisOwnershipRepository {
   ): Promise<void> {
     await this.database.query(
       `INSERT INTO analysis_ownership
-         (user_id, analysis_hash, file_name, analyzed_at, history_metadata)
-       VALUES ($1, $2, $3, COALESCE($4, now()), $5::jsonb)
+         (user_id, analysis_hash, file_name, analyzed_at, history_metadata, durable_acquired_at)
+       VALUES ($1, $2, $3, COALESCE($4, now()), $5::jsonb,
+         CASE WHEN $5::jsonb IS NOT NULL THEN now() END)
        ON CONFLICT (user_id, analysis_hash) DO UPDATE SET
          file_name = COALESCE(EXCLUDED.file_name, analysis_ownership.file_name),
          analyzed_at = CASE
            WHEN EXCLUDED.file_name IS NULL THEN analysis_ownership.analyzed_at
            ELSE EXCLUDED.analyzed_at
          END,
-         history_metadata = COALESCE(EXCLUDED.history_metadata, analysis_ownership.history_metadata)`,
+         history_metadata = COALESCE(EXCLUDED.history_metadata, analysis_ownership.history_metadata),
+         durable_acquired_at = COALESCE(analysis_ownership.durable_acquired_at, EXCLUDED.durable_acquired_at)`,
       [
         userId,
         analysisHash,

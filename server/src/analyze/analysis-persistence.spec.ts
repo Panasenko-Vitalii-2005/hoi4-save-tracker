@@ -41,6 +41,7 @@ describe('computed result versus durable owned persistence', () => {
   let controller: AnalyzeController;
   let cache: AnalysisResultCacheService;
   const computed = comparisonResult();
+  const telemetry = { recordPersisted: jest.fn().mockResolvedValue(true) };
   const worker = {
     analyzeWithContext: jest.fn(() =>
       Promise.resolve({
@@ -68,6 +69,7 @@ describe('computed result versus durable owned persistence', () => {
       new AnalysisComparisonService(results),
       ownership,
       users,
+      telemetry as unknown as ProductEventsService,
     );
   }
 
@@ -82,6 +84,7 @@ describe('computed result versus durable owned persistence', () => {
     memory = new MemoryOwnership();
     ownership = memory as unknown as AnalysisOwnershipService;
     worker.analyzeWithContext.mockClear();
+    telemetry.recordPersisted.mockClear();
     cache = new AnalysisResultCacheService(
       worker as unknown as Hoi4AnalysisWorkerService,
     );
@@ -177,6 +180,10 @@ describe('computed result versus durable owned persistence', () => {
   test('successful artifact, metadata and ownership commit produces saved outcome and reopening', async () => {
     const response = await analyze();
     expect(response.headers.get('X-Analysis-Persistence')).toBe('saved');
+    expect(telemetry.recordPersisted).toHaveBeenCalledWith(
+      user.id,
+      expect.objectContaining({ contentHash: response.hash }),
+    );
     expect(response.headers.get('X-Analysis-Hash')).toBe(response.hash);
     expect(response.body).toBe(computed);
     expect(await users.list(user.id)).toEqual([
@@ -199,6 +206,7 @@ describe('computed result versus durable owned persistence', () => {
     services();
     const response = await expectTemporary();
     expect(await results.exists(response.hash)).toBe(false);
+    expect(telemetry.recordPersisted).not.toHaveBeenCalled();
   });
 
   test('artifact write failure preserves computation and cleanup, then retry uses cache', async () => {
@@ -322,11 +330,13 @@ describe('computed result versus durable owned persistence', () => {
     await expect(analyze('batch', 'batch')).rejects.toMatchObject({
       code: 'PERSISTENCE_FAILED',
     });
+    expect(telemetry.recordPersisted).not.toHaveBeenCalled();
     const first = await analyze('batch', 'batch');
     const second = await analyze('batch-next', 'batch');
     expect(first.body).toMatchObject({ hash: first.hash, campaignId });
     expect(second.body).toMatchObject({ hash: second.hash, campaignId });
     expect(await users.list(user.id)).toHaveLength(2);
     expect(worker.analyzeWithContext).toHaveBeenCalledTimes(2);
+    expect(telemetry.recordPersisted).toHaveBeenCalledTimes(2);
   });
 });

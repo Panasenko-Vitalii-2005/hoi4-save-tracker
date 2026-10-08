@@ -7,6 +7,7 @@ import type {
   MetricKey,
 } from "@/types/campaign-intelligence";
 import { apiFetch } from "@/lib/api-client";
+import { trackCampaignReview } from "@/lib/product-telemetry";
 import {
   countryFullName,
   formatEquipmentDefinition,
@@ -523,6 +524,18 @@ export function CampaignIntelligence({
   ]);
   const active = ready && result?.key === requestKey ? result : null;
   const data = active?.data;
+
+  useEffect(() => {
+    // Runs after the cards commit. Unknown/unsupported catalog messages and an
+    // empty coverage-only section are not displayed insights for activation.
+    if (!data?.window.temporalEligible || !data.insights.some(supportedInsight))
+      return;
+    void trackCampaignReview(
+      "intelligence",
+      data.window.baseHash,
+      data.window.targetHash,
+    );
+  }, [data]);
 
   useEffect(() => {
     if (!ready) return;

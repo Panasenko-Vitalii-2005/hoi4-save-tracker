@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import type { SaveRecord } from "@/types";
 import { apiFetch } from "@/lib/api-client";
+import { reviewEndpoints, trackCampaignReview } from "@/lib/product-telemetry";
 import type {
   CampaignTrend,
   CampaignEquipmentTrendsDto,
@@ -908,6 +909,26 @@ export function CampaignTrends({
     void load();
     reloadTelemetry();
   };
+  const recordRenderedTrend = () => {
+    if (
+      loading ||
+      error ||
+      campaign?.relationship !== "known" ||
+      (trendMode === "equipment" && (equipmentLoading || equipmentError))
+    )
+      return;
+    for (const trace of traces) {
+      const shown = snapshots.filter(
+        (_snapshot, index) =>
+          typeof trace.y[index] === "number" && Number.isFinite(trace.y[index]),
+      );
+      const pair = reviewEndpoints(shown);
+      if (pair) {
+        void trackCampaignReview("trends", pair.baseHash, pair.targetHash);
+        break;
+      }
+    }
+  };
 
   if (campaign && reportOpen)
     return (
@@ -1496,6 +1517,8 @@ export function CampaignTrends({
                 >
                   <Plot
                     data={traces}
+                    onInitialized={recordRenderedTrend}
+                    onUpdate={recordRenderedTrend}
                     layout={layout}
                     config={{
                       responsive: true,

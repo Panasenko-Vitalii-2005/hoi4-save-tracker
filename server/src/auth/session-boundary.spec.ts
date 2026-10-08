@@ -14,6 +14,7 @@ import { AnalysisOwnershipService } from '../analyze/analysis-ownership.service'
 import { SharedAnalysesService } from '../analyze/shared-analyses.service';
 import { ProductEventsService } from '../telemetry/product-events.service';
 import { PrivacyController } from '../privacy/privacy.controller';
+import { ClientProductEventsController } from '../telemetry/client-product-events.controller';
 import { DatabaseService } from '../database/database.service';
 import { configureHttpSecurity } from '../http-security';
 import { HealthController } from '../records/records.controller';
@@ -101,6 +102,7 @@ describe('HTTP session security boundary', () => {
         HealthController,
         SharedAnalysesController,
         PrivacyController,
+        ClientProductEventsController,
       ],
       providers: [
         {
@@ -182,6 +184,24 @@ describe('HTTP session security boundary', () => {
       attributes: setCookies[0],
     };
   }
+  test('C1 historical review ingestion remains authenticated and CSRF-protected', async () => {
+    const body = {
+      eventName: 'campaign_review_opened',
+      baseHash: 'a'.repeat(64),
+      targetHash: 'b'.repeat(64),
+      clientSessionId: USER.id,
+      viewKind: 'compare',
+    };
+    await request(app.getHttpServer())
+      .post('/api/product-events/campaign-review')
+      .send(body)
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/api/product-events/campaign-review')
+      .set('Cookie', authenticatedCookie())
+      .send(body)
+      .expect(403);
+  });
 
   function authenticatedCookie(csrfCookie?: string): string {
     return [csrfCookie, `hoi4_session=${SESSION_TOKEN}`]

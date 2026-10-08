@@ -7,7 +7,7 @@ describe('database migrations', () => {
       resolve(process.cwd(), 'migrations'),
     );
 
-    expect(migrations).toHaveLength(6);
+    expect(migrations).toHaveLength(7);
     expect(migrations[0]).toMatchObject({
       version: '0001',
       name: '0001_users_sessions.sql',

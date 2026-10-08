@@ -6,6 +6,7 @@ import { analyzerUnavailableMessage } from "@/lib/analysis-error";
 import { AnalysisComparisonResults } from "./AnalysisComparisonResults";
 import { ComparisonReport } from "@/components/reports/ComparisonReport";
 import { apiFetch } from "@/lib/api-client";
+import { trackCampaignReview } from "@/lib/product-telemetry";
 
 function compareGameDates(
   baseDate: string,
@@ -75,6 +76,40 @@ export function AnalysisComparison({
   const completedMatchesSelection =
     completed?.data.baseHash === baseHash &&
     completed?.data.targetHash === targetHash;
+  useEffect(() => {
+    const data = completed?.data;
+    if (
+      !data ||
+      !Object.values(data.summary).some(
+        ({ before, after }) =>
+          typeof before === "number" &&
+          Number.isFinite(before) &&
+          typeof after === "number" &&
+          Number.isFinite(after),
+      ) ||
+      loading ||
+      error ||
+      busy ||
+      optionsLoading ||
+      optionsUnavailable ||
+      !available.some((item) => item.hash === data.baseHash) ||
+      !available.some((item) => item.hash === data.targetHash) ||
+      data.context.sameAnalysis ||
+      data.context.campaignCompatibility !== "same" ||
+      data.context.gameVersionCompatibility === "different" ||
+      data.context.chronology !== "target_after_base"
+    )
+      return;
+    void trackCampaignReview("compare", data.baseHash, data.targetHash);
+  }, [
+    completed,
+    loading,
+    error,
+    busy,
+    optionsLoading,
+    optionsUnavailable,
+    available,
+  ]);
   const cancel = useCallback(() => {
     pending.current?.abort();
     pending.current = null;

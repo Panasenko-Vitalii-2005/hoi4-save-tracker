@@ -577,7 +577,11 @@ describe('Public upload boundary and cleanup', () => {
         stage: 'persistence',
         terminalRecorded: true,
       });
-      expect(Object.keys(properties)).toEqual(['totalDurationMs']);
+      expect(Object.keys(properties)).toEqual([
+        'totalDurationMs',
+        'persistenceOutcome',
+      ]);
+      expect(properties.persistenceOutcome).toBe('saved');
       expect(properties.totalDurationMs).toEqual(expect.any(Number));
     }
   });

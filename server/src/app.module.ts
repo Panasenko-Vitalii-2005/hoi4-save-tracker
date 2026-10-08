@@ -33,6 +33,7 @@ import { ProductEventsRepository } from './telemetry/product-events.repository';
 import { ProductEventsService } from './telemetry/product-events.service';
 import { ClientProductEventsController } from './telemetry/client-product-events.controller';
 import { PrivacyController } from './privacy/privacy.controller';
+import { CampaignReviewService } from './telemetry/campaign-review.service';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { PrivacyController } from './privacy/privacy.controller';
     UserAnalysesService,
     ProductEventsRepository,
     ProductEventsService,
+    CampaignReviewService,
   ],
 })
 export class AppModule {}

@@ -62,7 +62,11 @@ export function abuseRoute(
     if (path === '/api/auth/login') return 'login';
     if (path === '/api/analyze') return 'upload';
     if (path === '/api/analyze/batch/preflight') return 'preflight';
-    if (path === '/api/product-events/client') return 'telemetry';
+    if (
+      path === '/api/product-events/client' ||
+      path === '/api/product-events/campaign-review'
+    )
+      return 'telemetry';
     if (path === '/api/auth/logout') return 'session';
   }
   if (['GET', 'HEAD'].includes(request.method)) {

@@ -62,22 +62,23 @@ SELECT
   max(division_count) AS max_divisions
 FROM analyses;
 
--- 4. Registration-to-first-success activation.
+-- 4. Global durable-acquisition observations, NOT the external-alpha cohort funnel.
+-- No claim that all users are independent testers or have found the result useful.
+-- Use the C1 private-cohort report for activation, readiness and D1/D7 denominators.
 WITH totals AS (
   SELECT count(*) AS registered_users FROM users
 ), activated AS (
-  SELECT count(DISTINCT user_id) AS activated_users
-  FROM product_events
-  WHERE event_name = 'analysis_completed'
-    AND user_id IS NOT NULL
+  SELECT count(DISTINCT user_id) AS acquired_users
+  FROM analysis_ownership
+  WHERE durable_acquired_at IS NOT NULL
 )
 SELECT
   totals.registered_users,
-  activated.activated_users,
+  activated.acquired_users,
   round(
-    100.0 * activated.activated_users / NULLIF(totals.registered_users, 0),
+    100.0 * activated.acquired_users / NULLIF(totals.registered_users, 0),
     2
-  ) AS activation_percent
+  ) AS durable_acquisition_observed_percent
 FROM totals CROSS JOIN activated;
 
 -- 5a. Analysis opens and cross-session revisits.

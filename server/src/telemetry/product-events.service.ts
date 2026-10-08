@@ -13,6 +13,8 @@ import {
   type ProductAnalysisErrorCode,
   type ProductEventName,
   type AnalysisSection,
+  CAMPAIGN_REVIEW_KINDS,
+  type CampaignReviewKind,
 } from './product-events.types';
 
 const UUID =
@@ -84,6 +86,49 @@ export class ProductEventsService {
 
   constructor(private readonly events: ProductEventsRepository) {}
 
+  async recordPersisted(
+    userId: string,
+    metadata: AnalysisMetadataInput,
+  ): Promise<boolean> {
+    if (!UUID.test(userId) || !validMetadata(metadata)) return false;
+    try {
+      return await this.events.insertPersisted(userId, metadata);
+    } catch {
+      this.warn('analysis_persisted', 'database write failed');
+      return false;
+    }
+  }
+
+  async recordCampaignReview(
+    userId: string,
+    baseHash: string,
+    targetHash: string,
+    sessionId: string,
+    viewKind: CampaignReviewKind,
+  ): Promise<boolean> {
+    if (
+      !UUID.test(userId) ||
+      !HASH.test(baseHash) ||
+      !HASH.test(targetHash) ||
+      baseHash === targetHash ||
+      !UUID.test(sessionId) ||
+      !CAMPAIGN_REVIEW_KINDS.includes(viewKind)
+    )
+      return false;
+    try {
+      return await this.events.insertCampaignReview(
+        userId,
+        baseHash,
+        targetHash,
+        sessionId,
+        viewKind,
+      );
+    } catch {
+      this.warn('campaign_review_opened', 'database write failed');
+      return false;
+    }
+  }
+
   recordStarted(
     attempt: AnalysisAttemptContext,
     properties: AnalysisStartedProperties = {},
@@ -130,7 +175,11 @@ export class ProductEventsService {
       !validMetadata(attempt.analysis) ||
       !Number.isSafeInteger(properties.totalDurationMs) ||
       properties.totalDurationMs < 0 ||
-      Object.keys(properties).some((key) => key !== 'totalDurationMs')
+      Object.keys(properties).some(
+        (key) => !['totalDurationMs', 'persistenceOutcome'].includes(key),
+      ) ||
+      (properties.persistenceOutcome !== undefined &&
+        !['saved', 'temporary'].includes(properties.persistenceOutcome))
     ) {
       this.warn('analysis_completed', 'invalid telemetry contract');
       return false;

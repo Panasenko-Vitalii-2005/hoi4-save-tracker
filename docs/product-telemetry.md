@@ -8,6 +8,12 @@ or fail; whether completed analyses are opened and explored; and whether public
 sharing is used. It is PostgreSQL-backed and first-party only. There is no
 external analytics vendor or generic event-ingest endpoint.
 
+C1 adds durable-acquisition and rendered historical-review measurement. The exact
+20-person cohort, UTC D1/D7 definitions, read-only report commands, explicit
+usefulness/prompting records and limitations are in
+[External alpha measurement](external-alpha-measurement.md). Computation success,
+browser sessions and review observations are not useful activation or demand.
+
 Telemetry is deliberately separate from technical application logs. Events use
 stable codes and stages; exception messages and stack traces remain in the
 normal diagnostic logging boundary and are never event properties.
@@ -42,16 +48,18 @@ therefore intentionally null rather than derived from a cookie or token.
 
 ## Supported events
 
-| Event                      | Semantics                                                                                                                        | Properties                                                                                                  |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `analysis_upload_started`  | An authenticated request reached analysis admission.                                                                             | Optional `fileSizeBytes`, optional `saveFormat`. These are normally unknown at initial multipart admission. |
-| `analysis_upload_rejected` | The request was not accepted as a valid analysis input or could not be admitted.                                                 | `errorCode`, `failureStage`, optional known size/format.                                                    |
-| `analysis_completed`       | Analysis returned successfully to the interceptor. Canonical analysis metadata is written in the same transaction as this event. | `totalDurationMs` for the complete request attempt.                                                         |
-| `analysis_failed`          | Accepted processing, persistence, or infrastructure failed.                                                                      | `errorCode`, `failureStage`, optional known size/format.                                                    |
-| `analysis_opened`          | An owned, persisted analysis became meaningfully visible in the authenticated analyzer.                                          | None.                                                                                                       |
-| `analysis_section_viewed`  | An authenticated user meaningfully viewed one allowlisted analysis section.                                                      | `section`.                                                                                                  |
-| `analysis_shared`          | A public link was successfully created or activated for an owned analysis.                                                       | None.                                                                                                       |
-| `shared_analysis_opened`   | A valid public link successfully returned its read-only analysis. The user is anonymous.                                         | None.                                                                                                       |
+| Event                      | Semantics                                                                                                                                 | Properties                                                                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `analysis_upload_started`  | An authenticated request reached analysis admission.                                                                                      | Optional `fileSizeBytes`, optional `saveFormat`. These are normally unknown at initial multipart admission. |
+| `analysis_upload_rejected` | The request was not accepted as a valid analysis input or could not be admitted.                                                          | `errorCode`, `failureStage`, optional known size/format.                                                    |
+| `analysis_completed`       | Computation returned; not proof of durable ownership. Canonical analysis metadata is written with this event.                             | `totalDurationMs`, optional `persistenceOutcome` (`saved` / `temporary`; absent means unknown).             |
+| `analysis_persisted`       | Backend mirror of committed artifact, metadata and owned-history acquisition, once per user/hash while evidence is retained.              | None; occurrence time is authoritative acquisition time.                                                    |
+| `campaign_review_opened`   | Client observed a usable historical Compare/Trends/Intelligence render; server validated owned readable chronological campaign endpoints. | `viewKind`, server-resolved `baseAnalysisId`; target is the existing analysis FK.                           |
+| `analysis_failed`          | Accepted processing, persistence, or infrastructure failed.                                                                               | `errorCode`, `failureStage`, optional known size/format.                                                    |
+| `analysis_opened`          | An owned, persisted analysis became meaningfully visible in the authenticated analyzer.                                                   | None.                                                                                                       |
+| `analysis_section_viewed`  | An authenticated user meaningfully viewed one allowlisted analysis section.                                                               | `section`.                                                                                                  |
+| `analysis_shared`          | A public link was successfully created or activated for an owned analysis.                                                                | None.                                                                                                       |
+| `shared_analysis_opened`   | A valid public link successfully returned its read-only analysis. The user is anonymous.                                                  | None.                                                                                                       |
 
 The section enum is exactly `overview`, `war-casualties`, `naval-losses`,
 `stockpile`, `production`, and `land-forces`.

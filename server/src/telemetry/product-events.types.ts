@@ -10,6 +10,8 @@ export const PRODUCT_EVENT_NAMES = [
   'analysis_section_viewed',
   'analysis_shared',
   'shared_analysis_opened',
+  'analysis_persisted',
+  'campaign_review_opened',
 ] as const;
 
 export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];
@@ -31,6 +33,17 @@ export const ANALYSIS_SECTIONS = [
   'land-forces',
 ] as const;
 export type AnalysisSection = (typeof ANALYSIS_SECTIONS)[number];
+
+export const CAMPAIGN_REVIEW_KINDS = [
+  'compare',
+  'trends',
+  'intelligence',
+] as const;
+export type CampaignReviewKind = (typeof CAMPAIGN_REVIEW_KINDS)[number];
+export interface CampaignReviewProperties {
+  viewKind: CampaignReviewKind;
+  baseAnalysisId: string;
+}
 
 export const ANALYSIS_SAVE_FORMATS = ['plain_text', 'zip_text'] as const;
 export type AnalysisSaveFormat = SaveContainerFormat;
@@ -63,6 +76,7 @@ export interface AnalysisAttemptContext {
   saveFormat?: AnalysisSaveFormat;
   analysis?: AnalysisMetadataInput;
   terminalRecorded: boolean;
+  persistenceOutcome?: 'saved' | 'temporary';
 }
 
 export interface AnalysisTelemetryCarrier {
@@ -81,6 +95,7 @@ export interface AnalysisFailureProperties extends AnalysisStartedProperties {
 
 export interface AnalysisCompletedProperties {
   totalDurationMs: number;
+  persistenceOutcome?: 'saved' | 'temporary';
 }
 
 export interface AnalysisSectionViewedProperties {
@@ -94,4 +109,5 @@ export type ProductEventProperties =
   | AnalysisStartedProperties
   | AnalysisFailureProperties
   | AnalysisCompletedProperties
+  | CampaignReviewProperties
   | ClientProductEventProperties;

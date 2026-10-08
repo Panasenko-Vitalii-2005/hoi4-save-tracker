@@ -6,6 +6,7 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  Optional,
   Post,
   Param,
   Patch,
@@ -51,6 +52,7 @@ import {
   currentAnalyzeRequestProfile,
   profileRequestPhase,
 } from '../analyze-request-profile';
+import { ProductEventsService } from '../telemetry/product-events.service';
 
 interface AnalyzeRequest {
   path: string;
@@ -71,6 +73,7 @@ export class AnalyzeController {
     private readonly comparison: AnalysisComparisonService,
     private readonly ownership: AnalysisOwnershipService,
     private readonly userAnalyses: UserAnalysesService,
+    @Optional() private readonly events?: ProductEventsService,
   ) {}
 
   @Get('compare')
@@ -419,6 +422,21 @@ export class AnalyzeController {
           'Analysis completed, but durable persistence could not be confirmed. Retry saving after checking storage and metadata availability.',
         );
         persisted = false;
+      }
+    }
+    if (attempt) attempt.persistenceOutcome = persisted ? 'saved' : 'temporary';
+    if (persisted) {
+      // Analytics failure must never change the A2 persistence outcome. Repository
+      // confirms committed ownership again and deduplicates each user/hash.
+      try {
+        await this.events?.recordPersisted(
+          currentUser.id,
+          this.analysisMetadata(hash, fileSizeBytes, saveFormat, result),
+        );
+      } catch {
+        this.logger.warn(
+          'Durable analysis was saved, but its telemetry mirror was unavailable.',
+        );
       }
     }
     if (responseMode === 'batch') {
