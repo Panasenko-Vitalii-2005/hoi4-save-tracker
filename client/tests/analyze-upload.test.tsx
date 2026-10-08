@@ -33,10 +33,11 @@ describe("real-progress analyze upload transport", () => {
     expect(xhr.body).toBe(body);
     expect((xhr.body!.get("file") as File).name).toBe("save.hoi4");
     expect(fetch).not.toHaveBeenCalled();
-    await xhr.respond(Response.json({ unchanged: true }, { status: 201, headers: { "X-Analysis-Hash": "a".repeat(64) } }));
+    await xhr.respond(Response.json({ unchanged: true }, { status: 201, headers: { "X-Analysis-Hash": "a".repeat(64), "X-Analysis-Persistence": "saved" } }));
     const result = await response;
     expect(result.status).toBe(201);
     expect(result.headers.get("X-Analysis-Hash")).toBe("a".repeat(64));
+    expect(result.headers.get("X-Analysis-Persistence")).toBe("saved");
     expect(await result.json()).toEqual({ unchanged: true });
   });
 

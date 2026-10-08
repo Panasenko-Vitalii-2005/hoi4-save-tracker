@@ -117,6 +117,13 @@ export const en = {
       cancelled: "Analysis request cancelled. Your previous result is unchanged; try again when ready.",
     },
     retryAnalysis: "Retry analysis",
+    persistence: {
+      saved: "Analysis saved to your history.",
+      temporary: "Analysis complete — temporary result, not saved.",
+      unknown: "Analysis complete — saving could not be confirmed.",
+      recovery: "You can view and export this result now. Keep the original save: this result is not confirmed in history and cannot be used for saved comparisons, trends, intelligence or sharing. Retry saving; if it still fails, check analysis storage or contact support. Retrying sends the save again and reuses cached analysis when available.",
+      retry: "Retry saving",
+    },
     responseUnreadable: "The analysis response could not be read. Your previous result is unchanged; try the analysis again.",
     viewsLabel: "Save analysis views",
     viewReport: "View Report",

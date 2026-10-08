@@ -150,9 +150,9 @@ describe("analysis request lifecycle", () => {
   const start = async () => {
     await act(async () => row().click());
   };
-  const respond = async (index: number, body: unknown, code = 201) => {
+  const respond = async (index: number, body: unknown, code = 201, headers?: HeadersInit) => {
     await act(async () =>
-      requests[index].resolve(Response.json(body, { status: code })),
+      requests[index].resolve(Response.json(body, { status: code, headers })),
     );
   };
   const selectFile = (
@@ -502,7 +502,7 @@ describe("analysis request lifecycle", () => {
   test("success clears loading, renders the result and reenables controls", async () => {
     await render();
     await start();
-    await respond(0, snapshot());
+    await respond(0, snapshot(), 201, { "X-Analysis-Persistence": "saved", "X-Analysis-Hash": "a".repeat(64) });
     expect(date()).toBe("1944.5.1");
     expect(status().textContent).toContain("✓ first.hoi4");
     expect(status().querySelector(".spinner")).toBeNull();
@@ -549,7 +549,7 @@ describe("analysis request lifecycle", () => {
     expect(button("Analyze Save").disabled).toBe(false);
     await start();
     expect(status().textContent).not.toContain("busy");
-    await respond(1, snapshot());
+    await respond(1, snapshot(), 201, { "X-Analysis-Persistence": "saved", "X-Analysis-Hash": "a".repeat(64) });
     expect(status().textContent).toContain("✓");
   });
 
@@ -740,6 +740,53 @@ describe("analysis request lifecycle", () => {
     expect(date()).toBe("1944.5.1");
   });
 
+  test.each([
+    ["en", "Analysis complete — temporary result, not saved.", "Retry saving", "Analysis saved to your history."],
+    ["ru", "Анализ завершён — временный результат, не сохранён.", "Повторить сохранение", "Анализ сохранён в вашей истории."],
+  ])("%s temporary result stays viewable and can be explicitly saved", async (language, temporary, retry, saved) => {
+    await i18n.changeLanguage(language);
+    await render();
+    await act(async () => selectFile());
+    const analyzeButton = container.querySelector<HTMLButtonElement>("#analyze-one-save .button-primary")!;
+    await act(async () => analyzeButton.click());
+    for (let attempt = 0; attempt < 20 && !requests.length; attempt++)
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(requests).toHaveLength(1);
+    await respond(0, snapshot(), 201, { "X-Analysis-Persistence": "temporary" });
+    expect(date()).toBe("1944.5.1");
+    expect(container.querySelector(".analysis-persistence-notice")?.textContent).toContain(temporary);
+    expect(container.textContent).not.toContain(saved);
+    expect(telemetryRequests).toHaveLength(0);
+    expect(container.querySelector(".recent-analyses-table tbody tr")).toBeNull();
+    // New selection must not remove the previous result's warning or retry file.
+    await act(async () => selectFile(new File(["HOI4txt"], "other.hoi4")));
+    expect(date()).toBe("1944.5.1");
+    expect(container.textContent).toContain(temporary);
+    await act(async () => button(retry).click());
+    for (let attempt = 0; attempt < 20 && requests.length < 2; attempt++)
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(requests).toHaveLength(2);
+    expect((requests[1].init!.body as FormData).get("file")).toHaveProperty("name", "upload.hoi4");
+    expect(button(retry).disabled).toBe(true);
+    await respond(1, snapshot(), 201, { "X-Analysis-Persistence": "saved", "X-Analysis-Hash": "b".repeat(64) });
+    expect(container.textContent).toContain(saved);
+    expect(container.textContent).not.toContain(temporary);
+    expect(date()).toBe("1944.5.1");
+  });
+
+  test("a failed save retry preserves the temporary result and an old-server hash does not assert saving", async () => {
+    await render();
+    await start();
+    await respond(0, snapshot(), 201, { "X-Analysis-Hash": "a".repeat(64) });
+    expect(container.textContent).toContain("saving could not be confirmed");
+    expect(telemetryRequests).toHaveLength(0);
+    await act(async () => button("Retry saving").click());
+    await respond(1, { code: "ANALYZER_BUSY" }, 503);
+    expect(date()).toBe("1944.5.1");
+    expect(container.textContent).toContain("saving could not be confirmed");
+    expect(button("Retry saving").disabled).toBe(false);
+  });
+
   test("records one meaningful open and deduplicated section views without affecting UI", async () => {
     await render();
     await start();
@@ -747,7 +794,7 @@ describe("analysis request lifecycle", () => {
       requests[0].resolve(
         Response.json(snapshot(), {
           status: 201,
-          headers: { "X-Analysis-Hash": "a".repeat(64) },
+          headers: { "X-Analysis-Hash": "a".repeat(64), "X-Analysis-Persistence": "saved" },
         }),
       ),
     );

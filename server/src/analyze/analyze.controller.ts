@@ -5,6 +5,7 @@ import {
   Get,
   HttpException,
   HttpStatus,
+  Logger,
   Post,
   Param,
   Patch,
@@ -38,6 +39,7 @@ import { AnalysisOwnershipService } from './analysis-ownership.service';
 import { UserAnalysesService } from './user-analyses.service';
 import {
   historySummary,
+  readOwnedHistory,
   type OwnedHistoryMetadata,
 } from './owned-analysis-history';
 import type {
@@ -62,6 +64,7 @@ interface UploadedSave {
 
 @Controller('api/analyze')
 export class AnalyzeController {
+  private readonly logger = new Logger(AnalyzeController.name);
   constructor(
     private readonly analysis: AnalysisResultCacheService,
     private readonly history: RecentAnalysesService,
@@ -381,24 +384,42 @@ export class AnalyzeController {
     let persisted = false;
     if (attempt) attempt.stage = 'persistence';
     if (!response.destroyed) {
-      persisted = await profileRequestPhase('persistenceMs', () =>
-        this.history.record(
-          record,
-          result,
-          comparisonContext,
-          (item, fingerprint) =>
-            profileRequestPhase('ownershipDatabaseMs', () =>
-              this.assignOwnership(
-                currentUser,
-                hash,
-                record.fileName,
-                fingerprint
-                  ? { version: 1, summary: historySummary(item), fingerprint }
-                  : undefined,
-              ),
-            ),
-        ),
-      );
+      // Computation has succeeded. Storage/metadata failures must not discard it,
+      // but only a completed artifact AND the ownership/history commit are saved.
+      let ownershipRecorded = false;
+      try {
+        persisted = await profileRequestPhase('persistenceMs', () =>
+          this.history.record(
+            record,
+            result,
+            comparisonContext,
+            (item, fingerprint) =>
+              profileRequestPhase('ownershipDatabaseMs', async () => {
+                if (!fingerprint)
+                  throw new SaveInputError('PERSISTENCE_FAILED');
+                const metadata = readOwnedHistory({
+                  version: 1,
+                  summary: historySummary(item),
+                  fingerprint,
+                });
+                if (!metadata) throw new SaveInputError('PERSISTENCE_FAILED');
+                await this.assignOwnership(
+                  currentUser,
+                  hash,
+                  record.fileName,
+                  metadata,
+                );
+                ownershipRecorded = true;
+              }),
+          ),
+        );
+        persisted &&= ownershipRecorded;
+      } catch {
+        this.logger.warn(
+          'Analysis completed, but durable persistence could not be confirmed. Retry saving after checking storage and metadata availability.',
+        );
+        persisted = false;
+      }
     }
     if (responseMode === 'batch') {
       if (!persisted) throw new SaveInputError('PERSISTENCE_FAILED');
@@ -408,7 +429,13 @@ export class AnalyzeController {
         campaignId: comparisonContext.campaignId,
       };
     }
-    if (!response.destroyed) response.setHeader('X-Analysis-Hash', hash);
+    if (!response.destroyed) {
+      response.setHeader(
+        'X-Analysis-Persistence',
+        persisted ? 'saved' : 'temporary',
+      );
+      if (persisted) response.setHeader('X-Analysis-Hash', hash);
+    }
     return result;
   }
 

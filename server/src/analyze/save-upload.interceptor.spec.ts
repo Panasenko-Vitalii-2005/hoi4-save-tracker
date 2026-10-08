@@ -504,7 +504,12 @@ describe('Public upload boundary and cleanup', () => {
     const b = await send(bytes).expect(201);
     expect(b.body).toEqual(a.body);
     expect(b.headers['x-analysis-hash']).toBe(a.headers['x-analysis-hash']);
+    expect(a.headers['x-analysis-persistence']).toBe('saved');
+    expect(b.headers['x-analysis-persistence']).toBe('saved');
     expect(worker.created).toHaveLength(1);
+    expect(await results.get(a.headers['x-analysis-hash'])).toStrictEqual(
+      [...cache['completed'].values()][0].result,
+    );
     const summaries = requestSummaries(log);
     expect(summaries).toHaveLength(2);
     const [miss, hit] = summaries;
@@ -535,12 +540,20 @@ describe('Public upload boundary and cleanup', () => {
       expect(summary.phases.validationMs).toEqual(expect.any(Number));
       expect(summary.phases.sha256Ms).toEqual(expect.any(Number));
       expect(summary.phases.cacheLookupMs).toEqual(expect.any(Number));
-      expect(summary.phases.artifactLoadMs).toBeNull();
+      expect(summary.phases.artifactLoadMs).toEqual(expect.any(Number));
       expect(summary.phases.artifactPersistenceMs).toBeGreaterThan(0);
+      // Serialization is also used to compare the exact JSON result on reuse.
       expect(summary.phases.artifactSerializationMs).toEqual(
         expect.any(Number),
       );
-      expect(summary.phases.artifactCompressionMs).toEqual(expect.any(Number));
+      if (index === 0) {
+        expect(summary.phases.artifactCompressionMs).toEqual(
+          expect.any(Number),
+        );
+      } else {
+        // Valid identical artifact reuse on a cache hit performs no compression/write.
+        expect(summary.phases.artifactCompressionMs).toBeNull();
+      }
       expect(summary.phases.historyQueueWaitMs).toEqual(expect.any(Number));
       expect(summary.phases.historyMetadataMs).toEqual(expect.any(Number));
       expect(summary.phases.ownershipDatabaseMs).toEqual(expect.any(Number));

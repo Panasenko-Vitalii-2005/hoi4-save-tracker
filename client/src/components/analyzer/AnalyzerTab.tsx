@@ -14,6 +14,11 @@ import {
 } from "@/lib/api-client";
 import { formatFileSize } from "@/lib/snapshot-folder";
 import { SaveUploadProgress } from "./SaveUploadProgress";
+import { AnalysisPersistenceNotice } from "./AnalysisPersistenceNotice";
+import {
+  readAnalysisPersistence,
+  type AnalysisPersistence,
+} from "@/lib/analysis-persistence";
 import { SummaryGrid } from "@/components/ui/SummaryGrid";
 import {
   countryFullName,
@@ -421,7 +426,7 @@ export function AnalyzerTab({
   const readOnly = readOnlyResult !== undefined;
   const BASE = usePlotTheme();
   const [status, setStatus] = useState<{
-    type: "idle" | "loading" | "ok" | "error" | "busy";
+    type: "idle" | "loading" | "ok" | "error" | "busy" | "warning";
     msg: string;
     recovery?: AnalysisFailure["recovery"];
     reason?: AnalysisFailure["reason"];
@@ -435,6 +440,9 @@ export function AnalyzerTab({
     fileName: string;
     uploadedFile?: File;
   } | null>(null);
+  const persistenceRetry = useRef<typeof lastAnalysis.current>(null);
+  const [persistenceOutcome, setPersistenceOutcome] =
+    useState<AnalysisPersistence | null>(null);
   const resultRequestVersion = useRef(0);
   const openingRequest = useRef<AbortController | null>(null);
   const [openingHash, setOpeningHash] = useState<string | null>(null);
@@ -621,6 +629,8 @@ export function AnalyzerTab({
         analysisHash: item.hash,
         playerCountryTag: item.playerCountryTag ?? null,
       });
+      setPersistenceOutcome("saved");
+      persistenceRetry.current = null;
       setOpenScrollRequest((value) => value + 1);
       setStatus({
         type: "ok",
@@ -727,20 +737,22 @@ export function AnalyzerTab({
         });
         return;
       }
-      const responseHash = resp.headers.get("X-Analysis-Hash");
+      const persistence = readAnalysisPersistence(resp.headers);
       applyResult(data, {
         fileName,
-        analysisHash:
-          responseHash && /^[0-9a-f]{64}$/i.test(responseHash)
-            ? responseHash.toLowerCase()
-            : null,
+        analysisHash: persistence.savedHash,
         playerCountryTag: null,
       });
+      setPersistenceOutcome(persistence.outcome);
+      persistenceRetry.current =
+        persistence.outcome === "saved"
+          ? null
+          : { filePath, fileName, uploadedFile };
       lastAnalysis.current = null;
       setHistoryVersion((value) => value + 1);
       setStatus({
-        type: "ok",
-        msg: `✓ ${fileName}  —  ${data.parse_seconds}s · ${data.file_size_mb} MB · ${data.game_date}`,
+        type: persistence.outcome === "saved" ? "ok" : "warning",
+        msg: `${persistence.outcome === "saved" ? "✓ " : ""}${fileName} — ${data.parse_seconds}s · ${data.file_size_mb} MB · ${data.game_date}`,
       });
     } catch (error) {
       if (!active()) return;
@@ -764,6 +776,24 @@ export function AnalyzerTab({
       }
     }
   };
+
+  // Keep the notice with the displayed result, even when a new file is selected
+  // or a retry fails. Temporary results never receive a saved-action/telemetry hash.
+  const persistenceNotice = !readOnly && result && persistenceOutcome && (
+    <AnalysisPersistenceNotice
+      outcome={persistenceOutcome}
+      disabled={status.type === "loading" || batchRunning || !!openingHash}
+      onRetry={
+        persistenceRetry.current
+          ? () => {
+              const attempt = persistenceRetry.current;
+              if (attempt)
+                void analyze(attempt.filePath, attempt.fileName, attempt.uploadedFile);
+            }
+          : undefined
+      }
+    />
+  );
 
   const sortedRows = useMemo(() => {
     if (!result) return [];
@@ -1027,6 +1057,7 @@ export function AnalyzerTab({
   if (result && reportOpen)
     return (
       <div className="analyzer-shell">
+        {persistenceNotice}
         <SingleSaveReport
           result={result}
           context={resultSource}
@@ -1083,7 +1114,12 @@ export function AnalyzerTab({
                     {status.type === "loading" && (
                       <span className="spinner" aria-hidden="true" />
                     )}
-                    <span>{status.msg}</span>
+                    <span>
+                      {status.type === "warning" && persistenceOutcome
+                        ? `${t(`analysis.persistence.${persistenceOutcome}`)} `
+                        : ""}
+                      {status.msg}
+                    </span>
                     {status.type === "loading" && isUploading && (
                       <SaveUploadProgress progress={uploadProgress} />
                     )}
@@ -1140,6 +1176,7 @@ export function AnalyzerTab({
 
       {result && (
         <>
+          {persistenceNotice}
           <div
             className="tab-bar analyzer-view-tabs"
             role="tablist"

@@ -323,6 +323,7 @@ describe('AnalyzeController uploads', () => {
         .attach('file', payload, 'fixture.hoi4')
         .expect(201);
       const body = response.body as AnalyzeResponse;
+      expect(response.headers['x-analysis-persistence']).toBe('saved');
       expect(response.headers['x-analysis-hash']).toBe(
         createHash('sha256').update(payload).digest('hex'),
       );
@@ -358,6 +359,7 @@ describe('AnalyzeController uploads', () => {
         .post('/api/analyze')
         .attach('file', payload, 'renamed.hoi4')
         .expect(201);
+      expect(cached.headers['x-analysis-persistence']).toBe('saved');
       expect(cached.body).toEqual(response.body);
       expect(analysis.created).toBe(before + 1);
       expect(ownership.ensureOwnership).toHaveBeenCalledTimes(2);
@@ -955,7 +957,7 @@ describe('AnalyzeController uploads', () => {
       .expect(400);
   });
 
-  test('result persistence failure leaves successful POST and metadata with unavailable result', async () => {
+  test('result persistence failure returns a temporary viewable result without a saved hash', async () => {
     const save = jest.spyOn(results, 'save').mockResolvedValueOnce(false);
     try {
       const response = await request(app.getHttpServer())
@@ -967,6 +969,8 @@ describe('AnalyzeController uploads', () => {
         )
         .expect(201);
       expect((response.body as AnalyzeResponse).game_date).toBe('1944.5.1');
+      expect(response.headers['x-analysis-persistence']).toBe('temporary');
+      expect(response.headers['x-analysis-hash']).toBeUndefined();
       const item = (await history.list())[0];
       expect(item.hasPersistedResult).toBe(false);
       expect(ownership.ensureOwnership).not.toHaveBeenCalled();
@@ -1240,7 +1244,7 @@ describe('AnalyzeController uploads', () => {
     }
   });
 
-  test('ownership metadata failure fails closed with a safe response', async () => {
+  test('ownership metadata failure preserves computation without claiming durable success', async () => {
     ownership.ensureOwnership.mockRejectedValueOnce(
       new DatabaseUnavailableError(),
     );
@@ -1252,10 +1256,12 @@ describe('AnalyzeController uploads', () => {
         Buffer.from(navalSave('Ownership unavailable')),
         'ownership.hoi4',
       )
-      .expect(503);
+      .expect(201);
 
     expect(ownership.ensureOwnership).toHaveBeenCalledTimes(1);
-    expect(response.body).toMatchObject({ code: 'ANALYZER_BUSY' });
+    expect(response.body).toMatchObject({ game_date: '1944.5.1' });
+    expect(response.headers['x-analysis-persistence']).toBe('temporary');
+    expect(response.headers['x-analysis-hash']).toBeUndefined();
     expect(JSON.stringify(response.body)).not.toMatch(
       /postgres|database|session|password|token|stack/i,
     );
@@ -1278,6 +1284,8 @@ describe('AnalyzeController uploads', () => {
         )
         .expect(201);
       expect((response.body as AnalyzeResponse).game_date).toBe('1944.5.1');
+      expect(response.headers['x-analysis-persistence']).toBe('temporary');
+      expect(response.headers['x-analysis-hash']).toBeUndefined();
       expect(JSON.stringify(response.body)).not.toContain(
         'private storage path',
       );

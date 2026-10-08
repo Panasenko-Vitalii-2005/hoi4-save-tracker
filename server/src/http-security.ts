@@ -33,6 +33,7 @@ export function configureHttpSecurity(app: INestApplication): void {
     origin: allowedFrontendOrigin(),
     credentials: true,
     allowedHeaders: ['Content-Type', 'X-CSRF-Token'],
+    exposedHeaders: ['X-Analysis-Hash', 'X-Analysis-Persistence'],
   });
   app.use((_request: Request, response: Response, next: NextFunction) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');

@@ -662,6 +662,17 @@ select {
   padding: 8px 13px;
 }
 
+.analysis-persistence-notice {
+  margin: 12px 0;
+  border-left-color: var(--intel-warning);
+  background: color-mix(in srgb, var(--intel-warning) 8%, transparent);
+}
+
+.analysis-persistence-notice.saved {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .recent-icon {
   width: 16px;
   height: 16px;
@@ -5637,6 +5648,11 @@ button {
 .analyzer-status.busy {
   border-left-color: var(--accent) !important;
   color: var(--ink);
+}
+
+.analyzer-status.warning {
+  border-left-color: var(--intel-warning) !important;
+  color: var(--intel-warning);
 }
 
 .analyzer-status.binary-save-recovery-status {

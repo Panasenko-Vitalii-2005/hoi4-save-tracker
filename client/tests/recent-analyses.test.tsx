@@ -368,7 +368,7 @@ describe("Recent Analyses", () => {
     await upload();
     expect(analyzeRequests).toHaveLength(1);
     expect(historyRequests).toHaveLength(1);
-    await act(async () => analyzeRequests[0](Response.json(snapshot)));
+    await act(async () => analyzeRequests[0](Response.json(snapshot, { headers: { "X-Analysis-Persistence": "saved", "X-Analysis-Hash": entry.hash } })));
     expect(historyRequests).toHaveLength(2);
     await respond(1, [entry]);
     await respond(0); // An old response must not erase the refreshed list.
@@ -405,7 +405,11 @@ describe("Recent Analyses", () => {
       historyRequests[0].reject(new Error("history offline")),
     );
     await upload();
-    await act(async () => analyzeRequests[0](Response.json(snapshot)));
+    await act(async () =>
+      analyzeRequests[0](Response.json(snapshot, {
+        headers: { "X-Analysis-Persistence": "saved", "X-Analysis-Hash": entry.hash },
+      })),
+    );
     await act(async () =>
       historyRequests[1].reject(new Error("still offline")),
     );

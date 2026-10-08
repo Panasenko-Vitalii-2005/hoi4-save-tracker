@@ -11,7 +11,7 @@ import {
   unlink,
 } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { promisify } from 'node:util';
+import { isDeepStrictEqual, promisify } from 'node:util';
 import { createGunzip, gzip, gunzip } from 'node:zlib';
 import type { AnalyzeResult } from '../hoi4/hoi4-parser';
 import {
@@ -306,8 +306,13 @@ export class PersistedAnalysisResultService {
 
   private async readPersisted(hash: string): Promise<PersistedAnalysis | null> {
     const key = this.key(hash);
-    const endLoad = currentAnalyzeRequestProfile()?.begin('artifactLoadMs');
     await this.pending;
+    return this.readArtifact(key);
+  }
+
+  /** Caller holds the write queue, or has awaited it. Never await it recursively. */
+  private async readArtifact(key: string): Promise<PersistedAnalysis | null> {
+    const endLoad = currentAnalyzeRequestProfile()?.begin('artifactLoadMs');
     try {
       if (!(await this.checkDirectory())) return null;
       const file = this.path(key);
@@ -365,14 +370,28 @@ export class PersistedAnalysisResultService {
       endQueue?.();
       const endPersistence = profile?.begin('artifactPersistenceMs');
       try {
+        const comparisonContext =
+          normalizeSaveComparisonContext(options.comparisonContext) ??
+          unknownSaveComparisonContext();
+        // A metadata/ownership retry can reuse a validated identical artifact.
+        // Read under the write queue; corrupt/legacy/different results still use
+        // the ordinary atomic replacement path. No quota growth or extra write.
+        const existing = await this.readArtifact(key);
+        if (
+          existing &&
+          isDeepStrictEqual(existing.comparisonContext, comparisonContext) &&
+          profileRequestSync(
+            'artifactSerializationMs',
+            () => JSON.stringify(existing.result) === JSON.stringify(result),
+          )
+        )
+          return true;
         const ownership = await this.ownershipProtection();
         const envelope: PersistedAnalysisResultV2 = {
           formatVersion: 2,
           hash: key,
           savedAt: new Date().toISOString(),
-          comparisonContext:
-            normalizeSaveComparisonContext(options.comparisonContext) ??
-            unknownSaveComparisonContext(),
+          comparisonContext,
           result,
         };
         const json = profileRequestSync('artifactSerializationMs', () =>

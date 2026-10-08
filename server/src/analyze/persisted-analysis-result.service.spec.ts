@@ -233,6 +233,20 @@ describe('PersistedAnalysisResultService', () => {
     expect(await files.readdir(directory)).toEqual(['fixture.hoi4']);
   });
 
+  test('identical valid artifacts are reused without disk writes, including after restart', async () => {
+    await service.save(hash('a'), result);
+    const before = await files.readFile(path());
+    service = new PersistedAnalysisResultService();
+    const open = jest
+      .spyOn(files, 'open')
+      .mockRejectedValue(new Error('disk unavailable'));
+    const rename = jest.spyOn(files, 'rename');
+    expect(await service.save(hash('a'), result)).toBe(true);
+    expect(open).not.toHaveBeenCalled();
+    expect(rename).not.toHaveBeenCalled();
+    expect(await files.readFile(path())).toEqual(before);
+  });
+
   test('atomically replaces the same hash without duplicate files', async () => {
     await service.save(hash('a'), result);
     const replacement = { ...result, parse_seconds: 42 };

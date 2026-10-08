@@ -134,7 +134,7 @@ Share links are unlisted but unauthenticated. Anyone with the URL can read the c
 - Upload and analysis have independent deadlines.
 - Unsupported, oversized, corrupt, or ambiguous ZIP inputs fail before parser work where possible.
 - Managed upload cleanup covers controller success, validation failure, Worker error/crash/timeout, client abort, and persistence/history failure.
-- Persistence failure does not rewrite parser output; Batch mode reports persistence failure because resumability requires durability.
+- Persistence failure does not rewrite parser output. Single-file computation returns an explicit saved/temporary response outcome and keeps temporary results viewable; Batch mode reports persistence failure because resumability requires durability. See [analysis persistence outcome](analysis-persistence-outcome.md).
 - Missing/corrupt persisted results remain unavailable instead of triggering reanalysis.
 - Frontend failures preserve the last valid analysis/comparison where appropriate and expose retry actions without raw server details.
 
