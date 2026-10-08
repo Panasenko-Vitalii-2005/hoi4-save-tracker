@@ -5,6 +5,10 @@ This runbook is for the single-VPS Private Alpha deployment at
 restore verification, and incident closure. It does not authorize automatic
 remediation or destructive disaster recovery.
 
+Before expanding to 20 external users, complete the measured
+[A3 cohort capacity gate](external-alpha-capacity.md). The artifact budget is
+not a physical disk reservation; backup/temporary-space headroom is separate.
+
 ## Safety boundary
 
 - Diagnose before restarting anything. A stopped or unhealthy service is a

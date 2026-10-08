@@ -2,6 +2,10 @@
 
 This profile is intentionally limited to **2–5 trusted users**, **one Linux VPS**, and **one backend instance**. It is suitable for private alpha testing, not for a public closed beta.
 
+Expansion to a controlled 20-user external alpha is conditional on the
+[A3 capacity gate](external-alpha-capacity.md), including actual VPS disk/RAM
+and backup headroom. The original sizing/defaults below are not that guarantee.
+
 The production operator runbook, bounded recovery procedures, incident closure
 checklist, and non-destructive Phase 1D drill are in
 [Private Alpha operations runbook](private-alpha-operations-runbook.md).
