@@ -995,8 +995,8 @@ describe("Recent Analyses", () => {
     expect(dialog.textContent).toContain("Germany");
     expect(dialog.textContent).toContain("1936.2.1 → 1950.11.1");
     expect(dialog.textContent).toContain("2 analyses");
-    expect(dialog.textContent).toContain("original .hoi4 save files");
-    expect(dialog.textContent).toContain("active public link");
+    expect(dialog.textContent).toContain("Original saves are unchanged");
+    expect(dialog.textContent).toContain("global public links, including for co-owners");
     const confirm = [
       ...dialog.querySelectorAll<HTMLButtonElement>("button"),
     ].find((button) => button.textContent === "Delete stored analyses")!;

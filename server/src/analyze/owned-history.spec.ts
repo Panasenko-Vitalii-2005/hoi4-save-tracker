@@ -181,7 +181,11 @@ describe('durable owned history beyond global Recent turnover', () => {
     restart();
     expect(await users.list('0')).toHaveLength(24);
     await expect(users.getResult('0', snapshot(0, 0))).resolves.toBeNull();
-    await expect(shares.getResult(share!.id)).resolves.not.toBeNull();
+    // B3: removing private ownership revokes the global link first; A1 discovery
+    // for every other retained owned snapshot remains unchanged.
+    await expect(shares.getResult(share!.id)).resolves.toBeNull();
+    await expect(users.getResult('0', snapshot(0, 1))).resolves.not.toBeNull();
+    expect(await users.list('1')).toHaveLength(25);
   }, 180000);
 
   test('missing/corrupt retained artifacts stay unavailable and never enter campaign projections', async () => {

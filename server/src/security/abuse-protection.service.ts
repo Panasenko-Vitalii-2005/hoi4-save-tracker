@@ -67,7 +67,8 @@ export function abuseRoute(
   }
   if (['GET', 'HEAD'].includes(request.method)) {
     if (path.startsWith('/api/share/')) return 'share';
-    if (['/api/auth/csrf', '/api/auth/me'].includes(path)) return 'session';
+    if (['/api/auth/csrf', '/api/auth/me', '/api/privacy'].includes(path))
+      return 'session';
   }
   return null;
 }

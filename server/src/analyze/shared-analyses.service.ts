@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
@@ -38,6 +38,8 @@ const SHARE_ID_BYTES = 16;
 const SHARE_ID_LENGTH = 22;
 const SHARE_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const DEFAULT_SHARE_LIMIT = 1000;
+// Offline support previews must not reconcile/rewrite the shared store on load.
+export const SHARE_RECONCILE_ON_LOAD = Symbol('SHARE_RECONCILE_ON_LOAD');
 
 export function normalizeShareId(id: string): string | null {
   return id.length === SHARE_ID_LENGTH && SHARE_ID_PATTERN.test(id) ? id : null;
@@ -76,7 +78,12 @@ export class SharedAnalysesService {
   private protectionReliable = true;
   private readonly warned = new Set<string>();
 
-  constructor(private readonly results: PersistedAnalysisResultService) {
+  constructor(
+    private readonly results: PersistedAnalysisResultService,
+    @Optional()
+    @Inject(SHARE_RECONCILE_ON_LOAD)
+    private readonly reconcileOnLoad = true,
+  ) {
     const configured = Number(
       process.env.HOI4_SHARED_ANALYSES_LIMIT ?? DEFAULT_SHARE_LIMIT,
     );
@@ -147,6 +154,7 @@ export class SharedAnalysesService {
       return;
     }
 
+    if (!this.reconcileOnLoad || !this.protectionReliable) return;
     try {
       const available = await this.results.available(
         this.records.map((record) => record.hash),
@@ -170,10 +178,15 @@ export class SharedAnalysesService {
     return randomBytes(SHARE_ID_BYTES).toString('base64url');
   }
 
-  create(hash: string): Promise<SharedAnalysisLink | null> {
+  create(
+    hash: string,
+    authorize?: () => Promise<boolean>,
+  ): Promise<SharedAnalysisLink | null> {
     const key = normalizeAnalysisHash(hash);
     if (!key) throw new TypeError('Invalid analysis hash');
     return this.enqueue(async () => {
+      if (authorize && !(await authorize())) return null;
+      this.assertWritable();
       const existing = this.records.find((record) => record.hash === key);
       if (existing) {
         if (await this.results.exists(key)) return this.toLink(existing);
@@ -234,6 +247,7 @@ export class SharedAnalysesService {
       if (!record) return null;
       const result = await this.results.get(record.hash);
       if (result) return { hash: record.hash, result };
+      if (!this.protectionReliable) return null;
       const next = this.records.filter((entry) => entry !== record);
       try {
         await this.persist(next);
@@ -248,10 +262,34 @@ export class SharedAnalysesService {
     });
   }
 
-  revokeByHash(hash: string): Promise<boolean> {
+  /** Offline verified operator remedy for legacy orphan links (no saved creator).
+   * Not exposed by an HTTP controller; possession of a URL is NOT authorization. */
+  revokeById(id: string): Promise<boolean> {
+    const key = normalizeShareId(id);
+    if (!key) throw new TypeError('Invalid share identifier');
+    return this.enqueue(async () => {
+      this.assertWritable();
+      const next = this.records.filter((record) => record.id !== key);
+      if (next.length === this.records.length) return false;
+      try {
+        await this.persist(next);
+      } catch {
+        throw new SharedAnalysisStorageError('Could not revoke public link');
+      }
+      this.records = next;
+      return true;
+    });
+  }
+
+  revokeByHash(
+    hash: string,
+    authorize?: () => Promise<boolean>,
+  ): Promise<boolean> {
     const key = normalizeAnalysisHash(hash);
     if (!key) throw new TypeError('Invalid analysis hash');
     return this.enqueue(async () => {
+      if (authorize && !(await authorize())) return false;
+      this.assertWritable();
       const next = this.records.filter((record) => record.hash !== key);
       if (next.length === this.records.length) return false;
       try {
@@ -268,6 +306,48 @@ export class SharedAnalysesService {
       this.records = next;
       return true;
     });
+  }
+
+  /** Global hash links have no creator attribution. Revoke BEFORE removing an
+   * authorized owner's access, holding the same queue as share creation. A failed
+   * revocation preserves ownership; a later database failure leaves links revoked
+   * conservatively. No result artifact is deleted here. */
+  revokeForRemoval<T>(
+    ownedHashes: () => Promise<readonly string[]>,
+    remove: (hashes: readonly string[]) => Promise<T>,
+  ): Promise<T> {
+    return this.enqueue(async () => {
+      const hashes = [...new Set(await ownedHashes())];
+      const keys = new Set(
+        hashes.map((hash) => {
+          const key = normalizeAnalysisHash(hash);
+          if (!key) throw new TypeError('Invalid analysis hash');
+          return key;
+        }),
+      );
+      if (keys.size > 0) {
+        this.assertWritable();
+        const next = this.records.filter((record) => !keys.has(record.hash));
+        if (next.length !== this.records.length) {
+          try {
+            await this.persist(next);
+          } catch {
+            throw new SharedAnalysisStorageError(
+              'Could not revoke public links',
+            );
+          }
+          this.records = next;
+        }
+      }
+      return remove(hashes);
+    });
+  }
+
+  private assertWritable(): void {
+    if (!this.protectionReliable)
+      throw new SharedAnalysisStorageError(
+        'Share store must be repaired first',
+      );
   }
 
   hasHash(hash: string): Promise<boolean> {
@@ -293,6 +373,7 @@ export class SharedAnalysesService {
 
   reconcileAvailable(available: ReadonlySet<string>): Promise<void> {
     return this.enqueue(async () => {
+      if (!this.protectionReliable) return;
       const next = this.records.filter((record) => available.has(record.hash));
       if (next.length === this.records.length) return;
       try {

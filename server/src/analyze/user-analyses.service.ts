@@ -278,7 +278,10 @@ export class UserAnalysesService {
     userId: string,
     hashes: readonly string[],
   ): Promise<string[]> {
-    const removed = await this.ownership.remove(userId, hashes);
+    const removed = await this.shares.revokeForRemoval(
+      async () => [...(await this.ownership.ownedHashes(userId, hashes))],
+      (owned) => this.ownership.remove(userId, owned),
+    );
     await this.syncGlobalPins(removed);
     // Ownership deletion intentionally does not delete a globally deduplicated
     // blob. Existing retention/share reconciliation remains its lifecycle owner.

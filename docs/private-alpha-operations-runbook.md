@@ -8,6 +8,12 @@ remediation or destructive disaster recovery.
 Before expanding to 20 external users, complete the measured
 [A3 cohort capacity gate](external-alpha-capacity.md). The artifact budget is
 not a physical disk reservation; backup/temporary-space headroom is separate.
+Also complete [B3 privacy/account support](external-alpha-privacy-support.md):
+a working support contact, verified operator process and raw-event cleanup are
+invitation gates. Before reopening a restored service, reapply recorded account
+deletions, session/link revocations and event-retention cleanup to the isolated
+restored state. Historical backups can otherwise restore revoked access/links;
+this does not authorize modifying R2 or live data during a recovery drill.
 
 ## Safety boundary
 

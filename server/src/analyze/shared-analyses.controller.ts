@@ -9,7 +9,6 @@ import {
   Headers,
 } from '@nestjs/common';
 import { normalizeAnalysisHash } from './persisted-analysis-result.service';
-import { RecentAnalysesService } from './recent-analyses.service';
 import {
   normalizeShareId,
   SharedAnalysesService,
@@ -28,7 +27,6 @@ const CLIENT_SESSION_ID =
 export class SharedAnalysesController {
   constructor(
     private readonly shares: SharedAnalysesService,
-    private readonly history: RecentAnalysesService,
     private readonly ownership: AnalysisOwnershipService,
     private readonly productEvents: ProductEventsService,
   ) {}
@@ -47,7 +45,9 @@ export class SharedAnalysesController {
           'Saved analysis result is unavailable',
           HttpStatus.NOT_FOUND,
         );
-      const link = await this.shares.create(key);
+      const link = await this.shares.create(key, () =>
+        this.ownership.hasOwnership(currentUser.id, key),
+      );
       if (!link)
         throw new HttpException(
           'Saved analysis result is unavailable',
@@ -116,7 +116,12 @@ export class SharedAnalysesController {
           'Saved analysis result is unavailable',
           HttpStatus.NOT_FOUND,
         );
-      return { revoked: await this.history.revokeShare(key) };
+      // Revocation removes the public token only, never a co-owner's artifact.
+      return {
+        revoked: await this.shares.revokeByHash(key, () =>
+          this.ownership.hasOwnership(currentUser.id, key),
+        ),
+      };
     } catch (error: unknown) {
       if (error instanceof HttpException) throw error;
       throw new HttpException(

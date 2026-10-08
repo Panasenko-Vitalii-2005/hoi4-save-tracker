@@ -212,6 +212,26 @@ describe('SharedAnalysesService', () => {
     expect((await shares.protection()).references).toEqual([]);
   });
 
+  test('offline operator can revoke a verified legacy orphan token without deleting the shared artifact', async () => {
+    await results.save(hash('a'), result);
+    const link = await shares.create(hash('a'));
+    const before = await files.readFile(
+      join(directory, 'results', `${hash('a')}.json.gz`),
+    );
+    const offline = new SharedAnalysesService(results, false);
+    const stored = await files.readFile(shareFile);
+    await offline.protection();
+    expect(await files.readFile(shareFile)).toEqual(stored);
+    expect(await offline.revokeById(link!.id)).toBe(true);
+    expect(await offline.revokeById(link!.id)).toBe(false);
+    expect(
+      await new SharedAnalysesService(results, false).getResult(link!.id),
+    ).toBeNull();
+    expect(
+      await files.readFile(join(directory, 'results', `${hash('a')}.json.gz`)),
+    ).toEqual(before);
+  });
+
   test.each(['delete', 'clear', 'count eviction'])(
     'active share protects its result from recent-history %s',
     async (operation) => {

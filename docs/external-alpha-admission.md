@@ -4,6 +4,9 @@ This is a **single-backend-process**, opt-in boundary for the controlled 20-user
 cohort, not a public-beta abuse-prevention system. No database migration, invitation
 table, browser fingerprinting or new product telemetry is required. A1 owned
 history, A2 explicit persistence outcomes and A3 physical capacity gates still apply.
+The [B3 privacy/account lifecycle](external-alpha-privacy-support.md) adds a real
+support-mailbox launch gate and verified offline operator procedures. The admission
+allowlist is not email ownership verification or account-recovery authority.
 
 ## Existing boundaries retained
 

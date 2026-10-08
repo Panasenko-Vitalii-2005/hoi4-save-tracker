@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AnalyzerTab } from "@/components/analyzer/AnalyzerTab";
 import { SharedAnalysisPage } from "@/components/analyzer/SharedAnalysisPage";
 import { AuthGate } from "@/components/auth/AuthGate";
+import { PrivacyNotice } from "@/components/privacy/PrivacyNotice";
 import { CampaignTrends } from "@/components/chart/CampaignTrends";
 import { SoldiersTab } from "@/components/soldiers/SoldiersTab";
 import { TabBar } from "@/components/ui/TabBar";
@@ -116,6 +117,7 @@ export default function App() {
       ) : (
         <AuthGate><Dashboard /></AuthGate>
       )}
+      <PrivacyNotice />
     </>
   );
 }

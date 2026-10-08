@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import files, { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AnalysisOwnershipService } from './analysis-ownership.service';
@@ -157,13 +157,90 @@ describe('UserAnalysesService ownership isolation', () => {
     await expect(service.getResult(A, H)).resolves.toBeNull();
     await expect(service.getResult(B, H)).resolves.not.toBeNull();
     await expect(results.exists(H)).resolves.toBe(true);
-    await expect(shares.getResult(share!.id)).resolves.not.toBeNull();
+    await expect(shares.getResult(share!.id)).resolves.toBeNull();
+    const replacement = await shares.create(H, () =>
+      ownership.hasOwnership(B, H),
+    );
+    expect(replacement!.id).not.toBe(share!.id);
+    await expect(shares.getResult(replacement!.id)).resolves.not.toBeNull();
+    // Removing owner cannot recover/recreate the old public token.
+    await expect(
+      shares.create(H, () => ownership.hasOwnership(A, H)),
+    ).resolves.toBeNull();
   });
 
   test('removing the final owner leaves physical lifecycle to global retention', async () => {
     await expect(service.delete(A, A1)).resolves.toBe(true);
     await expect(service.getResult(A, A1)).resolves.toBeNull();
     await expect(results.exists(A1)).resolves.toBe(true);
+  });
+
+  test('foreign deletion cannot revoke another owner public link', async () => {
+    const share = await shares.create(B1);
+    await expect(service.delete(A, B1)).resolves.toBe(false);
+    await expect(shares.getResult(share!.id)).resolves.not.toBeNull();
+  });
+
+  test.each(['clear', 'campaign', 'unpinned'])(
+    '%s cleanup revokes affected links globally but retains co-owner access',
+    async (mode) => {
+      const shared = await shares.create(H);
+      const foreign = await shares.create(B1);
+      if (mode === 'clear') await service.clear(A);
+      else if (mode === 'campaign')
+        await service.deleteCampaign(A, CAMPAIGN, true);
+      else await service.deleteUnpinned(A);
+      await expect(shares.getResult(shared!.id)).resolves.toBeNull();
+      await expect(shares.getResult(foreign!.id)).resolves.not.toBeNull();
+      await expect(service.getResult(B, H)).resolves.not.toBeNull();
+      await expect(results.exists(H)).resolves.toBe(true);
+    },
+  );
+
+  test('revocation write failure preserves ownership, old link and both private artifacts', async () => {
+    const share = await shares.create(H);
+    const rename = files.rename;
+    const failure = jest
+      .spyOn(files, 'rename')
+      .mockImplementation((from, to) =>
+        to === process.env.HOI4_SHARED_ANALYSES_FILE
+          ? Promise.reject(new Error('write failed'))
+          : rename(from, to),
+      );
+    await expect(service.delete(A, H)).rejects.toThrow();
+    failure.mockRestore();
+    await expect(service.getResult(A, H)).resolves.not.toBeNull();
+    await expect(service.getResult(B, H)).resolves.not.toBeNull();
+    await expect(shares.getResult(share!.id)).resolves.not.toBeNull();
+  });
+
+  test('corrupt legacy store fails closed before removing owned history', async () => {
+    await files.writeFile(process.env.HOI4_SHARED_ANALYSES_FILE!, '{broken');
+    const unreadable = new SharedAnalysesService(results);
+    const guarded = new UserAnalysesService(
+      ownership as unknown as AnalysisOwnershipService,
+      recent,
+      results,
+      unreadable,
+    );
+    await expect(guarded.delete(A, H)).rejects.toThrow(
+      'Share store must be repaired',
+    );
+    await expect(service.getResult(A, H)).resolves.not.toBeNull();
+    expect(
+      await files.readFile(process.env.HOI4_SHARED_ANALYSES_FILE!, 'utf8'),
+    ).toBe('{broken');
+  });
+
+  test('queued share creation checks membership after private removal, not before', async () => {
+    const old = await shares.create(H);
+    const deletion = service.delete(A, H);
+    const creation = shares.create(H, () => ownership.hasOwnership(A, H));
+    await expect(deletion).resolves.toBe(true);
+    await expect(creation).resolves.toBeNull();
+    await expect(shares.getResult(old!.id)).resolves.toBeNull();
+    const restarted = new SharedAnalysesService(results);
+    await expect(restarted.getResult(old!.id)).resolves.toBeNull();
   });
 
   test('campaign and unpinned cleanup affect only the requesting user and protect their pins', async () => {

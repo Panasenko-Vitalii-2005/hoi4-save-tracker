@@ -318,7 +318,7 @@ describe("Recent Analyses Share action", () => {
     await render();
     await act(async () => button(`Delete analysis ${entry.fileName}`).click());
     expect(window.confirm).toHaveBeenCalledWith(
-      expect.stringContaining("public link will remain available"),
+      expect.stringContaining("revoke its current public link for everyone, including co-owners"),
     );
   });
 });

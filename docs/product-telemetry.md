@@ -116,11 +116,12 @@ logging and PostgreSQL operational logging have separate policies.
 
 ## Retention
 
-The intended retention for raw rows in `product_events` is **90 days**. Phase 2A
-does not add a scheduler or purge job because the repository has no existing
-general retention-job framework. Automated, observable deletion of rows older
-than 90 days is follow-up work. Canonical `analyses` metadata is not raw event
-history and is outside that raw-event retention statement.
+Raw rows in `product_events` target **90 days**. B3 adds an explicitly invoked,
+bounded operator purge, not an automatic scheduler: see
+[privacy/account operations](external-alpha-privacy-support.md). A named operator
+must run/check it daily, record counts/backlog, and handle failures. Missed runs
+can exceed the target; historical backups may retain older events. Canonical
+`analyses` metadata is not raw event history and is outside this policy.
 
 ## Example queries
 
@@ -193,24 +194,26 @@ WHERE event_name = 'analysis_completed'
 
 ## Known limitations and follow-up
 
-- Raw-event 90-day deletion is documented but not automated yet.
+- Raw-event cleanup is available through the bounded B3 operator command; scheduling
+  and observable automatic enforcement are not implemented.
 - Database authentication-session linkage remains null; the separate random
   browser-session UUID is intentionally not an authentication identifier.
 - Browser-session dedup trades exact interaction counts for low-noise private
   alpha signals. A failed best-effort request is not retried.
 - Public-open abuse is bounded to valid high-entropy share links and a closed
-  event contract. There is no per-client rate limiter in this phase; revisit if
-  private-alpha traffic or deliberate UUID rotation creates material noise.
+  event contract. B2 opt-in IP/global request budgets also apply; deliberate UUID
+  rotation or multi-instance operation can still create noise.
 - No dashboard, generic event framework, external vendor, or analytics API is
   introduced in this phase.
 
-The 90-day raw-event policy remains operational follow-up. When a scheduler is
-introduced, its required deletion is:
+The B3 command implements the following predicate with a fixed cutoff, bounded
+batches, statement timeouts and explicit backlog reporting:
 
 ```sql
 DELETE FROM product_events
 WHERE occurred_at < now() - interval '90 days';
 ```
 
-The purge must run as an observable, failure-alerting maintenance job. This
-phase does not add scheduling infrastructure solely for that statement.
+The operator must monitor completion/backlog; the application does not schedule
+it or send failure alerts. Account deletion additionally removes account-linked
+events, but not anonymous opens or canonical metadata.

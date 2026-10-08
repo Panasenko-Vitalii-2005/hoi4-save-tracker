@@ -202,7 +202,7 @@ describe('SharedAnalysesController', () => {
     '..%5C..%5Cprivate',
   ])('share management rejects unsafe hash %s', async (key) => {
     const create = jest.spyOn(shares, 'create');
-    const revoke = jest.spyOn(history, 'revokeShare');
+    const revoke = jest.spyOn(shares, 'revokeByHash');
     await request(app.getHttpServer())
       .post(`/api/analyze/recent/${key}/share`)
       .expect(400);
@@ -298,7 +298,7 @@ describe('SharedAnalysesController', () => {
       .expect(503);
     open.mockRestore();
     const revoke = jest
-      .spyOn(history, 'revokeShare')
+      .spyOn(shares, 'revokeByHash')
       .mockRejectedValueOnce(new Error('C:/private/share-store.json'));
     const failedRevoke = await request(app.getHttpServer())
       .delete(`/api/analyze/recent/${key}/share`)
@@ -310,5 +310,14 @@ describe('SharedAnalysesController', () => {
       failedRevoke.body,
     ]);
     expect(payload).not.toMatch(/private|\.json|stack/i);
+  });
+
+  test('create rechecks ownership at the queued mutation boundary after an earlier authorization succeeds', async () => {
+    const key = await persist();
+    hasOwnership.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    await request(app.getHttpServer())
+      .post(`/api/analyze/recent/${key}/share`)
+      .expect(404);
+    expect((await shares.protection()).references).toEqual([]);
   });
 });

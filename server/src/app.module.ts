@@ -32,6 +32,7 @@ import { UserAnalysesService } from './analyze/user-analyses.service';
 import { ProductEventsRepository } from './telemetry/product-events.repository';
 import { ProductEventsService } from './telemetry/product-events.service';
 import { ClientProductEventsController } from './telemetry/client-product-events.controller';
+import { PrivacyController } from './privacy/privacy.controller';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { ClientProductEventsController } from './telemetry/client-product-events
     HealthController,
     SavesController,
     ClientProductEventsController,
+    PrivacyController,
   ],
   providers: [
     SaveAnalysisService,

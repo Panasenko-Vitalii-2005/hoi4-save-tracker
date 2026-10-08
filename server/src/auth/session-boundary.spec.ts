@@ -13,6 +13,7 @@ import { RecentAnalysesService } from '../analyze/recent-analyses.service';
 import { AnalysisOwnershipService } from '../analyze/analysis-ownership.service';
 import { SharedAnalysesService } from '../analyze/shared-analyses.service';
 import { ProductEventsService } from '../telemetry/product-events.service';
+import { PrivacyController } from '../privacy/privacy.controller';
 import { DatabaseService } from '../database/database.service';
 import { configureHttpSecurity } from '../http-security';
 import { HealthController } from '../records/records.controller';
@@ -99,6 +100,7 @@ describe('HTTP session security boundary', () => {
         SecurityTestController,
         HealthController,
         SharedAnalysesController,
+        PrivacyController,
       ],
       providers: [
         {
@@ -246,6 +248,34 @@ describe('HTTP session security boundary', () => {
       /postgres|database|sql|host|port|credential|secret/i,
     );
   });
+
+  test('privacy contact is public, no-store, and exposes no account/server secrets', async () => {
+    const before = process.env.HOI4_SUPPORT_EMAIL;
+    try {
+      delete process.env.HOI4_SUPPORT_EMAIL;
+      const response = await request(app.getHttpServer())
+        .get('/api/privacy')
+        .expect(200, { supportEmail: null });
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(auth.authenticateSession).not.toHaveBeenCalled();
+    } finally {
+      if (before !== undefined) process.env.HOI4_SUPPORT_EMAIL = before;
+    }
+  });
+
+  test.each(['recover', 'reset-password', 'disable', 'delete-account'])(
+    'no email-address-only or logged-in public %s capability is exposed',
+    async (action) => {
+      const token = await csrf();
+      await request(app.getHttpServer())
+        .post(`/api/auth/${action}`)
+        .set('Origin', ORIGIN)
+        .set('Cookie', authenticatedCookie(token.cookie))
+        .set('X-CSRF-Token', token.token)
+        .send({ email: 'another@example.invalid', userId: USER.id })
+        .expect(404);
+    },
+  );
 
   test('CSRF bootstrap creates a readable, independent hardened cookie', async () => {
     const value = await csrf();

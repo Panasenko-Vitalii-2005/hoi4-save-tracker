@@ -167,7 +167,6 @@ describe('computed result versus durable owned persistence', () => {
     await expect(
       new SharedAnalysesController(
         shares,
-        recent,
         ownership,
         {} as ProductEventsService,
       ).create(user, response.hash),
