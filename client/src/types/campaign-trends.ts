@@ -55,7 +55,9 @@ export interface CampaignEquipmentTrendDefinition {
   equipmentDefinition: string;
   stockpileBalance: (number | null)[];
   activeFactories: (number | null)[];
+  /** Legacy ID: saved-derived speed/cost rates, not realized output. */
   currentItemsPerDay: (number | null)[];
+  /** Saved-rate data coverage, not runtime validation. */
   productionRateComplete: (boolean | null)[];
 }
 

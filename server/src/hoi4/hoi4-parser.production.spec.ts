@@ -210,7 +210,7 @@ describe('analyzeSave military production integration', () => {
     expect(summary.activeFactories).toBe(0);
   });
 
-  test('publishes current items per day', () => {
+  test('publishes legacy saved-derived items per day', () => {
     const line =
       oneLineResult().militaryProductionSummaries[0].definitions[0].lines[0];
 
@@ -251,7 +251,7 @@ describe('analyzeSave military production integration', () => {
     });
   });
 
-  test('publishes only exact positive resource shortages', () => {
+  test('publishes only positive raw saved need diagnostics', () => {
     const line =
       oneLineResult().militaryProductionSummaries[0].definitions[0].lines[0];
 
@@ -261,7 +261,7 @@ describe('analyzeSave military production integration', () => {
     ]);
   });
 
-  test('does not report a shortage when every need is zero', () => {
+  test('keeps legacy diagnostics empty when saved need is zero, without proving sufficient supply', () => {
     const line = analyzeText(
       productionSave(country('D04', MISSING_OPTIONALS_LINE)),
     ).militaryProductionSummaries[0].definitions[0].lines[0];

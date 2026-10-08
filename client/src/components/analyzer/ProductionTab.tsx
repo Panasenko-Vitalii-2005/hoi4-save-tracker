@@ -111,11 +111,7 @@ export function ProductionTab({
       </div>
       <footer className="production-note">
         <strong>{t("production.snapshot")}</strong>
-        <span>
-          Land and air production lines only; rates are current estimates from
-          this save and do not represent production history or factory
-          ownership.
-        </span>
+        <span>{t("production.semantics")}</span>
       </footer>
     </>
   );

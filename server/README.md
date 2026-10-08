@@ -24,6 +24,14 @@ npm run start:prod
 
 `start:prod` expects the Nest build output at `dist/src/main.js`.
 
+Production API compatibility: `militaryProductionSummaries`, Compare and Trends
+retain legacy keys. `currentItemsPerDay` means saved `speed / cost`, not verified
+realized output; `resourceShortages` / flags / counts mean positive saved `need`
+diagnostics only. Empty lists never confirm sufficient supply. Missing rates
+stay null and completeness refers to saved-rate coverage. See
+[Production semantics](../docs/production-semantics.md) for exact field meanings
+and the controlled PaK 44 evidence. No runtime reconstruction is performed.
+
 ## Test
 
 ```bash

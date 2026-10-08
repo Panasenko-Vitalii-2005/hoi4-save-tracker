@@ -129,7 +129,9 @@ function deriveEfficiencies(
   };
 }
 
-function deriveResourceShortages(
+// Keep the legacy DTO shape, but this is a raw positive-need diagnostic only.
+// PaK 44 controls have identical need=0 with different runtime supply/output.
+function derivePositiveSavedNeedEntries(
   record: ParsedMilitaryProductionLine,
 ): ProductionResourceShortage[] {
   return record.resources
@@ -147,8 +149,9 @@ function deriveLine(
 ): DerivedMilitaryProductionLine {
   const warnings = [...record.warnings];
   const efficiencies = deriveEfficiencies(record, warnings);
-  const resourceShortages = deriveResourceShortages(record);
+  const resourceShortages = derivePositiveSavedNeedEntries(record);
   const validCost = isPositiveFiniteNumber(record.cost) ? record.cost : null;
+  // Historical arithmetic is preserved. No runtime penalty/supply is inferred.
   const currentItemsPerDay =
     validCost !== null && isPositiveFiniteNumber(record.speed)
       ? record.speed / validCost

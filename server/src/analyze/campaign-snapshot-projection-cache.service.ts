@@ -117,8 +117,8 @@ function trendCountries(result: AnalyzeResult): CampaignTrendCountry[] {
  * Project the definition-level equipment values for every country in one pass.
  * The merge rules are identical to the original Campaign Trends projection:
  * definition identity is the exact string, all sums use finite-number add,
- * and the production rate is available only when every contributing line is
- * complete and finite.
+ * and the saved-derived speed/cost rate is available only with complete,
+ * finite rate coverage. Completeness does not verify realized runtime output.
  */
 export function projectEquipmentCountries(
   result: AnalyzeResult,

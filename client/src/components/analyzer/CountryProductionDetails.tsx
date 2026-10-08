@@ -26,7 +26,13 @@ function DefinitionRate({
 }) {
   const { t } = useAppTranslation();
   if (definition.outputComplete) {
-    return <>{t("production.perDay", { value: formatProductionRate(definition.currentItemsPerDay) })}</>;
+    return (
+      <>
+        {t("production.perDay", {
+          value: formatProductionRate(definition.currentItemsPerDay),
+        })}
+      </>
+    );
   }
 
   const hasKnownRate = definition.lines.some(
@@ -35,9 +41,13 @@ function DefinitionRate({
   return (
     <>
       {hasKnownRate
-        ? t("production.perDay", { value: formatProductionRate(definition.knownCurrentItemsPerDay) })
+        ? t("production.perDay", {
+            value: formatProductionRate(definition.knownCurrentItemsPerDay),
+          })
         : t("common.unavailable")}
-      <span className="production-cell-note">{t("production.someUnavailable")}</span>
+      <span className="production-cell-note">
+        {t("production.someUnavailable")}
+      </span>
     </>
   );
 }
@@ -87,7 +97,7 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
               <CountryDisplay tag={country.countryTag} />
             </h2>
             <div className="micro-copy">
-              Current land and air military production lines
+              {t("production.detailDescription")}
             </div>
           </div>
         </div>
@@ -101,14 +111,12 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
           ))}
         </dl>
 
-        <p className="micro-copy">
-          Effective military factories and production-line factory slots are
-          separate save concepts and do not necessarily reconcile.
-        </p>
+        <p className="micro-copy">{t("production.factoryCaveat")}</p>
+        <p className="micro-copy">{t("production.semantics")}</p>
 
         {country.definitions.length === 0 ? (
           <div className="production-inner-empty">
-            No resolved equipment definitions were found for this country.
+            {t("production.noDefinitions")}
           </div>
         ) : (
           <div className="table-wrap production-definition-wrap">
@@ -117,8 +125,12 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
                 <tr>
                   <th>{t("production.equipment")}</th>
                   <th className="numeric-cell">{t("production.lines")}</th>
-                  <th className="numeric-cell">{t("production.activeRequested")}</th>
-                  <th className="numeric-cell">{t("production.currentRate")}</th>
+                  <th className="numeric-cell">
+                    {t("production.activeRequested")}
+                  </th>
+                  <th className="numeric-cell">
+                    {t("production.currentRate")}
+                  </th>
                   <th className="numeric-cell">{t("production.shortage")}</th>
                 </tr>
               </thead>
@@ -132,7 +144,11 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
                       key={definition.equipmentDefinition}
                       className={selected ? "selected" : ""}
                       aria-selected={selected}
-                      aria-label={`Inspect ${formatEquipmentDefinition(definition.equipmentDefinition)} production lines`}
+                      aria-label={t("production.inspectDefinition", {
+                        definition: formatEquipmentDefinition(
+                          definition.equipmentDefinition,
+                        ),
+                      })}
                       onClick={() =>
                         onSelectDefinition(definition.equipmentDefinition)
                       }
@@ -164,12 +180,12 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
                           definition.damagedFactories !== 0) && (
                           <span className="production-cell-note">
                             {definition.queuedFactories !== 0 &&
-                              `Queued: ${definition.queuedFactories.toLocaleString()}`}
+                              `${t("production.queued")}: ${definition.queuedFactories.toLocaleString()}`}
                             {definition.queuedFactories !== 0 &&
                               definition.damagedFactories !== 0 &&
                               " · "}
                             {definition.damagedFactories !== 0 &&
-                              `Damaged: ${definition.damagedFactories.toLocaleString()}`}
+                              `${t("production.damaged")}: ${definition.damagedFactories.toLocaleString()}`}
                           </span>
                         )}
                       </td>
@@ -180,12 +196,12 @@ export const CountryProductionDetails = memo(function CountryProductionDetails({
                         {definition.resourceShortageLineCount > 0 ? (
                           <span className="production-shortage-badge">
                             {definition.resourceShortageLineCount.toLocaleString()}{" "}
-                            {definition.resourceShortageLineCount === 1
-                              ? "line"
-                              : "lines"}
+                            {t("production.lines")}
                           </span>
                         ) : (
-                          <span className="production-resource-none">{t("common.none")}</span>
+                          <span className="production-resource-none">
+                            {t("production.noPositiveNeed")}
+                          </span>
                         )}
                       </td>
                     </tr>

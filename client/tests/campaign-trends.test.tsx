@@ -488,11 +488,31 @@ describe("Campaign Trends", () => {
     await act(async () => equipmentButton.click());
     await choose(select("Equipment metric"), "currentItemsPerDay");
     expect(traces()[0].y).toEqual([1.5, null, null]);
-    expect(traces()[0].customdata[1]).toContain("Incomplete rate");
-    expect(text()).toContain("1 production-rate snapshot is incomplete");
+    expect(traces()[0].customdata[1]).toContain("Incomplete saved-derived rate");
+    expect(text()).toContain("1 saved-derived rate snapshot is incomplete");
+    expect(traces()[0].name).toBe("Saved-derived production rate/day");
+    expect(traces()[0].hovertemplate).toContain("Saved-derived production rate/day");
+    expect(text()).toContain("not verified realized output");
+    expect(text()).toContain("Complete coverage means all saved-derived rates are known, not runtime validation");
+    expect(select("Equipment metric").value).toBe("currentItemsPerDay");
 
     await choose(select("Equipment metric"), "activeFactories");
     expect(traces()[0].y).toEqual([0, 4, null]);
+  });
+
+  test("Russian equipment rate legend, hover and coverage qualify saved arithmetic without changing metric ID", async () => {
+    await i18n.changeLanguage("ru");
+    await render();
+    const equipmentButton = [...container.querySelectorAll("button")].find(button => button.textContent === "Оснащение")!;
+    await act(async () => equipmentButton.click());
+    await choose(select("Показатель оснащения"), "currentItemsPerDay");
+    expect(traces()[0].name).toBe("Темп по данным сохранения в день");
+    expect(traces()[0].hovertemplate).toContain("Темп по данным сохранения в день");
+    expect(traces()[0].y).toEqual([1.5, null, null]);
+    expect(traces()[0].customdata[1]).toContain("Неполный расчётный темп");
+    expect(text()).toContain("не измеренный фактический выпуск");
+    expect(text()).toContain("а не проверку в игре");
+    expect(select("Показатель оснащения").value).toBe("currentItemsPerDay");
   });
 
   test("keeps unknown definitions selectable and same readable labels distinct by exact identity", async () => {

@@ -21,7 +21,7 @@ export const CountryProductionTable = memo(function CountryProductionTable({
       <div className="panel-head">
         <h2>{t("production.countries")}</h2>
         <div className="micro-copy">
-          {countries.length.toLocaleString()} with current production
+          {t("production.countriesWithLines", { count: countries.length })}
         </div>
       </div>
       <div className="table-wrap">
@@ -29,7 +29,9 @@ export const CountryProductionTable = memo(function CountryProductionTable({
           <thead>
             <tr>
               <th>{t("common.country")}</th>
-              <th className="numeric-cell">{t("production.activeFactories")}</th>
+              <th className="numeric-cell">
+                {t("production.activeFactories")}
+              </th>
               <th className="numeric-cell">{t("production.lines")}</th>
             </tr>
           </thead>
@@ -42,7 +44,7 @@ export const CountryProductionTable = memo(function CountryProductionTable({
                   key={country.countryTag}
                   className={selected ? "selected" : ""}
                   aria-selected={selected}
-                  aria-label={`Inspect ${name} current military production`}
+                  aria-label={t("production.inspectCountry", { country: name })}
                   onClick={() => onSelect(country.countryTag)}
                   tabIndex={0}
                   onKeyDown={(event) => {

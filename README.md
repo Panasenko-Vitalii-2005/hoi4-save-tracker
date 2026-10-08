@@ -36,7 +36,7 @@ The analyzer presents strategic totals and per-country data, plus focused views 
 - bilateral war-casualty records;
 - recoverable naval-loss events and conservatively credited kills;
 - national stockpiles and exact equipment designs;
-- current land/air military production lines, rates, efficiency, and shortages;
+- saved land/air production lines, saved-derived rates, raw efficiency, and resource diagnostics (not runtime shortage/output measurements);
 - divisions, templates, equipment, manpower components, and army hierarchy.
 
 ### Campaign workflow

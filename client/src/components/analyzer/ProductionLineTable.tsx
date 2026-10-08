@@ -2,7 +2,6 @@ import { memo } from "react";
 import type {
   MilitaryProductionDefinitionSummary,
   MilitaryProductionLineSummary,
-  ProductionResourceShortage,
 } from "@/types";
 import {
   formatCountryDisplayName,
@@ -23,12 +22,6 @@ function lineKey(line: MilitaryProductionLineSummary, index: number): string {
   return `${lineReference}-${equipmentReference}-${index}`;
 }
 
-function shortageLabel(shortage: ProductionResourceShortage): string {
-  return shortage.resource
-    ? formatEquipmentDefinition(shortage.resource)
-    : "Unknown resource";
-}
-
 function DesignCell({
   line,
   unresolved,
@@ -43,24 +36,29 @@ function DesignCell({
     <td className="design-cell">
       <strong>
         {unresolved
-          ? `Unresolved production line ${index + 1}`
+          ? t("production.unresolvedLine", { index: index + 1 })
           : line.variantName?.trim() || t("production.unnamedDesign")}
       </strong>
-      {line.obsolete && <span className="production-obsolete">{t("common.obsolete")}</span>}
+      {line.obsolete && (
+        <span className="production-obsolete">{t("common.obsolete")}</span>
+      )}
       {!line.complete && (
-        <span className="production-partial">{t("production.partialData")}</span>
+        <span className="production-partial">
+          {t("production.partialData")}
+        </span>
       )}
       {!unresolved && (
         <span className="production-line-meta">
-          {line.version !== null && `Version ${line.version}`}
+          {line.version !== null &&
+            `${t("production.version")} ${line.version}`}
           {line.version !== null && line.creatorTag && " · "}
           {line.creatorTag &&
-            `Creator: ${formatCountryDisplayName(line.creatorTag)}`}
+            `${t("stockpile.creator")}: ${formatCountryDisplayName(line.creatorTag)}`}
           {(line.version !== null || line.creatorTag) &&
             line.originTag &&
             " · "}
           {line.originTag &&
-            `Origin: ${formatCountryDisplayName(line.originTag)}`}
+            `${t("stockpile.origin")}: ${formatCountryDisplayName(line.originTag)}`}
         </span>
       )}
     </td>
@@ -68,6 +66,7 @@ function DesignCell({
 }
 
 function FactoriesCell({ line }: { line: MilitaryProductionLineSummary }) {
+  const { t } = useAppTranslation();
   return (
     <td className="numeric-cell production-factories-cell">
       <strong>
@@ -79,7 +78,7 @@ function FactoriesCell({ line }: { line: MilitaryProductionLineSummary }) {
         <span className="production-cell-note">
           {line.queuedFactories !== null &&
             line.queuedFactories !== 0 &&
-            `Queued: ${formatProductionValue(line.queuedFactories)}`}
+            `${t("production.queued")}: ${formatProductionValue(line.queuedFactories)}`}
           {line.queuedFactories !== null &&
             line.queuedFactories !== 0 &&
             line.damagedFactories !== null &&
@@ -87,7 +86,7 @@ function FactoriesCell({ line }: { line: MilitaryProductionLineSummary }) {
             " · "}
           {line.damagedFactories !== null &&
             line.damagedFactories !== 0 &&
-            `Damaged: ${formatProductionValue(line.damagedFactories)}`}
+            `${t("production.damaged")}: ${formatProductionValue(line.damagedFactories)}`}
         </span>
       ) : null}
     </td>
@@ -95,17 +94,16 @@ function FactoriesCell({ line }: { line: MilitaryProductionLineSummary }) {
 }
 
 function EfficiencyCell({ line }: { line: MilitaryProductionLineSummary }) {
+  const { t } = useAppTranslation();
   const hasRange =
     line.activeEfficiencyMin !== null && line.activeEfficiencyMax !== null;
   return (
-    <td
-      className="numeric-cell"
-      title="Average efficiency value across active factory slots, using HOI4's stored scale."
-    >
+    <td className="numeric-cell" title={t("production.efficiencyHint")}>
       {formatProductionValue(line.activeEfficiencyAverage)}
       {hasRange && (
         <span className="production-cell-note">
-          Range {formatProductionValue(line.activeEfficiencyMin)}–
+          {t("production.range")}{" "}
+          {formatProductionValue(line.activeEfficiencyMin)}–
           {formatProductionValue(line.activeEfficiencyMax)}
         </span>
       )}
@@ -115,21 +113,32 @@ function EfficiencyCell({ line }: { line: MilitaryProductionLineSummary }) {
 
 function ResourceCell({ line }: { line: MilitaryProductionLineSummary }) {
   const { t } = useAppTranslation();
-  if (!line.hasResourceShortage) {
-    return <td className="production-resource-none">{t("common.none")}</td>;
+  if (line.resourceShortages.length === 0) {
+    return (
+      <td className="production-resource-none" title={t("production.needHint")}>
+        {t("production.noPositiveNeed")}
+      </td>
+    );
   }
 
   return (
-    <td className="production-resource-warning">
+    <td title={t("production.needHint")}>
       {line.resourceShortages.map((shortage, index) => (
         <span
           className="production-shortage-item"
           key={`${shortage.resource ?? "unknown"}-${index}`}
         >
-          <strong>{shortageLabel(shortage)}</strong>
+          <strong>
+            {shortage.resource
+              ? t(`economy.resources.${shortage.resource}`, {
+                  defaultValue: formatEquipmentDefinition(shortage.resource),
+                })
+              : t("production.unknownResource")}
+          </strong>
           <span>
-            Available: {formatProductionValue(shortage.amount)} · Need:{" "}
-            {formatProductionValue(shortage.need)}
+            {t("production.savedDemand")}:{" "}
+            {formatProductionValue(shortage.amount)} ·{" "}
+            {t("production.savedNeed")}: {formatProductionValue(shortage.need)}
           </span>
         </span>
       ))}
@@ -166,12 +175,11 @@ function LinesTable({
               <td className="numeric-cell">
                 {line.currentItemsPerDay === null
                   ? "—"
-                  : t("production.perDay", { value: formatProductionRate(line.currentItemsPerDay) })}
+                  : t("production.perDay", {
+                      value: formatProductionRate(line.currentItemsPerDay),
+                    })}
               </td>
-              <td
-                className="numeric-cell"
-                title="Progress toward the next completed item"
-              >
+              <td className="numeric-cell" title={t("production.progressHint")}>
                 {formatProductionProgress(line.progressFraction)}
               </td>
               <EfficiencyCell line={line} />
@@ -197,7 +205,7 @@ export const ProductionLineTable = memo(function ProductionLineTable({
       <section className="panel production-line-panel">
         {!definition ? (
           <div className="production-inner-empty">
-            Select an equipment definition to inspect its current lines.
+            {t("production.selectDefinition")}
           </div>
         ) : (
           <>
@@ -222,10 +230,7 @@ export const ProductionLineTable = memo(function ProductionLineTable({
           <div className="panel-head">
             <div>
               <h2>{t("production.unresolvedLines")}</h2>
-              <div className="micro-copy">
-                Equipment definition metadata is unavailable. Raw identifiers
-                are intentionally hidden.
-              </div>
+              <div className="micro-copy">{t("production.unresolvedHint")}</div>
             </div>
           </div>
           <LinesTable lines={unresolvedLines} unresolved />

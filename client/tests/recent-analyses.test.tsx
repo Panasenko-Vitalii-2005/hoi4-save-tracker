@@ -615,18 +615,18 @@ describe("Recent Analyses", () => {
         .click(),
     );
     assertCountrySelection(
-      "Inspect Germany current military production",
+      "Inspect Germany saved military production",
       "true",
     );
     await act(async () =>
       container
         .querySelector<HTMLElement>(
-          '[aria-label="Inspect Afghanistan current military production"]',
+          '[aria-label="Inspect Afghanistan saved military production"]',
         )!
         .click(),
     );
     assertCountrySelection(
-      "Inspect Afghanistan current military production",
+      "Inspect Afghanistan saved military production",
       "true",
     );
 

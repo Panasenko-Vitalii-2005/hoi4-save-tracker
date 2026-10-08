@@ -250,9 +250,12 @@ export interface CountryStockpileSummary {
   unresolvedVariants: UnresolvedStockpileVariantSummary[];
 }
 
+/** Legacy positive-saved-need diagnostic, not an authoritative shortage. */
 export interface ProductionResourceShortage {
   resource: string | null;
+  /** Saved nominal demand, not current supply. */
   amount: number | null;
+  /** Raw saved diagnostic; runtime meaning is unverified. */
   need: number;
 }
 
@@ -274,11 +277,13 @@ export interface MilitaryProductionLineSummary {
   effectiveActiveFactories: number;
   effectiveQueuedFactories: number;
   effectiveDamagedFactories: number;
+  /** Legacy name: saved speed / cost, not verified realized output. */
   currentItemsPerDay: number | null;
   progressFraction: number | null;
   activeEfficiencyAverage: number | null;
   activeEfficiencyMin: number | null;
   activeEfficiencyMax: number | null;
+  /** Legacy flag: any positive saved need entry, not runtime shortage. */
   hasResourceShortage: boolean;
   resourceShortages: ProductionResourceShortage[];
   industrialManufacturerRef: EquipmentRef | null;
@@ -293,8 +298,10 @@ export interface MilitaryProductionDefinitionSummary {
   activeFactories: number;
   queuedFactories: number;
   damagedFactories: number;
+  /** Complete sum of saved-derived rates; null if any line rate is unknown. */
   currentItemsPerDay: number | null;
   knownCurrentItemsPerDay: number;
+  /** Saved-rate coverage only, not verified runtime output. */
   outputComplete: boolean;
   resourceShortageLineCount: number;
   lines: MilitaryProductionLineSummary[];

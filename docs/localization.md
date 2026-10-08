@@ -30,3 +30,10 @@ telemetry event names and section identifiers, database values, country tags,
 country/equipment/division names, campaign labels, and all other save-derived
 game data remain unchanged. Stable backend error codes are mapped to localized
 messages only at the frontend presentation boundary.
+
+Production terminology in both EN/RU explicitly distinguishes saved-derived
+`speed / cost` rates from realized output, saved nominal demand from supplied
+resources, and raw positive-`need` diagnostics from verified shortages. Empty
+diagnostics do not guarantee sufficient supply. Compare and Trends use the same
+qualification (including chart legends/hover and coverage notes); legacy metric
+and telemetry IDs are unchanged. See [Production semantics](production-semantics.md).

@@ -11,6 +11,7 @@ export interface StockpileDefinitionComparison {
   balance: NumericDiff;
 }
 
+/** Differences of saved-derived speed/cost rates, not realized output changes. */
 export interface ProductionRateComparison extends NumericDiff {
   baseComplete: boolean | null;
   targetComplete: boolean | null;

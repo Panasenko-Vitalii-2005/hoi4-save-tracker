@@ -1,5 +1,16 @@
 # Equipment & Production Data Audit
 
+## B1 correction: historical interpretation superseded
+
+This is a historical audit of the three original campaign saves, not proof of
+runtime supply/output. The later controlled PaK 44 A/B evidence supersedes all
+interpretations here of `amount` as available supply, `need` as verified shortage,
+and `speed / cost` as universally realized output. Numeric observations and
+temporal coincidences below remain historical evidence, not general guarantees.
+Use [Production saved-state semantics](production-semantics.md) for the current
+API/UI contract. Compare and Trends now consume the legacy saved-derived rate
+without claiming runtime output; the earlier roadmap below is historical.
+
 ## Scope and verdict
 
 This audit is based on the current repository implementation and the real saves
@@ -13,10 +24,10 @@ and current-production view. It can safely expose:
   equipment definition;
 - equipment currently present in canonical land divisions;
 - current land/air military-production line allocation;
-- current output rate, next-item progress, raw active-slot efficiency, and
-  exact resource-shortage records;
+- saved-derived rate, saved progress, raw active-slot efficiency, and
+  positive raw saved-need diagnostics (not verified resource shortages);
 - snapshot-to-snapshot changes of definition-level stockpile balances,
-  allocation, and complete current output rates.
+  allocation, and complete saved-derived rates.
 
 It cannot currently produce a trustworthy country equipment demand, equipment
 deficit/surplus, efficiency cap, lifetime production, resource-loss
@@ -85,10 +96,9 @@ The equipment registry, stockpile parser, production parser, and division
 parser all reuse the decoded save, top-level structural index, country
 production index, and equipment registry in the integrated path.
 
-The current Compare DTO contains only strategic country/totals metrics. The
-current Campaign Trends DTO contains strategic global/country metrics. Neither
-currently projects stockpile or production data, even though the persisted
-`AnalyzeResult` contains it.
+At the time of this historical audit, Compare and Campaign Trends only
+projected strategic metrics. They now also project stockpile and saved-derived
+production data from persisted `AnalyzeResult`, with B1 qualifications.
 
 ### Public fields already exposed
 
@@ -98,8 +108,8 @@ state, and unresolved entries.
 
 `AnalyzeResult.militaryProductionSummaries` exposes country and definition
 totals plus each line's line/equipment references, design metadata, priority,
-requested/active/queued/damaged factories, current items/day, next-item
-progress, active-slot efficiency average/min/max, resource shortages,
+requested/active/queued/damaged factories, saved-derived items/day, saved
+progress, active-slot efficiency average/min/max, positive saved-need diagnostics,
 manufacturer reference, completeness, and warnings.
 
 `AnalyzeResult.divisionSummaries` exposes each canonical division's exact
@@ -278,9 +288,9 @@ cap, or modifier breakdown is present.
 | Damaged factories | `damaged_factories` | absent/null | Damaged allocation when serialized | High |
 | Current progress numerator | `produced` | `1.60678` | Work accumulated toward the next item | High after temporal validation |
 | Cost | `cost` | `10.5925` | Current line item cost denominator | High as raw state |
-| Current speed | `speed` | `34.6725` | Current production work per day after runtime effects | High after temporal validation |
+| Saved speed | `speed` | `34.6725` | Serialized line speed; not guaranteed post-shortage work | Earlier runtime interpretation superseded |
 | Efficiency slots | `factory_efficiencies` | first four values are `115` | Per-factory raw HOI4-scale efficiency values | High as raw state |
-| Resources | `resources` | steel `amount=8 need=0`; chromium `4/0` | Allocated/available amount and unmet need for the line | High for `need > 0` signal |
+| Resources | `resources` | steel `amount=8 need=0`; chromium `4/0` | Nominal demand and raw need diagnostic, not current supply/shortage | Earlier runtime interpretation superseded |
 | Manufacturer | `industrial_manufacturer` | `79:9` | Exact manufacturer reference, without resolved effect breakdown | High as reference |
 | `amount` | `amount` | `-1` | Sentinel/configuration state; **not** output count | High |
 
@@ -292,12 +302,12 @@ definition factory totals use documented effective zeroes for missing optional
 factory fields. In the control save:
 
 - 604 lines and 604 definition summaries across 114 countries;
-- 535 lines have a current rate and 69 do not;
+- 535 lines have a saved-derived rate and 69 do not;
 - 590 lines have next-item progress and 14 do not;
 - 67 lines have no active factory count;
 - 80 lines have non-zero queued factories (135 total);
 - 3 lines have damaged factories (3 total);
-- 74 lines have exact resource-shortage signals;
+- 74 lines have positive saved-need entries (not verified runtime shortages);
 - all equipment references resolve in this save.
 
 Production covers current land/air `military_lines`. Naval construction and
@@ -351,7 +361,7 @@ must not be promoted as fact. A UI may accurately answer **where recorded
 production-line slots are allocated**, but must not calculate `unused MIL =
 effective MIL - active` or an allocation percentage against effective MIL.
 
-## Current output/day and progress
+## Saved-derived rate/day and progress
 
 The current parser derives:
 
@@ -365,7 +375,7 @@ it is never converted to zero. Definition output is complete only when every
 line has a known rate; otherwise the API exposes a known partial sum and marks
 the aggregate incomplete.
 
-Panzer II proves both formulas:
+Panzer II supports the saved arithmetic in that example:
 
 ```text
 34.6725 / 10.5925 = 3.2733065848477696 items/day
@@ -380,9 +390,11 @@ Temporal validation is exact:
 - save 100 progress plus 31 May days has fractional remainder
   `0.6241944772244513`, exactly save 101.
 
-This makes current items/day **EXACTLY DERIVABLE** snapshot state, not an
-approximation. It is not realized historical output and must not be summed
-across unlike equipment definitions.
+The saved arithmetic is **EXACTLY DERIVABLE**, but the earlier interpretation
+as universally current runtime output is superseded. PaK 44 A/B has identical
+saved speed/cost and different observed output. The temporal Panzer II matches
+above cannot validate realized output for every line. Rates must not be summed
+across unlike equipment definitions or integrated into realized history.
 
 `produced` wraps as items complete, as the adjacent progress values show. The
 save line has no lifetime counter. Total produced between arbitrary saves is
@@ -410,27 +422,30 @@ composition not present in the current production contract.
 Safe UI wording is **raw HOI4 efficiency value across active factory slots**.
 The raw average/range is safe; an exact cap or normalized percentage is not.
 
-## Resource shortage and penalty
+## Raw resource diagnostics; shortage and penalty unresolved
 
 Each line's `resources` entries contain `resource`, `amount`, and `need`.
-`need > 0` is a direct, line-specific shortage signal. For example, control
+`amount` is saved nominal demand; `need` is a raw diagnostic whose runtime
+meaning is unverified. Positive `need` is not a verified shortage detector,
+and zero `need` does not establish sufficient supply. For example, control
 save BOL has:
 
 - anti-tank equipment 2: chromium `amount=0`, `need=1`;
 - motorized equipment 1: rubber `amount=0`, `need=2`;
 - support equipment 1: aluminium `amount=0`, `need=3`.
 
-GER Panzer II has steel `8/0` and chromium `4/0`, so it has no recorded
-resource shortage. The current UI correctly shows exact amount/need values and
-does not invent severity.
+GER Panzer II has steel `8/0` and chromium `4/0`, so its legacy positive-need
+list is empty. This is not evidence of no runtime shortage. The UI now labels
+retained entries as saved nominal demand / raw need, never available supply.
 
-The save's `speed` is the current post-runtime line speed, but there is no
-line-local counterfactual speed without shortages and no exact penalty scalar.
+The earlier claim that `speed` is universally post-shortage speed is rejected
+by the PaK 44 controls. There is no validated line-local counterfactual speed
+or exact penalty scalar in this contract.
 Resource substitution, country modifiers, manufacturer effects, and game
 defines are not decomposed by the parser. Therefore:
 
-- **Production limited by resources:** safe when any exact `need > 0` exists;
-- exact missing resources: safe;
+- **Production limited by resources:** not safe to infer from `need`;
+- exact missing resources/current supply: not reconstructable from these fields;
 - exact percentage of output lost to resources: unsupported;
 - a resource bottleneck score: unsupported.
 
@@ -551,8 +566,8 @@ net balance change affected by multiple flows, not historical production.
 - comparisons must surface incomplete output rather than substitute zero.
 
 Safe Compare metrics are stockpile-balance delta, active/requested/queued/
-damaged factory delta by exact definition, complete current-rate delta, and
-resource-shortage state/need changes. They are snapshot differences, not
+damaged factory delta by exact definition, complete saved-derived rate delta, and
+raw positive-need diagnostic changes. They are snapshot differences, not
 production, consumption, or equipment loss between saves.
 
 ## Campaign Trends suitability
@@ -563,7 +578,7 @@ country:
 - stockpile balance by exact definition;
 - active/requested production slots by exact definition;
 - current items/day by exact definition, with completeness retained;
-- resource-shortage line count or exact resource need for a selected
+- positive saved-need line count or raw saved need for a selected
   definition.
 
 Exact variant and line-ref trends are high-cardinality and susceptible to
@@ -631,10 +646,10 @@ This is practical without changing persistence or reparsing saves.
 | Unused MIL | Inputs exist but are non-conserved | Separate runtime values | No universal subtraction | High negative finding | No formula fix known | No | No | No | No | No |
 | Raw production efficiency | Yes | Direct per-slot array; summary published | Yes, active-slot avg/min/max | High as raw scale | No | No | Yes | With completeness caveat | With weighting caveat | Yes, line level |
 | Efficiency cap / normalized percent | No | No direct line cap | No | High negative finding | Yes plus game rules | Yes if approved | No | No | No | No |
-| Current daily output | Yes | `speed` and `cost` | Exactly `speed / cost` when valid | High | No | No | Yes | Yes by definition | Yes by definition | Yes |
+| Saved-derived daily rate | Yes | `speed` and `cost` | Exactly `speed / cost` when valid, not realized output | High for arithmetic only | No | No | Yes, qualified | Yes by definition | Yes by definition | Yes, qualified |
 | Lifetime/total produced | No | `amount=-1`; progress wraps | No | High negative finding | Unknown/external history | Yes | No | No | No | No |
 | Next-item production progress | Yes | `produced`, `cost` | Exactly `produced / cost` | High | No | No | Yes | Snapshot-only | No (cyclic) | Yes |
-| Resource-shortage signal | Yes | `resources.need > 0` | Yes | High | No | No | Yes | Yes | Selected definition | Yes |
+| Positive saved-need diagnostic | Yes | `resources.need > 0` | Yes, not verified shortage | Runtime interpretation superseded | No | No | Yes, qualified | Raw diagnostic only | Not runtime validation | Yes, qualified |
 | Exact resource output penalty | No | No counterfactual speed/penalty scalar | No | High negative finding | Yes plus game rules | Yes | No | No | No | No |
 | Current canonical division equipment | Yes | Direct division equipment | Yes, present amount only | High | No | No | Yes, clearly scoped | Yes, snapshot delta | Selected definition, caveat | Optional MVP |
 | Full deployed equipment across all land subsystems | No | Split across divisions/garrisons/queues | Not currently | Medium | Yes | Yes | No | No | No | No |
@@ -662,7 +677,7 @@ This is practical without changing persistence or reparsing saves.
   from normalized division data and clearly excluding stockpile, garrisons,
   air, and navy.
 - Add Compare projections using `Target - Base` for definition-level stockpile
-  balance, factory slots, complete current rate, and resource-shortage state.
+  balance, factory slots, complete saved-derived rate, and raw need diagnostics.
 - Add bounded Campaign Trends for a selected country and a small number of
   exact definitions. Reuse persisted results; do not reparse saves.
 - Preserve raw definitions and unknown/modded strings. Never classify them by
@@ -717,8 +732,8 @@ composition of already public, proven data rather than a new parser:
    - exact design drilldown with ref-backed identity, name/version,
      creator/origin, obsolete state, signed amount.
 3. **Current production allocation**
-   - exact definition, active/requested slots, complete/known current rate,
-     shortage-line count;
+   - exact definition, active/requested slots, complete/known saved-derived rate,
+     positive saved-need line count;
    - exact line drilldown with design, queued/damaged, next-item progress, raw
      efficiency average/range, exact resource amount/need.
 4. **Optional current division equipment**
@@ -731,7 +746,7 @@ composition of already public, proven data rather than a new parser:
    - retain null/incomplete states and exact additions/removals.
 6. **Trends**
    - selected country plus a bounded selection of exact definitions;
-   - stockpile balance, active/requested slots, and complete current rate;
+   - stockpile balance, active/requested slots, and complete saved-derived rate;
    - compact server DTO built from existing persisted AnalyzeResults.
 
 No parser behavior or `AnalyzeResult` shape is required for this MVP. Compare

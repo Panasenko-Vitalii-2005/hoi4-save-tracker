@@ -166,7 +166,7 @@ describe('aggregateMilitaryProduction', () => {
     });
   });
 
-  test('derives current items per day from speed and cost', () => {
+  test('derives the legacy saved-state rate from speed and cost, not realized output', () => {
     const line = aggregateMilitaryProduction([
       productionLine({ speed: 9, cost: 4 }),
     ])[0].definitions[0].lines[0];
@@ -274,7 +274,7 @@ describe('aggregateMilitaryProduction', () => {
     },
   );
 
-  test('detects a positive resource shortage', () => {
+  test('preserves a positive saved need diagnostic without verifying runtime shortage', () => {
     const line = aggregateMilitaryProduction([
       productionLine({
         resources: [{ resource: 'steel', amount: 2, need: 1, warnings: [] }],
@@ -287,7 +287,7 @@ describe('aggregateMilitaryProduction', () => {
     ]);
   });
 
-  test('preserves multiple shortages in source order', () => {
+  test('preserves multiple positive saved need entries in source order', () => {
     const line = aggregateMilitaryProduction([
       productionLine({
         resources: [
@@ -303,7 +303,7 @@ describe('aggregateMilitaryProduction', () => {
     ]);
   });
 
-  test('does not treat need=0 as a shortage', () => {
+  test('need=0 leaves the legacy diagnostic empty, without establishing sufficient supply', () => {
     const line = aggregateMilitaryProduction([productionLine()])[0]
       .definitions[0].lines[0];
 
@@ -311,7 +311,7 @@ describe('aggregateMilitaryProduction', () => {
     expect(line.resourceShortages).toEqual([]);
   });
 
-  test('counts shortage lines per definition', () => {
+  test('counts positive saved need lines per definition', () => {
     const shortage = {
       resource: 'steel',
       amount: 1,
@@ -326,7 +326,7 @@ describe('aggregateMilitaryProduction', () => {
     expect(definition.resourceShortageLineCount).toBe(1);
   });
 
-  test('counts shortage lines per country including unresolved lines', () => {
+  test('counts positive saved need lines per country including unresolved lines', () => {
     const [summary] = aggregateMilitaryProduction([
       productionLine(),
       productionLine({

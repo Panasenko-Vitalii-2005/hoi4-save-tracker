@@ -5,7 +5,9 @@ import type {
 
 export interface ProductionResourceRecord {
   resource: string | null;
+  /** Saved nominal demand, not current supplied/available quantity. */
   amount: number | null;
+  /** Raw saved diagnostic; neither zero nor positive values prove runtime shortage. */
   need: number | null;
   warnings: string[];
 }
@@ -32,8 +34,10 @@ export interface ParsedMilitaryProductionLine {
   warnings: string[];
 }
 
+/** Legacy name: positive saved need entries only, not verified shortages. */
 export interface ProductionResourceShortage {
   resource: string | null;
+  /** Saved nominal demand, not current supply. */
   amount: number | null;
   need: number;
 }
@@ -56,11 +60,13 @@ export interface MilitaryProductionLineSummary {
   effectiveActiveFactories: number;
   effectiveQueuedFactories: number;
   effectiveDamagedFactories: number;
+  /** Legacy name: saved speed / cost, not verified realized output. */
   currentItemsPerDay: number | null;
   progressFraction: number | null;
   activeEfficiencyAverage: number | null;
   activeEfficiencyMin: number | null;
   activeEfficiencyMax: number | null;
+  /** Legacy diagnostic: at least one positive saved need, not runtime shortage. */
   hasResourceShortage: boolean;
   resourceShortages: ProductionResourceShortage[];
   industrialManufacturerRef: EquipmentRef | null;
@@ -75,9 +81,12 @@ export interface MilitaryProductionDefinitionSummary {
   activeFactories: number;
   queuedFactories: number;
   damagedFactories: number;
+  /** Complete sum of saved-derived line rates; null if any rate is unknown. */
   currentItemsPerDay: number | null;
   knownCurrentItemsPerDay: number;
+  /** Saved-rate coverage only, not runtime/output validation. */
   outputComplete: boolean;
+  /** Legacy count of lines with positive saved need entries. */
   resourceShortageLineCount: number;
   lines: MilitaryProductionLineSummary[];
 }
@@ -90,6 +99,7 @@ export interface CountryMilitaryProductionSummary {
   activeFactories: number;
   queuedFactories: number;
   damagedFactories: number;
+  /** Legacy count of lines with positive saved need entries. */
   resourceShortageLineCount: number;
   definitions: MilitaryProductionDefinitionSummary[];
   unresolvedLines: MilitaryProductionLineSummary[];

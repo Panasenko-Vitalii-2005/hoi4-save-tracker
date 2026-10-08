@@ -326,9 +326,13 @@ describe('bounded Campaign Intelligence semantic engine', () => {
   test('registry and engine exclude rates, need, casualties, naval attrition, rights attribution, Oil/Fuel and causation', () => {
     const before = intelligenceResult();
     const after = intelligenceResult({ mil: 12 });
+    const baseline = run(before, after);
+    before.militaryProductionSummaries[0].resourceShortageLineCount = 99;
+    after.militaryProductionSummaries[0].definitions[0].resourceShortageLineCount = 100;
     after.by_country[0].calculatedWarCasualtiesTotal = 999999;
     after.militaryProductionSummaries[0].definitions[0].currentItemsPerDay = 99999;
     const data = run(before, after);
+    expect(data).toEqual(baseline);
     expect(Object.keys(METRIC_REGISTRY)).toHaveLength(5);
     expect(
       data.series.every((row) => row.key.resource !== ('oil' as string)),
