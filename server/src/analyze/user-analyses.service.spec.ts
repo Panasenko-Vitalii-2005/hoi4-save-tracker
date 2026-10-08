@@ -2,10 +2,8 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type {
-  AnalysisOwnership,
-  AnalysisOwnershipService,
-} from './analysis-ownership.service';
+import type { AnalysisOwnershipService } from './analysis-ownership.service';
+import { MemoryOwnership } from './fixtures/memory-ownership.fixture';
 import { comparisonResult } from './fixtures/analysis-comparison.fixture';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
 import { RecentAnalysesService } from './recent-analyses.service';
@@ -22,65 +20,6 @@ const H = digest('shared');
 const L = digest('legacy');
 const X = digest('owned-without-recent-metadata');
 const CAMPAIGN = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
-
-class MemoryOwnership {
-  private readonly users = new Map<string, Map<string, AnalysisOwnership>>();
-
-  own(userId: string, analysisHash: string, fileName: string, pinned = false) {
-    const entries =
-      this.users.get(userId) ?? new Map<string, AnalysisOwnership>();
-    entries.set(analysisHash, {
-      analysisHash,
-      fileName,
-      pinned,
-      analyzedAt: '2026-01-01T00:00:00.000Z',
-    });
-    this.users.set(userId, entries);
-  }
-
-  listForUser(userId: string) {
-    return Promise.resolve([...(this.users.get(userId)?.values() ?? [])]);
-  }
-
-  hasOwnership(userId: string, hash: string) {
-    return Promise.resolve(this.users.get(userId)?.has(hash) === true);
-  }
-
-  ownedHashes(userId: string, hashes: readonly string[]) {
-    const entries = this.users.get(userId);
-    return Promise.resolve(
-      new Set(hashes.filter((hash) => entries?.has(hash))),
-    );
-  }
-
-  hasAllOwnership(userId: string, hashes: readonly string[]) {
-    const entries = this.users.get(userId);
-    return Promise.resolve(hashes.every((hash) => entries?.has(hash)));
-  }
-
-  setPinned(userId: string, hash: string, pinned: boolean) {
-    const entry = this.users.get(userId)?.get(hash);
-    if (!entry) return Promise.resolve(false);
-    entry.pinned = pinned;
-    return Promise.resolve(true);
-  }
-
-  remove(userId: string, hashes: readonly string[]) {
-    const entries = this.users.get(userId);
-    const removed = hashes.filter((hash) => entries?.delete(hash));
-    return Promise.resolve(removed);
-  }
-
-  pinnedHashes(hashes: readonly string[]) {
-    return Promise.resolve(
-      new Set(
-        hashes.filter((hash) =>
-          [...this.users.values()].some((entries) => entries.get(hash)?.pinned),
-        ),
-      ),
-    );
-  }
-}
 
 describe('UserAnalysesService ownership isolation', () => {
   let directory: string;
@@ -187,7 +126,7 @@ describe('UserAnalysesService ownership isolation', () => {
     await expect(shares.create(X)).resolves.not.toBeNull();
     ownership.own(A, X, 'detached.hoi4');
 
-    expect((await service.list(A)).some((item) => item.hash === X)).toBe(false);
+    expect((await service.list(A)).some((item) => item.hash === X)).toBe(true);
     const status = await service.storageStatus(A);
     expect(status.persistedAnalysisCount).toBe(3);
     expect(status.cleanupEligibleCount).toBe(3);

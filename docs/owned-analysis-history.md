@@ -1,0 +1,13 @@
+# Owned analysis history
+
+Private history and campaign discovery use PostgreSQL `analysis_ownership`, not the global Recent retention horizon. Migration `0006_owned_analysis_history.sql` adds a nullable, size-bounded compact JSON projection and an indexed user/date/hash keyset ordering. It does not rewrite or delete ownership, Recent metadata, telemetry metadata, or compressed results. Apply it with the existing migration runner before starting the updated backend; old backend versions tolerate the additive schema.
+
+Successful persistence captures summary metadata and the artifact fingerprint on the existing ownership row. Global Recent remains a bounded operational collection (default 200); it is not a per-user history quota. Hash identity, private filenames, pins, public shares, and artifact retention rules are unchanged.
+
+Existing ownership rows are recovered lazily from validated v1/v2 compressed results, one result at a time. Campaign identity comes from the persisted comparison context, never filename heuristics. Unknown legacy campaigns remain unknown. Original file size comes from surviving exact metadata (Recent or canonical `analyses.file_size_bytes`), otherwise it is nullable; rounded result megabytes are not converted into invented bytes. Recovery updates existing ownership only and cannot recreate a deleted relation.
+
+Warm listing reuses the compact projection only while its bytes/mtime/ctime fingerprint matches the retained artifact. Changed artifacts are revalidated; missing or corrupt artifacts are marked unavailable. Genuine summary metadata can remain visible for an unavailable result, but ownership without either summary metadata or a readable artifact cannot produce a truthful history row. Such ownership remains counted in storage/cleanup APIs. Recovery never re-runs the parser.
+
+Each PostgreSQL query reads at most 100 rows using the user-scoped composite index and a precise timestamp/hash cursor. The existing complete-list API and frontend filtering/sorting remain compatible; there is no global history cutoff. Total response work still scales with the requesting user's history, and legacy recovery can be slower on first access. This change does not raise the global persisted-artifact byte cap or introduce quotas, distributed file-store coordination, or gameplay changes.
+
+Discovery is shared by Recent, campaign cleanup, Trends, and Campaign Intelligence. Compare/reopen continue to authorize owned hashes and read durable artifacts. Explicit deletion removes private ownership/discovery, not a shared deduplicated artifact; public shares and other owners retain their existing independent lifecycle.

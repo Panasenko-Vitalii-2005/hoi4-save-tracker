@@ -365,13 +365,28 @@ describe('AnalyzeController uploads', () => {
         1,
         FIRST_USER.id,
         firstItem.hash,
-        { fileName: 'fixture.hoi4' },
+        expect.objectContaining({
+          fileName: 'fixture.hoi4',
+          historyMetadata: expect.objectContaining({
+            version: 1,
+            summary: expect.objectContaining({
+              gameDate: '1944.5.1',
+              fileSizeBytes: payload.length,
+            }) as unknown,
+            fingerprint: expect.objectContaining({
+              bytes: expect.any(Number) as unknown,
+            }) as unknown,
+          }) as unknown,
+        }),
       );
       expect(ownership.ensureOwnership).toHaveBeenNthCalledWith(
         2,
         FIRST_USER.id,
         firstItem.hash,
-        { fileName: 'renamed.hoi4' },
+        expect.objectContaining({
+          fileName: 'renamed.hoi4',
+          historyMetadata: expect.objectContaining({ version: 1 }) as unknown,
+        }),
       );
       const reopened = await request(app.getHttpServer())
         .get(`/api/analyze/recent/${firstItem.hash.toUpperCase()}/result`)
@@ -515,8 +530,22 @@ describe('AnalyzeController uploads', () => {
 
     expect(analysis.created).toBe(before + 1);
     expect(ownership.ensureOwnership.mock.calls).toEqual([
-      [FIRST_USER.id, hash, { fileName: 'first.hoi4' }],
-      [SECOND_USER.id, hash, { fileName: 'second.hoi4' }],
+      [
+        FIRST_USER.id,
+        hash,
+        expect.objectContaining({
+          fileName: 'first.hoi4',
+          historyMetadata: expect.objectContaining({ version: 1 }) as unknown,
+        }),
+      ],
+      [
+        SECOND_USER.id,
+        hash,
+        expect.objectContaining({
+          fileName: 'second.hoi4',
+          historyMetadata: expect.objectContaining({ version: 1 }) as unknown,
+        }),
+      ],
     ]);
   });
 

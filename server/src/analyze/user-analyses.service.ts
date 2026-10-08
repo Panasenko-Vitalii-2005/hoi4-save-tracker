@@ -16,6 +16,12 @@ import {
   RecentAnalysesService,
 } from './recent-analyses.service';
 import { SharedAnalysesService } from './shared-analyses.service';
+import {
+  historySummary,
+  sameFingerprint,
+  summaryFromResult,
+  type OwnedHistorySummary,
+} from './owned-analysis-history';
 
 type GameDate = readonly [number, number, number];
 
@@ -57,26 +63,74 @@ export class UserAnalysesService {
       this.recent.list(),
       this.ownership.listForUser(userId),
     ]);
-    return this.project(metadata, ownerships);
+    const items = await this.project(userId, metadata, ownerships);
+    // Hydration never creates ownership. Re-check membership after filesystem work
+    // so a concurrent private deletion cannot reappear through a stale list.
+    const owned = await this.ownership.ownedHashes(
+      userId,
+      items.map((item) => item.hash),
+    );
+    return items.filter((item) => owned.has(item.hash));
   }
 
-  private project(
+  private async project(
+    userId: string,
     metadata: readonly RecentAnalysis[],
     ownerships: readonly AnalysisOwnership[],
-  ): RecentAnalysis[] {
+  ): Promise<RecentAnalysis[]> {
     const byHash = new Map(metadata.map((item) => [item.hash, item]));
-    return ownerships.flatMap((owned) => {
-      const item = byHash.get(owned.analysisHash);
-      if (!item) return [];
-      return [
-        {
-          ...item,
-          fileName: owned.fileName ?? 'Stored analysis',
-          analyzedAt: owned.analyzedAt,
-          pinned: owned.pinned,
-        },
-      ];
-    });
+    const items: RecentAnalysis[] = [];
+    // Sequential legacy hydration bounds inflation memory to one result at a time.
+    // Warm discovery does only indexed metadata queries and per-owned-file stats.
+    for (const owned of ownerships) {
+      const recent = byHash.get(owned.analysisHash);
+      let summary: OwnedHistorySummary | undefined =
+        owned.historyMetadata?.summary ??
+        (recent ? historySummary(recent) : undefined);
+      let available = false;
+      const fingerprint = await this.results.fingerprint(owned.analysisHash);
+      if (
+        fingerprint &&
+        owned.historyMetadata &&
+        sameFingerprint(fingerprint, owned.historyMetadata.fingerprint)
+      ) {
+        available = true;
+      } else if (fingerprint) {
+        const persisted = await this.results.getWithContext(owned.analysisHash);
+        const after = await this.results.fingerprint(owned.analysisHash);
+        if (persisted && after && sameFingerprint(fingerprint, after)) {
+          const recovered = summaryFromResult(
+            persisted.result,
+            summary?.fileSizeBytes ?? owned.canonicalFileSizeBytes ?? null,
+            persisted.comparisonContext,
+          );
+          if (recovered) {
+            summary = recovered;
+            if (
+              !(await this.ownership.setHistoryMetadata(
+                userId,
+                owned.analysisHash,
+                { version: 1, summary, fingerprint: after },
+              ))
+            )
+              continue;
+            available = true;
+          }
+        }
+      }
+      // Without either genuine metadata or a readable artifact there is nothing
+      // truthful to put in a Recent row. Ownership remains in storage/cleanup counts.
+      if (!summary) continue;
+      items.push({
+        ...summary,
+        hash: owned.analysisHash,
+        fileName: owned.fileName ?? 'Stored analysis',
+        analyzedAt: owned.analyzedAt,
+        pinned: owned.pinned,
+        hasPersistedResult: available,
+      });
+    }
+    return items;
   }
 
   async getResult(userId: string, hash: string): Promise<AnalyzeResult | null> {
@@ -91,7 +145,7 @@ export class UserAnalysesService {
       this.results.storageStatus(),
       this.shares.protection(),
     ]);
-    const items = this.project(metadata, ownerships);
+    const items = await this.project(userId, metadata, ownerships);
     const owned = new Set(ownerships.map((item) => item.analysisHash));
     const resultFiles = new Map(
       storage.files

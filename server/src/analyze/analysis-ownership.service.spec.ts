@@ -42,7 +42,7 @@ describe('analysis ownership repository and service', () => {
 
     expect(database.query).toHaveBeenCalledWith(
       expect.stringContaining('ON CONFLICT (user_id, analysis_hash) DO UPDATE'),
-      [userId, hash, null, null],
+      [userId, hash, null, null, null],
     );
   });
 
@@ -57,7 +57,7 @@ describe('analysis ownership repository and service', () => {
 
     expect(database.query).toHaveBeenCalledWith(
       expect.stringContaining('file_name = COALESCE'),
-      [userId, hash, 'save.hoi4', analyzedAt],
+      [userId, hash, 'save.hoi4', analyzedAt, null],
     );
   });
 
@@ -157,6 +157,51 @@ describe('analysis ownership repository and service', () => {
       expect.stringContaining('analysis_hash = ANY($2::text[])'),
       [userId, [hash, other]],
     );
+  });
+
+  test('pages every owned row with a stable hash tie-breaker and PostgreSQL timestamp precision', async () => {
+    const date = '2026-01-01 00:00:00.123456+00';
+    const page = Array.from({ length: 100 }, (_, i) => ({
+      analysisHash: i.toString(16).padStart(64, '0'),
+      pinned: false,
+      fileName: 'snapshot.hoi4',
+      analyzedAt: new Date(date),
+      cursorAnalyzedAt: date,
+    }));
+    database.query
+      .mockResolvedValueOnce(result(page))
+      .mockResolvedValueOnce(
+        result([{ ...page[0], analysisHash: 'f'.repeat(64) }]),
+      );
+    expect(await service.listForUser(userId)).toHaveLength(101);
+    expect(database.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('LIMIT 100'),
+      [userId, date, page[99].analysisHash],
+    );
+    const call = database.query.mock.calls[0] as unknown[];
+    const sql = call[0];
+    expect(sql).toContain('owned.user_id = $1');
+    expect(sql).not.toContain('OFFSET');
+  });
+
+  test('ignores malformed history projections rather than exposing arbitrary metadata', async () => {
+    database.query.mockResolvedValueOnce(
+      result([
+        {
+          analysisHash: hash,
+          pinned: false,
+          fileName: 'mine.hoi4',
+          analyzedAt: new Date(),
+          historyMetadata: { version: 1, summary: { privateData: 'bad' } },
+        },
+      ]),
+    );
+    const [item] = await service.listForUser(userId);
+    expect(item.historyMetadata).toBeUndefined();
+    await expect(
+      service.setHistoryMetadata(userId, hash, {} as never),
+    ).rejects.toThrow(TypeError);
   });
 
   test('loads all distinct owned hashes with one bulk query', async () => {

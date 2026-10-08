@@ -225,6 +225,29 @@ export class PersistedAnalysisResultService {
     return (await this.readPersisted(hash))?.result ?? null;
   }
 
+  /** One owned artifact's lightweight fingerprint; no global directory scan. */
+  async fingerprint(hash: string): Promise<PersistedResultFingerprint | null> {
+    const key = this.key(hash);
+    await this.pending;
+    try {
+      if (this.invalid.has(key) || !(await this.checkDirectory())) return null;
+      const entry = await lstat(this.path(key));
+      if (
+        !entry.isFile() ||
+        entry.isSymbolicLink() ||
+        entry.size > MAX_JSON_BYTES
+      )
+        return null;
+      return {
+        bytes: entry.size,
+        mtimeMs: entry.mtimeMs,
+        ctimeMs: entry.ctimeMs,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async getWithContext(hash: string): Promise<PersistedAnalysis | null> {
     return this.readPersisted(hash);
   }

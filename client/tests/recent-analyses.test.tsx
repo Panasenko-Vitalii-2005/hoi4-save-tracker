@@ -253,7 +253,9 @@ describe("Recent Analyses", () => {
         value: [new File(["HOI4txt"], "autosave.hoi4")],
       });
       picker.dispatchEvent(new Event("change", { bubbles: true }));
-      container.querySelector<HTMLButtonElement>("#analyze-one-save .button-primary")!.click();
+      container
+        .querySelector<HTMLButtonElement>("#analyze-one-save .button-primary")!
+        .click();
       for (let attempt = 0; attempt < 20; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 0));
         if (analyzeRequests.length > requestCount) break;
@@ -907,6 +909,32 @@ describe("Recent Analyses", () => {
     expect(section().innerHTML).not.toContain(entry.hash);
     expect(section().textContent).not.toMatch(/gzip|Worker|SHA-256|cache|disk/);
     expect(managedButton("Open", "alpha.hoi4")).toBeNull();
+  });
+
+  test("recovered legacy history displays unknown original size separately from zero", async () => {
+    await render();
+    await respond(0, [
+      {
+        ...entry,
+        fileName: "legacy.hoi4",
+        fileSizeBytes: null,
+        hasPersistedResult: true,
+      },
+      {
+        ...entry,
+        hash: "b".repeat(64),
+        fileName: "zero.hoi4",
+        fileSizeBytes: 0,
+      },
+    ]);
+    const rows = [...section().querySelectorAll("tbody tr")];
+    expect(
+      rows.find((row) => row.textContent?.includes("legacy.hoi4"))?.textContent,
+    ).toContain("—");
+    expect(
+      rows.find((row) => row.textContent?.includes("zero.hoi4"))?.textContent,
+    ).toContain("0 B");
+    expect(section().textContent).not.toMatch(/NaN|undefined/);
   });
 
   test("shows compact backend-derived storage usage without exposing campaign UUID", async () => {

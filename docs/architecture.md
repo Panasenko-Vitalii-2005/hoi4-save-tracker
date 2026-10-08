@@ -96,11 +96,11 @@ Three local stores are intentionally separate:
 
 Writes are serialized within one process and use an exclusive temporary file, fsync, close, and atomic rename. Startup/read reconciliation handles recognized stale artifacts and legacy metadata conservatively.
 
-Storage status lists recognized gzip files and sums filesystem sizes. It does not decompress results. Bulk cleanup updates metadata and artifacts through the same serialized mutation queue. Pins are excluded from unpinned cleanup; campaign deletion requires explicit acknowledgement when pins are included. Active shares protect results during ordinary deletion/retention, while the hard byte ceiling remains authoritative.
+Storage status lists recognized gzip files and sums filesystem sizes. The physical inventory does not decompress results; private campaign accounting may lazily validate legacy results to recover missing history summaries. Bulk cleanup updates metadata and artifacts through the same serialized mutation queue. Pins are excluded from unpinned cleanup; campaign deletion requires explicit acknowledgement when pins are included. Active shares protect results during ordinary deletion/retention, while the hard byte ceiling remains authoritative.
 
 Original uploaded `.hoi4` files are managed temporary inputs and are not retained in these stores. The Compose `/app/saves` read-only mount is a separate source directory.
 
-PostgreSQL is an additional, optional metadata store. The auth core uses its versioned `users` and `sessions` schema for registration, salted scrypt password hashes, opaque-session token hashes, and fixed expiry. `analysis_ownership` records the unique user/SHA-256 pairs created by successful authenticated analyses plus the small per-user Recent fields (`pinned`, safe display filename, analysis time). It does not contain AnalyzeResult data, artifact blobs, campaign/result metrics, Shares, projections, or parser caches. Database mode is disabled by default outside Compose; enabled startup validates connectivity but ordinary application startup never applies migrations.
+PostgreSQL is an additional, optional metadata store. The auth core uses its versioned `users` and `sessions` schema for registration, salted scrypt password hashes, opaque-session token hashes, and fixed expiry. `analysis_ownership` records the unique user/SHA-256 pairs created by successful authenticated analyses plus private display metadata and a compact, fingerprint-validated history summary. This makes retained owned campaigns discoverable independently of global Recent turnover; see [Owned analysis history](owned-analysis-history.md) for migration and lazy legacy recovery. It does not contain complete AnalyzeResult data, artifact blobs, Shares, gameplay projections, or parser caches. Database mode is disabled by default outside Compose; enabled startup validates connectivity but ordinary application startup never applies migrations.
 
 Result artifacts remain globally deduplicated immutable objects keyed by save-content SHA-256. Ownership is separate metadata: one user/hash pair is idempotent, while the same hash may belong to multiple users without duplicating the gzip artifact. Private Recent, reopen, Compare, Trends, storage, deletion, pin, share-management, and batch-preflight surfaces authorize against this relation. Missing ownership always hides the private resource with the same unavailable response; existing legacy artifacts without a row remain explicitly unowned. No filename, campaign, IP, browser state, public share, or first-user backfill establishes ownership. An ownership-store failure fails private access closed.
 
@@ -153,7 +153,7 @@ Share links are unlisted but unauthenticated. Anyone with the URL can read the c
 | `GET` | `/api/analyze/recent/:hash/result` | No |
 | `GET` | `/api/analyze/compare` | No |
 | `GET` | `/api/analyze/trends` | No |
-| `GET` | `/api/analyze/storage` | No; filesystem metadata only |
+| `GET` | `/api/analyze/storage` | No; filesystem metadata and lazy legacy history recovery |
 | `DELETE` | `/api/analyze/storage/unpinned` | No |
 | `DELETE` | `/api/analyze/storage/campaign/:campaignId` | No |
 | `POST` | `/api/analyze/recent/:hash/share` | No |

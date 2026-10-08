@@ -36,6 +36,10 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { SafeUserDto } from '../auth/auth.types';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
 import { UserAnalysesService } from './user-analyses.service';
+import {
+  historySummary,
+  type OwnedHistoryMetadata,
+} from './owned-analysis-history';
 import type {
   AnalysisMetadataInput,
   AnalysisSaveFormat,
@@ -378,10 +382,21 @@ export class AnalyzeController {
     if (attempt) attempt.stage = 'persistence';
     if (!response.destroyed) {
       persisted = await profileRequestPhase('persistenceMs', () =>
-        this.history.record(record, result, comparisonContext, () =>
-          profileRequestPhase('ownershipDatabaseMs', () =>
-            this.assignOwnership(currentUser, hash, record.fileName),
-          ),
+        this.history.record(
+          record,
+          result,
+          comparisonContext,
+          (item, fingerprint) =>
+            profileRequestPhase('ownershipDatabaseMs', () =>
+              this.assignOwnership(
+                currentUser,
+                hash,
+                record.fileName,
+                fingerprint
+                  ? { version: 1, summary: historySummary(item), fingerprint }
+                  : undefined,
+              ),
+            ),
         ),
       );
     }
@@ -416,9 +431,13 @@ export class AnalyzeController {
     currentUser: SafeUserDto,
     hash: string,
     fileName: string,
+    historyMetadata?: OwnedHistoryMetadata,
   ): Promise<void> {
     try {
-      await this.ownership.ensureOwnership(currentUser.id, hash, { fileName });
+      await this.ownership.ensureOwnership(currentUser.id, hash, {
+        fileName,
+        ...(historyMetadata ? { historyMetadata } : {}),
+      });
     } catch {
       throw new HttpException(
         'Could not record analysis ownership',

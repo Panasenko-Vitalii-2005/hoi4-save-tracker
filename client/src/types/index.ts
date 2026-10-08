@@ -3,7 +3,7 @@ import type { EconomyAnalysis } from "./economy";
 export interface RecentAnalysis {
   hash: string;
   fileName: string;
-  fileSizeBytes: number;
+  fileSizeBytes: number | null;
   analyzedAt: string;
   gameDate: string;
   countryCount: number;

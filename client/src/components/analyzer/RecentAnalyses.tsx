@@ -54,7 +54,8 @@ function compareDates(
   return ascending ? a - b : b - a;
 }
 
-function fileSize(bytes: number, locale: string): string {
+function fileSize(bytes: number | null, locale: string): string {
+  if (bytes === null) return "—";
   const unit = bytes >= 1024 ** 2 ? "MiB" : bytes >= 1024 ? "KiB" : "B";
   const divisor = unit === "MiB" ? 1024 ** 2 : unit === "KiB" ? 1024 : 1;
   return `${(bytes / divisor).toLocaleString(locale, { maximumFractionDigits: 1 })} ${unit}`;
@@ -168,7 +169,10 @@ function recentCount(value: number | null | undefined): string {
     : "—";
 }
 
-function analyzedDate(value: string, locale: string): { date: string; time: string } {
+function analyzedDate(
+  value: string,
+  locale: string,
+): { date: string; time: string } {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return { date: "—", time: "" };
   return {
@@ -339,9 +343,7 @@ export function RecentAnalyses({
       return;
     if (
       action === "delete" &&
-      !window.confirm(
-        t("history.deleteConfirm", { name: item.fileName }),
-      )
+      !window.confirm(t("history.deleteConfirm", { name: item.fileName }))
     )
       return;
     mutationInFlight.current = true;
@@ -479,9 +481,7 @@ export function RecentAnalyses({
                 </select>
               </label>
             </div>
-            <p className="micro-copy">
-              {t("history.pinnedFirst")}
-            </p>
+            <p className="micro-copy">{t("history.pinnedFirst")}</p>
           </>
         )}
         <div className="analyzer-recent-statuses">
@@ -492,7 +492,10 @@ export function RecentAnalyses({
                 ? ""
                 : visibleItems.length === 0
                   ? t("history.noMatches")
-                  : t("history.showing", { shown: visibleItems.length, total: items.length })}
+                  : t("history.showing", {
+                      shown: visibleItems.length,
+                      total: items.length,
+                    })}
           </div>
           <div className="micro-copy" role="status" aria-live="polite">
             {openingHash ? t("history.opening") : ""}
@@ -566,7 +569,9 @@ export function RecentAnalyses({
                   <th className="numeric-cell">{t("history.manpower")}</th>
                   <th className="numeric-cell">{t("history.aircraft")}</th>
                   <th>{t("common.result")}</th>
-                  <th className="analyzer-recent-action">{t("common.actions")}</th>
+                  <th className="analyzer-recent-action">
+                    {t("common.actions")}
+                  </th>
                 </tr>
               </thead>
               <tbody>

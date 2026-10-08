@@ -7,7 +7,7 @@ describe('database migrations', () => {
       resolve(process.cwd(), 'migrations'),
     );
 
-    expect(migrations).toHaveLength(5);
+    expect(migrations).toHaveLength(6);
     expect(migrations[0]).toMatchObject({
       version: '0001',
       name: '0001_users_sessions.sql',
@@ -50,5 +50,14 @@ describe('database migrations', () => {
     expect(migrations[4].sql).not.toContain('file_name');
     expect(migrations[4].sql).not.toContain('email');
     expect(migrations[4].sql).not.toContain('ip_address');
+    expect(migrations[5]).toMatchObject({
+      version: '0006',
+      name: '0006_owned_analysis_history.sql',
+    });
+    expect(migrations[5].sql).toContain('ADD COLUMN history_metadata jsonb');
+    expect(migrations[5].sql).toContain('analyzed_at DESC, analysis_hash ASC');
+    expect(migrations[5].sql).not.toMatch(
+      /DELETE|DROP|TRUNCATE|UPDATE analysis_ownership/,
+    );
   });
 });

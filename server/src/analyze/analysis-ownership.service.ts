@@ -5,10 +5,15 @@ import {
   AnalysisOwnershipRepository,
   type AnalysisOwnershipRow,
 } from './analysis-ownership.repository';
+import {
+  readOwnedHistory,
+  type OwnedHistoryMetadata,
+} from './owned-analysis-history';
 
 export interface AnalysisOwnershipMetadata {
   fileName: string;
   analyzedAt?: Date;
+  historyMetadata?: OwnedHistoryMetadata;
 }
 
 export interface AnalysisOwnership {
@@ -16,6 +21,8 @@ export interface AnalysisOwnership {
   pinned: boolean;
   fileName: string | null;
   analyzedAt: string;
+  historyMetadata?: OwnedHistoryMetadata;
+  canonicalFileSizeBytes?: number;
 }
 
 function safeFileName(name: string): string {
@@ -38,6 +45,9 @@ export class AnalysisOwnershipService {
         ? {
             fileName: safeFileName(metadata.fileName),
             analyzedAt: metadata.analyzedAt ?? new Date(),
+            ...(metadata.historyMetadata
+              ? { historyMetadata: metadata.historyMetadata }
+              : {}),
           }
         : undefined,
     );
@@ -58,6 +68,20 @@ export class AnalysisOwnershipService {
       (await this.ownership.listAllOwnedHashes()).map((hash) =>
         this.hash(hash),
       ),
+    );
+  }
+
+  async setHistoryMetadata(
+    userId: string,
+    hash: string,
+    metadata: OwnedHistoryMetadata,
+  ): Promise<boolean> {
+    const validated = readOwnedHistory(metadata);
+    if (!validated) throw new TypeError('Invalid owned history metadata');
+    return this.ownership.setHistoryMetadata(
+      userId,
+      this.hash(hash),
+      validated,
     );
   }
 
@@ -105,11 +129,20 @@ export class AnalysisOwnershipService {
   }
 
   private toOwnership(row: AnalysisOwnershipRow): AnalysisOwnership {
+    const historyMetadata = readOwnedHistory(row.historyMetadata);
+    const size =
+      row.canonicalFileSizeBytes == null
+        ? null
+        : Number(row.canonicalFileSizeBytes);
     return {
       analysisHash: row.analysisHash,
       pinned: row.pinned,
       fileName: row.fileName,
       analyzedAt: new Date(row.analyzedAt).toISOString(),
+      ...(historyMetadata ? { historyMetadata } : {}),
+      ...(size !== null && Number.isSafeInteger(size) && size >= 0
+        ? { canonicalFileSizeBytes: size }
+        : {}),
     };
   }
 }
