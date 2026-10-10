@@ -13,6 +13,7 @@ import { AnalysisComparisonService } from './analysis-comparison.service';
 import { comparisonResult } from './fixtures/analysis-comparison.fixture';
 import { MemoryOwnership } from './fixtures/memory-ownership.fixture';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
+import { createRecentAnalyses } from './fixtures/recent-analyses.fixture';
 import { RecentAnalysesService } from './recent-analyses.service';
 import { UserAnalysesService } from './user-analyses.service';
 import { SharedAnalysesService } from './shared-analyses.service';
@@ -58,10 +59,10 @@ describe('computed result versus durable owned persistence', () => {
   ];
   const previous = names.map((name) => process.env[name]);
 
-  function services() {
+  async function services() {
     results = new PersistedAnalysisResultService(ownership);
     shares = new SharedAnalysesService(results);
-    recent = new RecentAnalysesService(results, shares);
+    recent = await createRecentAnalyses(results, shares);
     users = new UserAnalysesService(ownership, recent, results, shares);
     controller = new AnalyzeController(
       cache,
@@ -88,7 +89,7 @@ describe('computed result versus durable owned persistence', () => {
     cache = new AnalysisResultCacheService(
       worker as unknown as Hoi4AnalysisWorkerService,
     );
-    services();
+    await services();
     await recent.list();
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
   });
@@ -203,7 +204,7 @@ describe('computed result versus durable owned persistence', () => {
 
   test('quota exhaustion preserves computation but creates no owned saved result', async () => {
     process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = '1';
-    services();
+    await services();
     const response = await expectTemporary();
     expect(await results.exists(response.hash)).toBe(false);
     expect(telemetry.recordPersisted).not.toHaveBeenCalled();
@@ -285,7 +286,7 @@ describe('computed result versus durable owned persistence', () => {
   test('cached/persisted reuse stays saved without duplicate writes and survives service restart', async () => {
     const first = await analyze();
     const before = await results.fingerprint(first.hash);
-    services();
+    await services();
     await recent.list();
     const open = jest.spyOn(files, 'open');
     const second = await analyze();

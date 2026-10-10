@@ -1,4 +1,9 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Optional,
+  type OnApplicationBootstrap,
+} from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { basename, dirname, resolve, win32 } from 'node:path';
@@ -68,14 +73,14 @@ function compareGameDates(left: string, right: string): number {
 }
 
 @Injectable()
-export class RecentAnalysesService {
+export class RecentAnalysesService implements OnApplicationBootstrap {
   private readonly logger = new Logger(RecentAnalysesService.name);
   private readonly file = resolve(
     process.env.HOI4_RECENT_ANALYSES_FILE || 'data/recent-analyses.json',
   );
   private readonly limit: number;
   private items: RecentAnalysis[] = [];
-  private pending: Promise<void>;
+  private pending: Promise<void> = Promise.resolve();
   private warnedWrite = false;
   private readonly metricBackfillsAttempted = new Set<string>();
   private readonly contextBackfillsAttempted = new Set<string>();
@@ -87,7 +92,12 @@ export class RecentAnalysesService {
     const configured = Number(process.env.HOI4_RECENT_ANALYSES_LIMIT ?? 200);
     this.limit =
       Number.isSafeInteger(configured) && configured > 0 ? configured : 200;
-    this.pending = this.load();
+  }
+
+  onApplicationBootstrap(): Promise<void> {
+    // Nest awaits every onModuleInit (including the database pool validation)
+    // before bootstrap, and awaits this queue entry before serving requests.
+    return this.enqueue(() => this.load());
   }
 
   private async load(): Promise<void> {

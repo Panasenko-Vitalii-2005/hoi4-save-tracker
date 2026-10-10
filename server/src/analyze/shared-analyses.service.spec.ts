@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
-import { RecentAnalysesService } from './recent-analyses.service';
+import { createRecentAnalyses } from './fixtures/recent-analyses.fixture';
 import {
   normalizeShareId,
   SharedAnalysesService,
@@ -142,7 +142,7 @@ describe('SharedAnalysesService', () => {
   });
 
   test('opens the exact persisted result without mutating recent history', async () => {
-    const history = new RecentAnalysesService(results, shares);
+    const history = await createRecentAnalyses(results, shares);
     await history.record(
       { hash: hash('a'), fileName: 'private.hoi4', fileSizeBytes: 100 },
       result,
@@ -154,7 +154,7 @@ describe('SharedAnalysesService', () => {
   });
 
   test('persisting a recent analysis does not make it public automatically', async () => {
-    const history = new RecentAnalysesService(results, shares);
+    const history = await createRecentAnalyses(results, shares);
     await history.record(
       { hash: hash('a'), fileName: 'private.hoi4', fileSizeBytes: 100 },
       result,
@@ -191,7 +191,7 @@ describe('SharedAnalysesService', () => {
   });
 
   test('revocation is idempotent and leaves a still-recent result available', async () => {
-    const history = new RecentAnalysesService(results, shares);
+    const history = await createRecentAnalyses(results, shares);
     await history.record(
       { hash: hash('a'), fileName: 'a.hoi4', fileSizeBytes: 100 },
       result,
@@ -237,7 +237,7 @@ describe('SharedAnalysesService', () => {
     async (operation) => {
       if (operation === 'count eviction')
         process.env.HOI4_RECENT_ANALYSES_LIMIT = '1';
-      const history = new RecentAnalysesService(results, shares);
+      const history = await createRecentAnalyses(results, shares);
       await history.record(
         { hash: hash('a'), fileName: 'a.hoi4', fileSizeBytes: 100 },
         result,
@@ -259,7 +259,7 @@ describe('SharedAnalysesService', () => {
   );
 
   test('revoking after recent deletion removes the now-unreferenced result', async () => {
-    const history = new RecentAnalysesService(results, shares);
+    const history = await createRecentAnalyses(results, shares);
     await history.record(
       { hash: hash('a'), fileName: 'a.hoi4', fileSizeBytes: 100 },
       result,
@@ -272,7 +272,7 @@ describe('SharedAnalysesService', () => {
   });
 
   test('unshared Recent deletion keeps its existing durable-result cleanup', async () => {
-    const history = new RecentAnalysesService(results, shares);
+    const history = await createRecentAnalyses(results, shares);
     await history.record(
       { hash: hash('a'), fileName: 'a.hoi4', fileSizeBytes: 100 },
       result,
@@ -319,7 +319,7 @@ describe('SharedAnalysesService', () => {
     await files.mkdir(join(directory, 'data'), { recursive: true });
     await files.writeFile(shareFile, '{broken');
     shares = new SharedAnalysesService(results);
-    const history = new RecentAnalysesService(results, shares);
+    const history = await createRecentAnalyses(results, shares);
     expect(await history.list()).toEqual([]);
     expect(await history.list()).toEqual([]);
     expect(await results.get(hash('a'))).toEqual(result);
@@ -329,7 +329,7 @@ describe('SharedAnalysesService', () => {
   });
 
   test('unreliable share state cannot budget-evict a Recent-listed artifact', async () => {
-    const history = new RecentAnalysesService(results, shares);
+    const history = await createRecentAnalyses(results, shares);
     await history.record(
       { hash: hash('a'), fileName: 'a.hoi4', fileSizeBytes: 100 },
       result,
@@ -341,7 +341,7 @@ describe('SharedAnalysesService', () => {
     process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
     results = new PersistedAnalysisResultService();
     shares = new SharedAnalysesService(results);
-    const restarted = new RecentAnalysesService(results, shares);
+    const restarted = await createRecentAnalyses(results, shares);
 
     expect(
       await restarted.record(
@@ -363,7 +363,7 @@ describe('SharedAnalysesService', () => {
     process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = '1';
     results = new PersistedAnalysisResultService();
     shares = new SharedAnalysesService(results);
-    const history = new RecentAnalysesService(results, shares);
+    const history = await createRecentAnalyses(results, shares);
     await history.list();
     expect(await results.exists(hash('a'))).toBe(true);
     expect(await results.exists(hash('b'))).toBe(false);
@@ -377,7 +377,7 @@ describe('SharedAnalysesService', () => {
   });
 
   test('lowered disk budget preserves both shared and pinned results', async () => {
-    let history = new RecentAnalysesService(results, shares);
+    let history = await createRecentAnalyses(results, shares);
     await history.record(
       { hash: hash('a'), fileName: 'a.hoi4', fileSizeBytes: 100 },
       result,
@@ -394,7 +394,7 @@ describe('SharedAnalysesService', () => {
     process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
     results = new PersistedAnalysisResultService();
     shares = new SharedAnalysesService(results);
-    history = new RecentAnalysesService(results, shares);
+    history = await createRecentAnalyses(results, shares);
     await history.list();
     expect(await results.exists(hash('a'))).toBe(true);
     expect(await results.exists(hash('b'))).toBe(true);

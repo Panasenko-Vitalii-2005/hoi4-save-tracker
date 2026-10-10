@@ -10,6 +10,7 @@ import type { AnalysisResultCacheService } from '../hoi4/analysis-result-cache.s
 import { comparisonResult } from './fixtures/analysis-comparison.fixture';
 import { MemoryOwnership } from './fixtures/memory-ownership.fixture';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
+import { createRecentAnalyses } from './fixtures/recent-analyses.fixture';
 import { RecentAnalysesService } from './recent-analyses.service';
 import { SharedAnalysesService } from './shared-analyses.service';
 import { UserAnalysesService } from './user-analyses.service';
@@ -40,10 +41,10 @@ describe('durable owned history beyond global Recent turnover', () => {
   ];
   const previous = envNames.map((key) => process.env[key]);
 
-  function restart() {
+  async function restart() {
     results = new PersistedAnalysisResultService(ownership);
     shares = new SharedAnalysesService(results);
-    recent = new RecentAnalysesService(results, shares);
+    recent = await createRecentAnalyses(results, shares);
     users = new UserAnalysesService(ownership, recent, results, shares);
   }
 
@@ -55,7 +56,7 @@ describe('durable owned history beyond global Recent turnover', () => {
     delete process.env.HOI4_RECENT_ANALYSES_LIMIT;
     memory = new MemoryOwnership();
     ownership = memory as unknown as AnalysisOwnershipService;
-    restart();
+    await restart();
   });
 
   afterEach(async () => {
@@ -133,7 +134,7 @@ describe('durable owned history beyond global Recent turnover', () => {
       join(directory, 'recent.json'),
       JSON.stringify({ items: [] }),
     );
-    restart();
+    await restart();
     expect(await recent.list()).toHaveLength(0);
     const reads = jest.spyOn(results, 'getWithContext');
     for (let user = 0; user < 20; user += 1)
@@ -178,7 +179,7 @@ describe('durable owned history beyond global Recent turnover', () => {
     ).rejects.toThrow('unavailable');
     await expect(users.getResult('0', snapshot(1, 0))).resolves.toBeNull();
     await expect(users.delete('0', snapshot(0, 0))).resolves.toBe(true);
-    restart();
+    await restart();
     expect(await users.list('0')).toHaveLength(24);
     await expect(users.getResult('0', snapshot(0, 0))).resolves.toBeNull();
     // B3: removing private ownership revokes the global link first; A1 discovery
@@ -196,7 +197,7 @@ describe('durable owned history beyond global Recent turnover', () => {
       join(directory, 'results', `${snapshot(0, 1)}.json.gz`),
       'corrupt',
     );
-    restart();
+    await restart();
     const items = await users.list('0');
     expect(items).toHaveLength(2);
     expect(items.every((item) => !item.hasPersistedResult)).toBe(true);

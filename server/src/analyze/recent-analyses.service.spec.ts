@@ -7,6 +7,7 @@ import { analyzeSave, type AnalyzeResult } from '../hoi4/hoi4-parser';
 import type { AnalysisOwnershipService } from './analysis-ownership.service';
 import { RecentAnalysesService } from './recent-analyses.service';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
+import { createRecentAnalyses } from './fixtures/recent-analyses.fixture';
 import { SharedAnalysesService } from './shared-analyses.service';
 
 describe('RecentAnalysesService', () => {
@@ -52,7 +53,7 @@ describe('RecentAnalysesService', () => {
     result = analyzeSave(save);
     warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
     results = new PersistedAnalysisResultService();
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     await history.list();
   });
 
@@ -113,13 +114,13 @@ describe('RecentAnalysesService', () => {
       /private|upload|sourceOffset|parse_seconds|by_country|navalLosses|worker|stack|HOI4txt/,
     );
     expect(
-      await new RecentAnalysesService(
-        new PersistedAnalysisResultService(),
+      await (
+        await createRecentAnalyses(new PersistedAnalysisResultService())
       ).list(),
     ).toEqual(items);
     expect(
-      await new RecentAnalysesService(
-        new PersistedAnalysisResultService(),
+      await (
+        await createRecentAnalyses(new PersistedAnalysisResultService())
       ).getResult(input('a').hash),
     ).toEqual(result);
     expect(await files.readdir(join(directory, 'data'))).toEqual([
@@ -179,14 +180,14 @@ describe('RecentAnalysesService', () => {
     });
     const get = jest.spyOn(results, 'get');
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect((await history.list())[0]).toMatchObject({
       manpowerInField: 31_378_714,
       aircraftCount: 53_095,
     });
     expect(get).toHaveBeenCalledTimes(1);
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect((await history.list())[0]).toMatchObject({
       manpowerInField: 31_378_714,
       aircraftCount: 53_095,
@@ -208,7 +209,7 @@ describe('RecentAnalysesService', () => {
       item.aircraftCount = 123;
     });
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect((await history.list())[0]).toMatchObject({
       manpowerInField: 8_786_707,
       aircraftCount: 123,
@@ -229,7 +230,7 @@ describe('RecentAnalysesService', () => {
       delete item.aircraftCount;
     });
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect((await history.list())[0]).toMatchObject({
       manpowerInField: 456,
       aircraftCount: 9_077,
@@ -245,7 +246,7 @@ describe('RecentAnalysesService', () => {
     await results.delete(input('legacy-missing').hash);
     const get = jest.spyOn(results, 'get');
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     await expect(history.list()).resolves.toEqual([
       expect.objectContaining({
         manpowerInField: null,
@@ -267,7 +268,7 @@ describe('RecentAnalysesService', () => {
       'corrupt',
     );
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     await expect(history.list()).resolves.toEqual([
       expect.objectContaining({
         manpowerInField: null,
@@ -292,7 +293,7 @@ describe('RecentAnalysesService', () => {
       },
     });
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     await expect(history.list()).resolves.toEqual([
       expect.objectContaining({
         manpowerInField: null,
@@ -308,7 +309,7 @@ describe('RecentAnalysesService', () => {
       delete item.aircraftCount;
     });
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect((await history.list())[0]).toMatchObject({
       manpowerInField: 0,
       aircraftCount: 0,
@@ -323,7 +324,7 @@ describe('RecentAnalysesService', () => {
     });
     const get = jest.spyOn(results, 'get');
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     await history.list();
     await history.list();
 
@@ -365,7 +366,7 @@ describe('RecentAnalysesService', () => {
 
   test('configured limit keeps newest entries, also on reload', async () => {
     process.env.HOI4_RECENT_ANALYSES_LIMIT = '2';
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     for (const name of ['a', 'b', 'c'])
       await history.record(input(name), result);
     expect((await history.list()).map((item) => item.hash)).toEqual([
@@ -374,12 +375,12 @@ describe('RecentAnalysesService', () => {
     ]);
     process.env.HOI4_RECENT_ANALYSES_LIMIT = '1';
     expect(await results.exists(input('a').hash)).toBe(false);
-    expect(await new RecentAnalysesService(results).list()).toHaveLength(1);
+    expect(await (await createRecentAnalyses(results)).list()).toHaveLength(1);
     expect(await results.exists(input('b').hash)).toBe(false);
   });
 
   test('uses a batch-capable bounded default of 200', async () => {
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect(history['limit']).toBe(200);
     await Promise.all(
       Array.from({ length: 40 }, (_, i) =>
@@ -401,7 +402,7 @@ describe('RecentAnalysesService', () => {
       listAllOwnedHashes,
     } as unknown as AnalysisOwnershipService;
     results = new PersistedAnalysisResultService(ownership);
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
 
     for (let index = 0; index <= 200; index += 1)
       await history.record(input(String(index)), result);
@@ -432,7 +433,7 @@ describe('RecentAnalysesService', () => {
         );
       }
 
-      history = new RecentAnalysesService(results);
+      history = await createRecentAnalyses(results);
       expect(await history.list()).toEqual([]);
       expect(await results.get(protectedHash)).toEqual(result);
     },
@@ -440,9 +441,9 @@ describe('RecentAnalysesService', () => {
 
   test.each(['', '0', '-1', '1.5', 'abc', 'Infinity'])(
     'falls back to the 200-item default for invalid limit %j',
-    (limit) => {
+    async (limit) => {
       process.env.HOI4_RECENT_ANALYSES_LIMIT = limit;
-      history = new RecentAnalysesService(results);
+      history = await createRecentAnalyses(results);
       expect(history['limit']).toBe(200);
     },
   );
@@ -452,12 +453,14 @@ describe('RecentAnalysesService', () => {
     async (contents) => {
       await files.mkdir(join(directory, 'data'));
       await files.writeFile(file, contents);
-      history = new RecentAnalysesService(results);
+      history = await createRecentAnalyses(results);
       expect(await history.list()).toEqual([]);
       expect(await history.list()).toEqual([]);
       expect(warn).toHaveBeenCalledTimes(1);
       await history.record(input('a'), result);
-      expect(await new RecentAnalysesService(results).list()).toHaveLength(1);
+      expect(await (await createRecentAnalyses(results)).list()).toHaveLength(
+        1,
+      );
     },
   );
 
@@ -468,7 +471,7 @@ describe('RecentAnalysesService', () => {
       file,
       JSON.stringify({ items: [{ ...item, temporaryPath: 'SECRET', result }] }),
     );
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     const items = await history.list();
     expect(items[0]).toEqual(item);
     items[0].fileName = 'mutated';
@@ -484,7 +487,7 @@ describe('RecentAnalysesService', () => {
     expect(items.map((item) => item.hash)).toEqual(
       ['d', 'c', 'b', 'a'].map((name) => input(name).hash),
     );
-    expect(await new RecentAnalysesService(results).list()).toEqual(items);
+    expect(await (await createRecentAnalyses(results)).list()).toEqual(items);
   });
 
   test('keeps post-persistence work inside the existing mutation queue', async () => {
@@ -541,7 +544,7 @@ describe('RecentAnalysesService', () => {
   test('clear persists an empty history and subsequent analysis can add metadata', async () => {
     await history.record(input('a'), result);
     await history.clear();
-    expect(await new RecentAnalysesService(results).list()).toEqual([]);
+    expect(await (await createRecentAnalyses(results)).list()).toEqual([]);
     expect(await files.readdir(join(directory, 'results'))).toEqual([]);
     await history.record(input('b'), result);
     expect(await history.list()).toHaveLength(1);
@@ -556,7 +559,7 @@ describe('RecentAnalysesService', () => {
     delete legacy.aircraftCount;
     await results.delete(input('a').hash);
     await files.writeFile(file, JSON.stringify({ items: [legacy] }));
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect((await history.list())[0]).toMatchObject({
       hash: input('a').hash,
       hasPersistedResult: false,
@@ -573,7 +576,7 @@ describe('RecentAnalysesService', () => {
     await history.record(input('a'), result);
     await history.record(input('b'), result);
     await results.delete(input('a').hash);
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect(
       (await history.list()).find((item) => item.hash === input('a').hash)
         ?.hasPersistedResult,
@@ -595,8 +598,8 @@ describe('RecentAnalysesService', () => {
     expect((await history.list())[0].hasPersistedResult).toBe(false);
     expect(
       (
-        await new RecentAnalysesService(
-          new PersistedAnalysisResultService(),
+        await (
+          await createRecentAnalyses(new PersistedAnalysisResultService())
         ).list()
       )[0].hasPersistedResult,
     ).toBe(false);
@@ -610,7 +613,7 @@ describe('RecentAnalysesService', () => {
     ).size;
     process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
     results = new PersistedAnalysisResultService();
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     await history.record(input('b'), result);
     expect(
       (await history.list()).map((item) => item.hasPersistedResult),
@@ -638,7 +641,7 @@ describe('RecentAnalysesService', () => {
     expect(await results.exists(input('a').hash)).toBe(false);
     expect(await results.get(input('b').hash)).toEqual(result);
     expect(
-      (await new RecentAnalysesService(results).list()).map(
+      (await (await createRecentAnalyses(results)).list()).map(
         (item) => item.hash,
       ),
     ).toEqual([input('b').hash]);
@@ -647,7 +650,7 @@ describe('RecentAnalysesService', () => {
   test('reports lightweight storage bytes, configured limit and exact known campaigns', async () => {
     process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = '1234567';
     results = new PersistedAnalysisResultService();
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     const campaign = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
     await history.record(input('a'), result, {
       campaignId: campaign,
@@ -722,14 +725,14 @@ describe('RecentAnalysesService', () => {
     });
     const read = jest.spyOn(results, 'getComparisonContext');
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect((await history.list())[0]).toMatchObject({
       campaignId: campaign,
       playerCountryTag: 'GER',
     });
     expect(read).toHaveBeenCalledTimes(1);
 
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     await history.storageStatus();
     expect(read).toHaveBeenCalledTimes(1);
   });
@@ -738,7 +741,7 @@ describe('RecentAnalysesService', () => {
     const campaign = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
     const other = '1731c3c7-035e-46b1-b07b-6c35b27e8dc2';
     const shares = new SharedAnalysesService(results);
-    history = new RecentAnalysesService(results, shares);
+    history = await createRecentAnalyses(results, shares);
     await history.record(input('a'), result, {
       campaignId: campaign,
       gameVersion: null,
@@ -775,7 +778,7 @@ describe('RecentAnalysesService', () => {
   test('bulk cleanup removes legacy and known unpinned entries while protecting pins and shares', async () => {
     const campaign = '0731c3c7-035e-46b1-b07b-6c35b27e8dc2';
     const shares = new SharedAnalysesService(results);
-    history = new RecentAnalysesService(results, shares);
+    history = await createRecentAnalyses(results, shares);
     await history.record(input('shared'), result, {
       campaignId: campaign,
       gameVersion: null,
@@ -806,11 +809,11 @@ describe('RecentAnalysesService', () => {
     await history.record(input('a'), result);
     const before = (await history.list())[0];
     expect(await history.setPinned(input('a').hash, true)).toBe(true);
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect((await history.list())[0]).toEqual({ ...before, pinned: true });
     expect(await history.getResult(input('a').hash)).toEqual(result);
     expect(await history.setPinned(input('a').hash, false)).toBe(true);
-    expect((await new RecentAnalysesService(results).list())[0]).toEqual(
+    expect((await (await createRecentAnalyses(results)).list())[0]).toEqual(
       before,
     );
     expect(await history.setPinned(input('missing').hash, true)).toBe(false);
@@ -818,7 +821,7 @@ describe('RecentAnalysesService', () => {
 
   test('count eviction protects old pins and deletes the oldest unpinned result', async () => {
     process.env.HOI4_RECENT_ANALYSES_LIMIT = '2';
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     await history.record(input('a'), result);
     await history.setPinned(input('a').hash, true);
     await history.record(input('b'), result);
@@ -833,7 +836,7 @@ describe('RecentAnalysesService', () => {
 
   test('all-pinned history stays bounded: new unpinned entries are omitted, lowering limit evicts oldest pin', async () => {
     process.env.HOI4_RECENT_ANALYSES_LIMIT = '2';
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     await history.record(input('a'), result);
     await history.setPinned(input('a').hash, true);
     await history.record(input('b'), result);
@@ -842,7 +845,7 @@ describe('RecentAnalysesService', () => {
     expect(await history.list()).toHaveLength(2);
     expect(await results.exists(input('c').hash)).toBe(false);
     process.env.HOI4_RECENT_ANALYSES_LIMIT = '1';
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect((await history.list()).map((item) => item.hash)).toEqual([
       input('b').hash,
     ]);
@@ -900,7 +903,7 @@ describe('RecentAnalysesService', () => {
     ).size;
     process.env.HOI4_ANALYSIS_RESULTS_MAX_BYTES = String(size + 100);
     results = new PersistedAnalysisResultService();
-    history = new RecentAnalysesService(results);
+    history = await createRecentAnalyses(results);
     expect(
       (await history.list()).map(({ pinned, hasPersistedResult }) => [
         pinned,

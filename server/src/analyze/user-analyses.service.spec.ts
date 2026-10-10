@@ -6,6 +6,7 @@ import type { AnalysisOwnershipService } from './analysis-ownership.service';
 import { MemoryOwnership } from './fixtures/memory-ownership.fixture';
 import { comparisonResult } from './fixtures/analysis-comparison.fixture';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
+import { createRecentAnalyses } from './fixtures/recent-analyses.fixture';
 import { RecentAnalysesService } from './recent-analyses.service';
 import { SharedAnalysesService } from './shared-analyses.service';
 import { UserAnalysesService } from './user-analyses.service';
@@ -42,7 +43,7 @@ describe('UserAnalysesService ownership isolation', () => {
     ownership = new MemoryOwnership();
     results = new PersistedAnalysisResultService();
     shares = new SharedAnalysesService(results);
-    recent = new RecentAnalysesService(results, shares);
+    recent = await createRecentAnalyses(results, shares);
     service = new UserAnalysesService(
       ownership as unknown as AnalysisOwnershipService,
       recent,

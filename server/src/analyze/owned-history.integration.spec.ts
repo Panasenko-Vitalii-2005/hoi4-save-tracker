@@ -8,7 +8,7 @@ import { applyMigrations, loadMigrations } from '../database/migrations';
 import { AnalysisOwnershipRepository } from './analysis-ownership.repository';
 import { AnalysisOwnershipService } from './analysis-ownership.service';
 import { PersistedAnalysisResultService } from './persisted-analysis-result.service';
-import { RecentAnalysesService } from './recent-analyses.service';
+import { createRecentAnalyses } from './fixtures/recent-analyses.fixture';
 import { SharedAnalysesService } from './shared-analyses.service';
 import { UserAnalysesService } from './user-analyses.service';
 import { comparisonResult } from './fixtures/analysis-comparison.fixture';
@@ -108,7 +108,7 @@ describeDatabase(
       );
       let results = new PersistedAnalysisResultService(ownership);
       let shares = new SharedAnalysesService(results);
-      let recent = new RecentAnalysesService(results, shares);
+      let recent = await createRecentAnalyses(results, shares);
       const ids: string[] = [];
       const firstHash = createHash('sha256').update('0:0').digest('hex');
       await pool.query(
@@ -169,7 +169,7 @@ describeDatabase(
       );
       results = new PersistedAnalysisResultService(ownership);
       shares = new SharedAnalysesService(results);
-      recent = new RecentAnalysesService(results, shares);
+      recent = await createRecentAnalyses(results, shares);
       users = new UserAnalysesService(ownership, recent, results, shares);
       const reads = jest.spyOn(results, 'getWithContext');
       for (const id of ids) {
