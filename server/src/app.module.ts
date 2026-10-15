@@ -41,7 +41,7 @@ import { CampaignReviewService } from './telemetry/campaign-review.service';
     AuthModule,
     ServeStaticModule.forRoot({
       rootPath: path.join(__dirname, '..', '..', '..', 'client', 'dist'),
-      exclude: ['/api/(.*)'],
+      exclude: ['/api{/*path}'],
     }),
   ],
   controllers: [
